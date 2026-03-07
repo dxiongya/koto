@@ -1,0 +1,71 @@
+import { contextBridge, ipcRenderer } from 'electron'
+import { electronAPI } from '@electron-toolkit/preload'
+import { IpcChannels } from '../shared/types'
+
+const api = {
+  workspace: {
+    open: () => ipcRenderer.invoke(IpcChannels.WORKSPACE_OPEN),
+    get: () => ipcRenderer.invoke(IpcChannels.WORKSPACE_GET),
+  },
+  state: {
+    get: () => ipcRenderer.invoke(IpcChannels.STATE_GET),
+    update: (patch: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.STATE_UPDATE, patch),
+  },
+  fs: {
+    readDir: (path: string) => ipcRenderer.invoke(IpcChannels.FS_READ_DIR, path),
+    readFile: (path: string) => ipcRenderer.invoke(IpcChannels.FS_READ_FILE, path),
+    writeFile: (path: string, content: string) =>
+      ipcRenderer.invoke(IpcChannels.FS_WRITE_FILE, path, content),
+    createFile: (path: string) => ipcRenderer.invoke(IpcChannels.FS_CREATE_FILE, path),
+    createDir: (path: string) => ipcRenderer.invoke(IpcChannels.FS_CREATE_DIR, path),
+    rename: (oldPath: string, newPath: string) =>
+      ipcRenderer.invoke(IpcChannels.FS_RENAME, oldPath, newPath),
+    delete: (path: string) => ipcRenderer.invoke(IpcChannels.FS_DELETE, path),
+    stat: (path: string) => ipcRenderer.invoke(IpcChannels.FS_STAT, path),
+    onWatchEvent: (callback: (event: { type: string; path: string }) => void) => {
+      const handler = (_: unknown, event: { type: string; path: string }): void => callback(event)
+      ipcRenderer.on(IpcChannels.FS_WATCH_EVENT, handler)
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.FS_WATCH_EVENT, handler)
+      }
+    },
+  },
+  terminal: {
+    create: (cwd?: string) => ipcRenderer.invoke(IpcChannels.TERMINAL_CREATE, cwd),
+    write: (id: string, data: string) =>
+      ipcRenderer.invoke(IpcChannels.TERMINAL_WRITE, id, data),
+    resize: (id: string, cols: number, rows: number) =>
+      ipcRenderer.invoke(IpcChannels.TERMINAL_RESIZE, id, cols, rows),
+    close: (id: string) => ipcRenderer.invoke(IpcChannels.TERMINAL_CLOSE, id),
+    onData: (callback: (id: string, data: string) => void) => {
+      const handler = (_: unknown, id: string, data: string): void => callback(id, data)
+      ipcRenderer.on(IpcChannels.TERMINAL_DATA, handler)
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.TERMINAL_DATA, handler)
+      }
+    },
+    onExit: (callback: (id: string, exitCode: number) => void) => {
+      const handler = (_: unknown, id: string, exitCode: number): void =>
+        callback(id, exitCode)
+      ipcRenderer.on(IpcChannels.TERMINAL_EXIT, handler)
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.TERMINAL_EXIT, handler)
+      }
+    },
+  },
+}
+
+if (process.contextIsolated) {
+  try {
+    contextBridge.exposeInMainWorld('electron', electronAPI)
+    contextBridge.exposeInMainWorld('api', api)
+  } catch (error) {
+    console.error(error)
+  }
+} else {
+  // @ts-ignore (define in dts)
+  window.electron = electronAPI
+  // @ts-ignore (define in dts)
+  window.api = api
+}
