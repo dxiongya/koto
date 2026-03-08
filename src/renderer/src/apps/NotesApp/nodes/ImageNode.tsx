@@ -338,7 +338,7 @@ function ImageComponent({
         ? { marginLeft: 'auto', marginRight: 0 }
         : { marginLeft: 0, marginRight: 'auto' }
 
-  const handleClass = 'absolute w-3 h-3 bg-[#5eead4] border border-[#333] shadow-sm z-10'
+  const handleClass = 'absolute w-3 h-3 bg-accent-main border border-border-strong shadow-sm z-10'
 
   return (
     <div
@@ -359,7 +359,7 @@ function ImageComponent({
             src={src}
             alt={alt}
             className={`block max-w-full rounded-sm transition-shadow duration-150 ${
-              isSelected ? 'ring-2 ring-[#5eead4] ring-offset-2 ring-offset-[#111]' : ''
+              isSelected ? 'ring-2 ring-accent-main ring-offset-2 ring-offset-bg-app' : ''
             }`}
             style={{
               width: actualWidth === 'auto' ? 'auto' : `${actualWidth}px`,
@@ -382,7 +382,7 @@ function ImageComponent({
               <div className={`${handleClass} cursor-nwse-resize`} style={{ bottom: -2, right: -2 }} onMouseDown={(e) => handleResizeStart(e, 'se')} />
 
               {!isResizing && (
-                <div className="absolute top-2 right-2 flex items-center gap-1 p-1 bg-[#1e1e1e] border border-white/10 shadow-lg rounded-lg z-20">
+                <div className="absolute top-2 right-2 flex items-center gap-1 p-1 bg-bg-popover border border-border-subtle shadow-lg rounded-lg z-20">
                   {(['left', 'center', 'right'] as const).map((align) => {
                     const Icon = align === 'left' ? AlignLeft : align === 'center' ? AlignCenter : AlignRight
                     return (
@@ -393,8 +393,8 @@ function ImageComponent({
                         onClick={() => handleAlign(align)}
                         className={`p-1 rounded-md transition-colors ${
                           alignment === align
-                            ? 'text-[#5eead4] bg-[#5eead4]/10'
-                            : 'text-[#888] hover:bg-white/5 hover:text-[#ccc]'
+                            ? 'text-accent-main bg-accent-main/10'
+                            : 'text-tx-muted hover:bg-bg-hover hover:text-tx-main'
                         }`}
                       >
                         <Icon className="w-4 h-4" />
@@ -418,7 +418,7 @@ function ImageComponent({
               if (e.key === 'Escape') { setAltText(alt); e.currentTarget.blur() }
             }}
             placeholder="Add description..."
-            className="w-full text-center bg-transparent border-b border-transparent hover:border-white/10 focus:border-[#5eead4]/50 text-[13px] text-[#555] focus:text-[#999] px-1 py-1 outline-none transition-colors placeholder:text-[#333]"
+            className="w-full text-center bg-transparent border-b border-transparent hover:border-border-subtle focus:border-accent-main/50 text-[13px] text-tx-faint focus:text-tx-muted px-1 py-1 outline-none transition-colors placeholder:text-tx-muted"
           />
         </div>
       </div>

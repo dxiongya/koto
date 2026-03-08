@@ -2,6 +2,9 @@ import { create } from 'zustand'
 import type { AppType } from '../../../shared/types'
 
 interface UIState {
+  // Theme
+  theme: 'light' | 'dark'
+  
   // Workspace
   workspacePath: string | null
 
@@ -11,6 +14,7 @@ interface UIState {
   showCommandPalette: boolean
 
   // Sidebar
+  sidebarOpen: boolean
   sidebarExpandedPaths: string[]
 
   // Actions
@@ -19,6 +23,8 @@ interface UIState {
   setActiveFilePath: (path: string | null) => void
   setShowCommandPalette: (show: boolean) => void
   toggleCommandPalette: () => void
+  toggleTheme: () => void
+  toggleSidebar: () => void
   toggleSidebarPath: (path: string) => void
   setSidebarExpandedPaths: (paths: string[]) => void
 }
@@ -33,10 +39,12 @@ function persistState(patch: Record<string, unknown>): void {
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
+  theme: 'dark',
   workspacePath: null,
   currentApp: 'code.app',
   activeFilePath: null,
   showCommandPalette: false,
+  sidebarOpen: true,
   sidebarExpandedPaths: [],
 
   setWorkspacePath: (path) => {
@@ -53,6 +61,23 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
   setShowCommandPalette: (show) => set({ showCommandPalette: show }),
   toggleCommandPalette: () => set((state) => ({ showCommandPalette: !state.showCommandPalette })),
+  toggleSidebar: () => {
+    set((state) => {
+      const next = !state.sidebarOpen
+      persistState({ sidebarOpen: next })
+      return { sidebarOpen: next }
+    })
+  },
+  toggleTheme: () => {
+    const nextTheme = get().theme === 'dark' ? 'light' : 'dark'
+    set({ theme: nextTheme })
+    persistState({ lastTheme: nextTheme })
+    if (nextTheme === 'dark') {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  },
   toggleSidebarPath: (path) => {
     const current = get().sidebarExpandedPaths
     const next = current.includes(path)

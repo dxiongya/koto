@@ -241,7 +241,7 @@ export function FloatingToolbarPlugin(): JSX.Element | null {
         if ((e.target as HTMLElement).tagName !== 'INPUT') e.preventDefault()
       }}
     >
-      <div className="flex items-center gap-0.5 rounded-lg px-1.5 py-1 bg-[#1e1e1e] border border-white/10 shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+      <div className="flex items-center gap-0.5 rounded-lg px-1.5 py-1 bg-bg-popover border border-border-subtle shadow-[0_4px_16px_rgba(0,0,0,0.1)]">
         {linkMode ? (
           <>
             <TBtn onClick={cancelLink} active={false} title="Cancel">
@@ -262,7 +262,7 @@ export function FloatingToolbarPlugin(): JSX.Element | null {
                 }
               }}
               placeholder="Enter URL..."
-              className="w-44 h-7 px-2 text-xs outline-none bg-transparent text-[#ccc] placeholder-[#555]"
+              className="w-44 h-7 px-2 text-xs outline-none bg-transparent text-tx-main placeholder-tx-muted"
               autoFocus
             />
             <TBtn onClick={submitLink} active={false} title="Confirm">
@@ -349,8 +349,8 @@ function TBtn({
       onClick={onClick}
       className={`w-7 h-7 flex items-center justify-center rounded transition-colors duration-150 ${
         active
-          ? 'text-[#5eead4] bg-white/10'
-          : 'text-[#888] hover:text-[#ccc] hover:bg-white/5'
+          ? 'text-accent-main bg-bg-active'
+          : 'text-tx-muted hover:text-tx-main hover:bg-bg-hover'
       }`}
     >
       {children}
@@ -359,5 +359,5 @@ function TBtn({
 }
 
 function Sep(): JSX.Element {
-  return <div className="w-[1px] h-4 mx-0.5 bg-white/10" />
+  return <div className="w-[1px] h-4 mx-0.5 bg-bg-active" />
 }

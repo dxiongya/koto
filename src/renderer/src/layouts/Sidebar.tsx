@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
-import { ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal, FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Globe, Plus } from 'lucide-react'
+import { ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal, FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Globe, Plus, Moon, Sun } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import type { AppType, FileNode } from '../../../shared/types'
 
@@ -52,12 +52,12 @@ const SplitName: React.FC<{ name: string; isActive?: boolean }> = ({ name, isAct
     const ext = name.slice(lastDot)
     return (
       <span className="truncate" style={{ fontSize: '13.5px' }}>
-        <span className={isActive ? 'text-[#e5e5e5]' : 'text-[#c0c0c0]'}>{base}</span>
-        <span className={isActive ? 'text-[#888]' : 'text-[#666]'}>{ext}</span>
+        <span className={isActive ? 'text-accent-main font-medium' : 'text-tx-main'}>{base}</span>
+        <span className={isActive ? 'text-accent-main/70' : 'text-tx-muted'}>{ext}</span>
       </span>
     )
   }
-  return <span className={`truncate ${isActive ? 'text-[#e5e5e5]' : 'text-[#c0c0c0]'}`} style={{ fontSize: '13.5px' }}>{name}</span>
+  return <span className={`truncate ${isActive ? 'text-accent-main font-medium' : 'text-tx-main'}`} style={{ fontSize: '13.5px' }}>{name}</span>
 }
 
 // ── File Tree Node ──
@@ -103,19 +103,19 @@ const FileTreeNode: React.FC<{
         onClick={toggle}
         style={{ paddingLeft: pl }}
         className={`flex items-center gap-1.5 py-[4px] pr-4 cursor-pointer text-[13px] tracking-wide relative group
-          ${isActive ? 'bg-[#222222]' : 'hover:bg-[#1a1a1a]'}`}
+          ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
       >
         {isActive && (
-          <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#d4d4d4]" />
+          <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />
         )}
         {node.isDirectory ? (
           expanded ? (
-            <ChevronDown size={14} className="shrink-0 text-[#888]" />
+            <ChevronDown size={14} className="shrink-0 text-tx-muted" />
           ) : (
-            <ChevronRight size={14} className="shrink-0 text-[#888]" />
+            <ChevronRight size={14} className="shrink-0 text-tx-muted" />
           )
         ) : (
-          <span className="shrink-0 flex items-center justify-center text-[#888]">
+          <span className={`shrink-0 flex items-center justify-center ${isActive ? 'text-accent-main' : 'text-tx-muted'}`}>
             {node.name === 'loading.tsx' || node.name === 'loading.js' ? (
               <Loader2 size={12} className="animate-spin" />
             ) : (
@@ -237,8 +237,11 @@ export const Sidebar: React.FC = () => {
     }
   }, [setWorkspacePath, setActiveFilePath])
 
+  const theme = useUIStore((s) => s.theme)
+  const toggleTheme = useUIStore((s) => s.toggleTheme)
+
   return (
-    <div className="w-[260px] flex flex-col bg-[#111111] text-[14px] overflow-hidden shrink-0">
+    <div className="w-[260px] flex flex-col bg-bg-app text-[14px] overflow-hidden shrink-0">
       {/* Top drag area for macOS */}
       <div className="h-8 w-full shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
 
@@ -248,15 +251,15 @@ export const Sidebar: React.FC = () => {
         <div 
           onClick={() => handleAppClick('code.app')}
           className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
-            ${currentApp === 'code.app' ? 'bg-[#222222]' : 'hover:bg-[#1a1a1a]'}`}
+            ${currentApp === 'code.app' ? 'bg-bg-active text-accent-main' : 'hover:bg-bg-hover text-tx-main'}`}
         >
-          {currentApp === 'code.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#d4d4d4]" />}
-          <div className="flex items-center justify-center w-4 h-4 shrink-0 text-[#888]">
+          {currentApp === 'code.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
+          <div className="flex items-center justify-center w-4 h-4 shrink-0 text-tx-muted">
             <LayoutTemplate size={14} strokeWidth={2.5} />
           </div>
           <SplitName name="code.app" isActive={currentApp === 'code.app'} />
           <div className="ml-auto">
-            {expandedSections.includes('code.app') ? <ChevronDown size={14} className="text-[#666]" /> : <ChevronRight size={14} className="text-[#666]" />}
+            {expandedSections.includes('code.app') ? <ChevronDown size={14} className="text-tx-faint" /> : <ChevronRight size={14} className="text-tx-faint" />}
           </div>
         </div>
         
@@ -265,7 +268,7 @@ export const Sidebar: React.FC = () => {
             {rootNodes.length === 0 && !workspacePath ? (
               <div 
                 onClick={handleOpenFolder}
-                className="pl-[32px] py-1 text-[13px] text-[#666] hover:text-[#b0b0b0] cursor-pointer"
+                className="pl-[32px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer"
               >
                 Open a folder...
               </div>
@@ -290,21 +293,21 @@ export const Sidebar: React.FC = () => {
         <div 
           onClick={() => handleAppClick('browser.app')}
           className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
-            ${currentApp === 'browser.app' ? 'bg-[#222222]' : 'hover:bg-[#1a1a1a]'}`}
+            ${currentApp === 'browser.app' ? 'bg-bg-active text-accent-main' : 'hover:bg-bg-hover text-tx-main'}`}
         >
-          {currentApp === 'browser.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#d4d4d4]" />}
-          <div className="flex items-center justify-center w-4 h-4 shrink-0 text-[#888]">
+          {currentApp === 'browser.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
+          <div className="flex items-center justify-center w-4 h-4 shrink-0 text-tx-muted">
             <Chrome size={14} strokeWidth={2.5} />
           </div>
           <SplitName name="browser.app" isActive={currentApp === 'browser.app'} />
           <div className="ml-auto">
-            {expandedSections.includes('browser.app') ? <ChevronDown size={14} className="text-[#666]" /> : <ChevronRight size={14} className="text-[#666]" />}
+            {expandedSections.includes('browser.app') ? <ChevronDown size={14} className="text-tx-faint" /> : <ChevronRight size={14} className="text-tx-faint" />}
           </div>
         </div>
         {expandedSections.includes('browser.app') && (
           <div className="mb-3 mt-1">
-            <div className="pl-[32px] py-1 flex items-center gap-2 text-[13px] cursor-pointer hover:bg-[#1a1a1a]">
-              <Globe size={13} className="text-[#888]" />
+            <div className="pl-[32px] py-1 flex items-center gap-2 text-[13px] cursor-pointer hover:bg-bg-hover">
+              <Globe size={13} className="text-tx-muted" />
               <SplitName name="my-store.com" />
             </div>
           </div>
@@ -325,24 +328,35 @@ export const Sidebar: React.FC = () => {
         <div 
           onClick={() => handleAppClick('terminal.app')}
           className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
-            ${currentApp === 'terminal.app' ? 'bg-[#222222]' : 'hover:bg-[#1a1a1a]'}`}
+            ${currentApp === 'terminal.app' ? 'bg-bg-active text-accent-main' : 'hover:bg-bg-hover text-tx-main'}`}
         >
-          {currentApp === 'terminal.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#d4d4d4]" />}
-          <div className="flex items-center justify-center w-4 h-4 shrink-0 text-[#888]">
+          {currentApp === 'terminal.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
+          <div className="flex items-center justify-center w-4 h-4 shrink-0 text-tx-muted">
             <Terminal size={14} strokeWidth={2.5} />
           </div>
           <SplitName name="terminal.app" isActive={currentApp === 'terminal.app'} />
           <div className="ml-auto">
-            {expandedSections.includes('terminal.app') ? <ChevronDown size={14} className="text-[#666]" /> : <ChevronRight size={14} className="text-[#666]" />}
+            {expandedSections.includes('terminal.app') ? <ChevronDown size={14} className="text-tx-faint" /> : <ChevronRight size={14} className="text-tx-faint" />}
           </div>
         </div>
         {expandedSections.includes('terminal.app') && (
           <div className="mb-3 mt-1">
-            <div className="pl-[32px] py-1 text-[13px] text-[#666] hover:text-[#b0b0b0] cursor-pointer">
+            <div className="pl-[32px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer">
               New terminal...
             </div>
           </div>
         )}
+      </div>
+      
+      {/* Bottom Actions */}
+      <div className="shrink-0 p-3 flex justify-between items-center border-t border-border-subtle">
+        <button
+          onClick={toggleTheme}
+          className="p-1.5 rounded-md hover:bg-bg-hover text-tx-faint hover:text-tx-main transition-colors"
+          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+        >
+          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+        </button>
       </div>
     </div>
   )
@@ -419,10 +433,10 @@ const NotesAppSection: React.FC<{
       <div
         onClick={onHeaderClick}
         className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
-          ${currentApp === 'notes.app' ? 'bg-[#222222]' : 'hover:bg-[#1a1a1a]'}`}
+          ${currentApp === 'notes.app' ? 'bg-bg-active text-accent-main' : 'hover:bg-bg-hover text-tx-main'}`}
       >
-        {currentApp === 'notes.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#d4d4d4]" />}
-        <div className="flex items-center justify-center w-4 h-4 shrink-0 text-[#888]">
+        {currentApp === 'notes.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
+        <div className="flex items-center justify-center w-4 h-4 shrink-0 text-tx-muted">
           <FileText size={14} strokeWidth={2.5} />
         </div>
         <SplitName name="notes.app" isActive={currentApp === 'notes.app'} />
@@ -431,21 +445,22 @@ const NotesAppSection: React.FC<{
             <div
               onClick={(e) => {
                 e.stopPropagation()
+                if (!expanded) onHeaderClick()
                 startCreating()
               }}
-              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
+              className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors"
               title="New note"
             >
-              <Plus size={12} className="text-[#888]" />
+              <Plus size={14} />
             </div>
           )}
-          {expanded ? <ChevronDown size={14} className="text-[#666]" /> : <ChevronRight size={14} className="text-[#666]" />}
+          {expanded ? <ChevronDown size={14} className="text-tx-faint" /> : <ChevronRight size={14} className="text-tx-faint" />}
         </div>
       </div>
       {expanded && (
         <div className="mb-3 mt-1">
           {!workspacePath ? (
-            <div className="pl-[32px] py-1 text-[13px] text-[#555]">
+            <div className="pl-[32px] py-1 text-[13px] text-tx-faint">
               Open a workspace first
             </div>
           ) : (
@@ -453,7 +468,7 @@ const NotesAppSection: React.FC<{
               {/* New note input */}
               {isCreating && (
                 <div className="pl-[32px] pr-3 py-1 flex items-center gap-1.5">
-                  <FileText size={13} className="text-[#888] shrink-0" />
+                  <FileText size={13} className="text-tx-muted shrink-0" />
                   <input
                     ref={inputRef}
                     type="text"
@@ -477,7 +492,7 @@ const NotesAppSection: React.FC<{
                       }
                     }}
                     placeholder="note name..."
-                    className="flex-1 bg-transparent text-[13px] text-[#ccc] outline-none border-b border-[#333] placeholder-[#555] py-0.5"
+                    className="flex-1 bg-transparent text-[13px] text-tx-main outline-none border-b border-border-strong placeholder-tx-muted py-0.5"
                   />
                 </div>
               )}
@@ -490,10 +505,10 @@ const NotesAppSection: React.FC<{
                     key={note.path}
                     onClick={() => onFileClick(note.path)}
                     className={`pl-[32px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative
-                      ${isActive ? 'bg-[#222222]' : 'hover:bg-[#1a1a1a]'}`}
+                      ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
                   >
-                    {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#d4d4d4]" />}
-                    <FileText size={13} className="text-[#888] shrink-0" />
+                    {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
+                    <FileText size={13} className={`${isActive ? 'text-accent-main' : 'text-tx-muted'} shrink-0`} />
                     <SplitName name={note.name} isActive={isActive} />
                   </div>
                 )
@@ -503,7 +518,7 @@ const NotesAppSection: React.FC<{
               {noteFiles.length === 0 && !isCreating && (
                 <div
                   onClick={startCreating}
-                  className="pl-[32px] py-1 text-[13px] text-[#555] hover:text-[#999] cursor-pointer"
+                  className="pl-[32px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer"
                 >
                   New note...
                 </div>

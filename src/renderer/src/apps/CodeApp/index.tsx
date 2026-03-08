@@ -43,7 +43,7 @@ export const CodeApp: React.FC = () => {
 
   if (!activeFilePath) {
     return (
-      <div className={`flex-1 flex items-center justify-center text-[#555] text-sm ${blurClass}`}>
+      <div className={`flex-1 flex items-center justify-center text-tx-faint text-sm ${blurClass}`}>
         Select a file from the sidebar
       </div>
     )
@@ -51,7 +51,7 @@ export const CodeApp: React.FC = () => {
 
   if (loading) {
     return (
-      <div className={`flex-1 flex items-center justify-center text-[#555] text-sm ${blurClass}`}>
+      <div className={`flex-1 flex items-center justify-center text-tx-faint text-sm ${blurClass}`}>
         Loading...
       </div>
     )

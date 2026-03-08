@@ -340,7 +340,7 @@ export function SlashCommandPlugin(): JSX.Element | null {
   return (
     <div
       ref={panelRef}
-      className="fixed z-50 rounded-lg py-1.5 min-w-[220px] max-h-[280px] overflow-y-auto bg-[#1e1e1e] border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
+      className="fixed z-50 rounded-lg py-1.5 min-w-[220px] max-h-[280px] overflow-y-auto bg-bg-popover border border-border-subtle shadow-[0_4px_20px_rgba(0,0,0,0.15)]"
       style={{ top: position.top, left: position.left }}
     >
       {filtered.map((item, index) => {
@@ -351,8 +351,8 @@ export function SlashCommandPlugin(): JSX.Element | null {
             data-index={index}
             className={`w-full text-left px-3 h-9 flex items-center gap-2.5 text-sm transition-colors duration-75 ${
               index === selectedIndex
-                ? 'bg-white/8 text-[#ccc]'
-                : 'text-[#888] hover:bg-white/5 hover:text-[#ccc]'
+                ? 'bg-accent-bg text-accent-main'
+                : 'text-tx-muted hover:bg-bg-hover hover:text-tx-main'
             }`}
             onMouseDown={(e) => {
               e.preventDefault()
@@ -360,9 +360,9 @@ export function SlashCommandPlugin(): JSX.Element | null {
             }}
             onMouseEnter={() => setSelectedIndex(index)}
           >
-            <Icon className="w-4 h-4 text-[#5eead4] shrink-0" />
-            <span className="font-medium text-[#ccc]">{item.name}</span>
-            <span className="text-xs text-[#555] truncate">{item.description}</span>
+            <Icon className={`w-4 h-4 shrink-0 ${index === selectedIndex ? 'text-accent-main' : 'text-tx-muted'}`} />
+            <span className={`font-medium ${index === selectedIndex ? 'text-accent-main' : 'text-tx-main'}`}>{item.name}</span>
+            <span className={`text-xs truncate ${index === selectedIndex ? 'text-accent-main/70' : 'text-tx-faint'}`}>{item.description}</span>
           </button>
         )
       })}

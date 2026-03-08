@@ -25,20 +25,33 @@ export default function App() {
       }
       const s = res.data
       const store = useUIStore.getState()
+      if (s.lastTheme) {
+        store.theme = s.lastTheme
+        if (s.lastTheme === 'dark') document.documentElement.classList.add('dark')
+        else document.documentElement.classList.remove('dark')
+      } else {
+        // default dark
+        document.documentElement.classList.add('dark')
+      }
       if (s.lastWorkspacePath) store.setWorkspacePath(s.lastWorkspacePath)
       if (s.lastApp) store.setCurrentApp(s.lastApp)
       if (s.lastActiveFilePath) store.setActiveFilePath(s.lastActiveFilePath)
       if (s.sidebarExpandedPaths) store.setSidebarExpandedPaths(s.sidebarExpandedPaths)
+      if (s.sidebarOpen !== undefined) useUIStore.setState({ sidebarOpen: s.sidebarOpen })
       setRestored(true)
     })
   }, [])
 
-  // Cmd+K command palette
+  // Cmd+K command palette and Cmd+\ sidebar
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         setShowCommandPalette(true)
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+        e.preventDefault()
+        useUIStore.getState().toggleSidebar()
       }
       if (e.key === 'Escape') {
         setShowCommandPalette(false)
@@ -50,7 +63,7 @@ export default function App() {
 
   // Wait for state restore before rendering to avoid flicker
   if (!restored) {
-    return <div className="w-screen h-screen bg-[#111111]" />
+    return <div className="w-screen h-screen bg-bg-app" />
   }
 
   const ActiveApp = appComponents[currentApp]
@@ -64,7 +77,7 @@ export default function App() {
 
 function PlaceholderApp({ name }: { name: string }) {
   return (
-    <div className="flex-1 flex items-center justify-center text-[#555] text-sm">
+    <div className="flex-1 flex items-center justify-center text-tx-faint text-sm">
       {name} — coming soon
     </div>
   )

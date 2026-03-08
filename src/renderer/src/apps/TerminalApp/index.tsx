@@ -55,13 +55,13 @@ export const TerminalApp: React.FC = () => {
   return (
     <div className={`flex-1 flex flex-col overflow-hidden ${blurClass}`}>
       {/* Tab bar */}
-      <div className="flex items-center bg-[#161616] border-b border-white/8 shrink-0">
+      <div className="flex items-center bg-bg-sidebar border-b border-border-subtle shrink-0">
         {tabs.map((tab) => (
           <div
             key={tab.id}
             onClick={() => setActiveTabId(tab.id)}
-            className={`flex items-center gap-2 px-4 py-2 text-[13px] cursor-pointer border-r border-white/5
-              ${activeTabId === tab.id ? 'bg-[#111111] text-white' : 'text-[#888] hover:text-[#ccc]'}`}
+            className={`flex items-center gap-2 px-4 py-2 text-[13px] cursor-pointer border-r border-border-subtle
+              ${activeTabId === tab.id ? 'bg-bg-app text-tx-main' : 'text-tx-muted hover:text-tx-main'}`}
           >
             <span>{tab.title}</span>
             <button
@@ -69,7 +69,7 @@ export const TerminalApp: React.FC = () => {
                 e.stopPropagation()
                 closeTab(tab.id)
               }}
-              className="opacity-0 group-hover:opacity-100 hover:text-white transition-opacity p-0.5"
+              className="opacity-0 group-hover:opacity-100 hover:text-tx-main transition-opacity p-0.5"
               style={{ opacity: activeTabId === tab.id ? 0.5 : 0 }}
             >
               <X size={12} />
@@ -78,7 +78,7 @@ export const TerminalApp: React.FC = () => {
         ))}
         <button
           onClick={createTab}
-          className="p-2 text-[#666] hover:text-[#ccc] transition-colors"
+          className="p-2 text-tx-faint hover:text-tx-main transition-colors"
           title="New Terminal"
         >
           <Plus size={14} />
@@ -86,11 +86,11 @@ export const TerminalApp: React.FC = () => {
       </div>
 
       {/* Terminal content */}
-      <div className="flex-1 overflow-hidden bg-[#111111] p-1">
+      <div className="flex-1 overflow-hidden bg-bg-app p-1">
         {activeTabId ? (
           <TerminalView key={activeTabId} terminalId={activeTabId} />
         ) : (
-          <div className="flex items-center justify-center h-full text-[#555] text-sm">
+          <div className="flex items-center justify-center h-full text-tx-faint text-sm">
             No terminal open
           </div>
         )}

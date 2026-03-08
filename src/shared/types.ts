@@ -87,6 +87,7 @@ export interface WorkspaceState {
   recentWorkspaces: string[]
   lastWorkspacePath: string | null
   lastApp: AppType
+  lastTheme?: 'light' | 'dark'
   lastActiveFilePath: string | null
   windowBounds: { x: number; y: number; width: number; height: number } | null
   sidebarExpandedPaths: string[]

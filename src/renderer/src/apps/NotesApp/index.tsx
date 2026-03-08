@@ -57,18 +57,18 @@ export const NotesApp: React.FC = () => {
 
   if (!activeFilePath) {
     return (
-      <div className={`flex-1 flex flex-col items-center justify-center gap-4 text-[#555] ${blurClass}`}>
-        <FileText size={32} className="text-[#333]" />
+      <div className={`flex-1 flex flex-col items-center justify-center gap-4 text-tx-faint ${blurClass}`}>
+        <FileText size={32} className="text-tx-faint" />
         <div className="text-sm">No note selected</div>
         {workspacePath && (
           <button
             onClick={handleQuickCreate}
-            className="px-4 py-1.5 text-[13px] text-[#999] border border-[#333] rounded-md hover:border-[#555] hover:text-[#ccc] transition-colors"
+            className="px-4 py-1.5 text-[13px] text-tx-muted border border-border-strong rounded-md hover:border-tx-faint hover:text-tx-main transition-colors"
           >
             Create new note
           </button>
         )}
-        <div className="text-xs text-[#444] mt-2">
+        <div className="text-xs text-tx-faint mt-2">
           Or click the + in the sidebar to create a note
         </div>
       </div>
@@ -77,7 +77,7 @@ export const NotesApp: React.FC = () => {
 
   if (loading || content === null) {
     return (
-      <div className={`flex-1 flex items-center justify-center text-[#555] text-sm ${blurClass}`}>
+      <div className={`flex-1 flex items-center justify-center text-tx-faint text-sm ${blurClass}`}>
         Loading...
       </div>
     )

@@ -133,13 +133,17 @@ export function LinkPreviewPlugin(): JSX.Element | null {
     domain = card.url
   }
 
-  const top = card.rect.bottom + 8
+  // Estimate card height: ~200px without image, ~380px with image
+  const estimatedHeight = card.meta?.image ? 380 : 200
+  const spaceBelow = window.innerHeight - card.rect.bottom - 12
+  const showAbove = spaceBelow < estimatedHeight && card.rect.top > estimatedHeight
+  const top = showAbove ? card.rect.top - estimatedHeight - 8 : card.rect.bottom + 8
   const left = Math.max(12, Math.min(card.rect.left, window.innerWidth - 352))
 
   return (
     <div
       ref={cardRef}
-      className="fixed z-[100] w-[340px] max-w-[calc(100vw-24px)] rounded-xl border border-white/10 bg-[#1a1a1a] overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.5)]"
+      className="fixed z-[100] w-[340px] max-w-[calc(100vw-24px)] rounded-xl border border-border-subtle bg-bg-popover overflow-hidden shadow-[0_8px_30px_rgba(0,0,0,0.1)]"
       style={{ top, left }}
       onMouseEnter={clearTimer}
       onMouseLeave={close}
@@ -152,7 +156,7 @@ export function LinkPreviewPlugin(): JSX.Element | null {
         }}
       >
         {card.meta?.image && (
-          <div className="w-full aspect-[1.91/1] bg-[#111] overflow-hidden shrink-0 border-b border-white/5 relative">
+          <div className="w-full aspect-[1.91/1] bg-bg-app overflow-hidden shrink-0 border-b border-border-subtle relative">
             <img
               src={card.meta.image}
               alt=""
@@ -163,25 +167,25 @@ export function LinkPreviewPlugin(): JSX.Element | null {
         )}
         <div className="p-3.5 flex flex-col gap-1.5">
           {card.loading && !hasTitle && (
-            <div className="flex items-center gap-2 text-[#555] text-xs">
-              <div className="w-3.5 h-3.5 rounded-full border-2 border-[#5eead4]/30 border-t-[#5eead4] animate-spin" />
+            <div className="flex items-center gap-2 text-tx-faint text-xs">
+              <div className="w-3.5 h-3.5 rounded-full border-2 border-accent-main/30 border-t-[#5eead4] animate-spin" />
               <span>Fetching page info…</span>
             </div>
           )}
           {hasTitle && (
             <p
-              className="text-[14px] font-semibold text-[#ccc] line-clamp-2 leading-snug group-hover:text-[#5eead4] transition-colors duration-200"
+              className="text-[14px] font-semibold text-tx-main line-clamp-2 leading-snug group-hover:text-accent-main transition-colors duration-200"
               title={typeof title === 'string' ? title : undefined}
             >
               {title}
             </p>
           )}
           {card.meta?.description && (
-            <p className="text-[12px] text-[#888] line-clamp-2 leading-relaxed">
+            <p className="text-[12px] text-tx-muted line-clamp-2 leading-relaxed">
               {card.meta.description}
             </p>
           )}
-          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-[#555] font-medium">
+          <div className="mt-1 flex items-center gap-1.5 text-[11px] text-tx-faint font-medium">
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
             </svg>

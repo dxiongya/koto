@@ -275,7 +275,7 @@ function CodeFenceLangSuggestion({
   return createPortal(
     <div
       ref={listRef}
-      className="fixed z-50 rounded-lg py-1 min-w-[180px] max-h-[240px] overflow-y-auto bg-[#1e1e1e] border border-white/10 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
+      className="fixed z-50 rounded-lg py-1 min-w-[180px] max-h-[240px] overflow-y-auto bg-bg-popover border border-border-subtle shadow-[0_4px_16px_rgba(0,0,0,0.1)]"
       style={{
         top: suggestion.position.top,
         left: suggestion.position.left
@@ -287,8 +287,8 @@ function CodeFenceLangSuggestion({
           type="button"
           className={`w-full text-left px-3 h-8 flex items-center gap-2 text-xs transition-colors ${
             index === activeIndex
-              ? 'bg-white/8 text-[#ccc]'
-              : 'text-[#888] hover:bg-white/5'
+              ? 'bg-bg-active text-tx-main'
+              : 'text-tx-muted hover:bg-bg-hover'
           }`}
           onMouseEnter={() => setActiveIndex(index)}
           onMouseDown={(e) => {
@@ -296,9 +296,9 @@ function CodeFenceLangSuggestion({
             createCodeBlock(value)
           }}
         >
-          <Code2 className="w-3.5 h-3.5 shrink-0 text-[#5eead4]/60" />
+          <Code2 className="w-3.5 h-3.5 shrink-0 text-accent-main/60" />
           <span>{label}</span>
-          <span className="text-[#555] ml-auto">{value}</span>
+          <span className="text-tx-faint ml-auto">{value}</span>
         </button>
       ))}
     </div>,
@@ -421,24 +421,24 @@ function CodeBlockHoverToolbar({
         top: posTop,
         right: posRight,
         zIndex: 50,
-        backgroundColor: '#252525',
-        border: '1px solid rgba(255,255,255,0.08)'
+        backgroundColor: 'var(--color-bg-popover)',
+        border: '1px solid var(--color-border-subtle)'
       }}
       onMouseEnter={cancelHide}
       onMouseLeave={scheduleHide}
     >
-      <div className="flex items-center gap-1 px-1 text-[11px] text-[#5eead4]/70">
+      <div className="flex items-center gap-1 px-1 text-[11px] text-accent-main/70">
         <Code2 className="w-3 h-3" />
         <span>{friendlyName}</span>
       </div>
 
-      <div className="w-[1px] h-3.5 bg-white/8 mx-0.5" />
+      <div className="w-[1px] h-3.5 bg-bg-active mx-0.5" />
 
       <DropdownMenu.Root open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenu.Trigger asChild>
           <button
             type="button"
-            className="w-6 h-6 flex items-center justify-center rounded text-[#888] hover:text-[#ccc] hover:bg-white/5"
+            className="w-6 h-6 flex items-center justify-center rounded text-tx-muted hover:text-tx-main hover:bg-bg-hover"
             title="Change language"
           >
             <ChevronDown className="w-3 h-3" />
@@ -449,16 +449,16 @@ function CodeBlockHoverToolbar({
             side="bottom"
             align="end"
             sideOffset={6}
-            className="z-50 min-w-[140px] max-h-[240px] overflow-y-auto rounded-lg py-1 bg-[#1e1e1e] border border-white/10 shadow-[0_4px_16px_rgba(0,0,0,0.5)]"
+            className="z-50 min-w-[140px] max-h-[240px] overflow-y-auto rounded-lg py-1 bg-bg-popover border border-border-subtle shadow-[0_4px_16px_rgba(0,0,0,0.1)]"
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
             {LANGUAGE_OPTIONS.map(([value, label]) => (
               <DropdownMenu.Item
                 key={value}
-                className={`px-3 py-1.5 text-xs outline-none cursor-pointer transition-colors ${
+          className={`px-3 py-1.5 text-xs outline-none cursor-pointer transition-colors ${
                   value === language
-                    ? 'text-[#5eead4] bg-white/5'
-                    : 'text-[#888] hover:text-[#ccc] hover:bg-white/5'
+                    ? 'text-accent-main bg-bg-hover'
+                    : 'text-tx-muted hover:text-tx-main hover:bg-bg-hover'
                 }`}
                 onSelect={() => handleLanguageChange(value)}
               >
@@ -471,11 +471,11 @@ function CodeBlockHoverToolbar({
 
       <button
         type="button"
-        className="w-6 h-6 flex items-center justify-center rounded text-[#888] hover:text-[#ccc] hover:bg-white/5"
+        className="w-6 h-6 flex items-center justify-center rounded text-tx-muted hover:text-tx-main hover:bg-bg-hover"
         onClick={handleCopy}
         title={copied ? 'Copied!' : 'Copy code'}
       >
-        {copied ? <Check className="w-3.5 h-3.5 text-[#5eead4]" /> : <Copy className="w-3.5 h-3.5" />}
+        {copied ? <Check className="w-3.5 h-3.5 text-accent-main" /> : <Copy className="w-3.5 h-3.5" />}
       </button>
     </div>,
     document.body

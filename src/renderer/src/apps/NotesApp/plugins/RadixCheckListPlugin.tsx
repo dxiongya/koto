@@ -29,7 +29,7 @@ function CheckboxButton({
     <Checkbox.Root
       checked={item.checked}
       disabled={disabled}
-      className="w-[18px] h-[18px] rounded border border-white/20 flex items-center justify-center bg-transparent transition-colors data-[state=checked]:bg-[#5eead4] data-[state=checked]:border-[#5eead4] hover:border-[#5eead4]/50"
+      className="w-[18px] h-[18px] rounded border border-border-strong flex items-center justify-center bg-bg-app transition-colors data-[state=checked]:bg-accent-main data-[state=checked]:border-accent-main hover:border-accent-main/50"
       style={{
         position: 'absolute',
         left: item.left,
@@ -49,7 +49,7 @@ function CheckboxButton({
         <svg viewBox="0 0 16 16" fill="none" width={12} height={12}>
           <path
             d="M3 8.5l3.2 3.3 6.8-7"
-            stroke="#111"
+            stroke="var(--color-bg-app)"
             strokeWidth="2.1"
             strokeLinecap="round"
             strokeLinejoin="round"

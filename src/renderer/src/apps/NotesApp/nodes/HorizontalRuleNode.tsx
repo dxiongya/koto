@@ -147,7 +147,7 @@ function HorizontalRuleComponent({ nodeKey }: { nodeKey: NodeKey }): JSX.Element
     <div data-hr-key={nodeKey} className="py-3 cursor-pointer">
       <hr
         className={`border-0 h-[1px] transition-colors ${
-          isSelected ? 'bg-[#5eead4]' : 'bg-white/10'
+          isSelected ? 'bg-accent-main' : 'bg-bg-active'
         }`}
       />
     </div>

@@ -268,10 +268,10 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
         <div className="flex-1 overflow-y-auto">
           <RichTextPlugin
             contentEditable={
-              <ContentEditable className="outline-none px-8 py-6 md:px-12 md:py-8 min-h-full text-[16px] leading-[1.8]" />
+              <ContentEditable className="outline-none px-8 py-2 md:px-12 md:py-4 min-h-full text-[16px] leading-[1.8]" />
             }
             placeholder={
-              <div className="absolute top-6 left-8 md:top-8 md:left-12 text-[#555] text-[16px] pointer-events-none select-none">
+              <div className="absolute top-2 left-8 md:top-4 md:left-12 text-tx-faint text-[16px] pointer-events-none select-none">
                 Type / for commands...
               </div>
             }

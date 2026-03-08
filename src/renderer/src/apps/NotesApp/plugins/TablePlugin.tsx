@@ -783,8 +783,8 @@ function RowHandle({ editor, activeCellRef, rect, onDragStart, isDragging }: Han
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: hovered || menuOpen ? 'rgba(94,234,212,0.15)' : 'rgba(255,255,255,0.05)',
-        border: '1px solid rgba(255,255,255,0.1)',
+        backgroundColor: hovered || menuOpen ? 'var(--color-bg-active)' : 'var(--color-bg-hover)',
+        border: '1px solid var(--color-border-subtle)',
         borderRadius: 4,
         cursor: hovered && !menuOpen ? 'grab' : 'default',
         transition: 'background-color 0.12s',
@@ -821,8 +821,8 @@ function RowHandle({ editor, activeCellRef, rect, onDragStart, isDragging }: Han
               width: 12,
               height: 12,
               borderRadius: '50%',
-              backgroundColor: '#252525',
-              border: '1px solid rgba(255,255,255,0.15)',
+              backgroundColor: 'var(--color-bg-popover)',
+              border: '1px solid var(--color-border-subtle)',
               display: hovered || menuOpen ? 'flex' : 'none',
               alignItems: 'center',
               justifyContent: 'center',
@@ -833,14 +833,14 @@ function RowHandle({ editor, activeCellRef, rect, onDragStart, isDragging }: Han
             onClick={(e) => e.stopPropagation()}
           >
             <svg width={8} height={8} viewBox="0 0 8 8" fill="none">
-              <path d="M1.5 3L4 5.5L6.5 3" stroke="#888" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M1.5 3L4 5.5L6.5 3" stroke="var(--color-tx-muted)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content
             data-table-handle="true"
-            className="z-[9999] min-w-[140px] rounded-lg py-1 bg-[#1e1e1e] border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.5)] text-[13px]"
+            className="z-[9999] min-w-[140px] rounded-lg py-1 bg-bg-popover border border-border-subtle shadow-[0_4px_20px_rgba(0,0,0,0.15)] text-[13px]"
             sideOffset={5}
           >
             <MenuItem label="Insert row above" onSelect={() => insertRow(false)} />
@@ -943,8 +943,8 @@ function ColHandle({ editor, activeCellRef, rect, onDragStart, isDragging }: Han
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: hovered || menuOpen ? 'rgba(94,234,212,0.15)' : 'rgba(255,255,255,0.05)',
-        border: '1px solid rgba(255,255,255,0.1)',
+        backgroundColor: hovered || menuOpen ? 'var(--color-bg-active)' : 'var(--color-bg-hover)',
+        border: '1px solid var(--color-border-subtle)',
         borderRadius: 4,
         cursor: hovered && !menuOpen ? 'grab' : 'default',
         transition: 'background-color 0.12s',
@@ -981,8 +981,8 @@ function ColHandle({ editor, activeCellRef, rect, onDragStart, isDragging }: Han
               width: 12,
               height: 12,
               borderRadius: '50%',
-              backgroundColor: '#252525',
-              border: '1px solid rgba(255,255,255,0.15)',
+              backgroundColor: 'var(--color-bg-popover)',
+              border: '1px solid var(--color-border-subtle)',
               display: hovered || menuOpen ? 'flex' : 'none',
               alignItems: 'center',
               justifyContent: 'center',
@@ -993,14 +993,14 @@ function ColHandle({ editor, activeCellRef, rect, onDragStart, isDragging }: Han
             onClick={(e) => e.stopPropagation()}
           >
             <svg width={8} height={8} viewBox="0 0 8 8" fill="none">
-              <path d="M1.5 3L4 5.5L6.5 3" stroke="#888" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M1.5 3L4 5.5L6.5 3" stroke="var(--color-tx-muted)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content
             data-table-handle="true"
-            className="z-[9999] min-w-[140px] rounded-lg py-1 bg-[#1e1e1e] border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.5)] text-[13px]"
+            className="z-[9999] min-w-[140px] rounded-lg py-1 bg-bg-popover border border-border-subtle shadow-[0_4px_20px_rgba(0,0,0,0.15)] text-[13px]"
             sideOffset={5}
           >
             <MenuItem label="Insert column left" onSelect={() => insertCol(false)} />
@@ -1028,7 +1028,7 @@ function MenuItem({
       className={`flex items-center px-3 py-1.5 outline-none cursor-pointer transition-colors ${
         danger
           ? 'text-red-400 hover:bg-red-500/10'
-          : 'text-[#ccc] hover:bg-white/5'
+          : 'text-tx-main hover:bg-bg-hover'
       }`}
       onSelect={onSelect}
     >
@@ -1038,7 +1038,7 @@ function MenuItem({
 }
 
 function MenuDiv(): JSX.Element {
-  return <div className="h-[1px] bg-white/8 my-1 mx-2" />
+  return <div className="h-[1px] bg-bg-active my-1 mx-2" />
 }
 
 function MiniGrip({ horizontal = false }: { horizontal?: boolean }): JSX.Element {
@@ -1054,7 +1054,7 @@ function MiniGrip({ horizontal = false }: { horizontal?: boolean }): JSX.Element
       }}
     >
       {[0, 1, 2, 3, 4, 5].map((i) => (
-        <div key={i} style={{ width: 2, height: 2, borderRadius: '50%', backgroundColor: '#ccc' }} />
+        <div key={i} style={{ width: 2, height: 2, borderRadius: '50%', backgroundColor: 'var(--color-tx-muted)' }} />
       ))}
     </div>
   )
