@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -7,6 +7,7 @@ import { loadState, saveState } from './core/workspace-store'
 import { setWorkspacePath } from './core/fs'
 import { fileWatcher } from './core/watcher'
 import { ptyManager } from './core/pty-manager'
+import { registerAssetProtocol } from './core/asset-protocol'
 
 function createWindow(): void {
   const state = loadState()
@@ -61,6 +62,11 @@ function createWindow(): void {
   }
 }
 
+// Register custom protocol scheme before app is ready
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'lite-asset', privileges: { secure: true, supportFetchAPI: true, stream: true } }
+])
+
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
 
@@ -70,6 +76,9 @@ app.whenReady().then(() => {
 
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
+
+  // Register custom asset protocol for serving workspace images
+  registerAssetProtocol()
 
   // Setup Local Service Core IPC Handlers
   setupIpcHandlers()

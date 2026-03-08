@@ -32,6 +32,27 @@ export interface TerminalAPI {
   onExit: (callback: (id: string, exitCode: number) => void) => () => void
 }
 
+export interface ImageAPI {
+  save: (data: ArrayBuffer, mimeType: string) => Promise<IpcResult<string>>
+  saveFromUrl: (imageUrl: string) => Promise<IpcResult<string>>
+  saveFromPath: (localPath: string) => Promise<IpcResult<string>>
+  delete: (filename: string) => Promise<IpcResult<void>>
+}
+
+export interface DialogAPI {
+  selectImages: () => Promise<IpcResult<string[]>>
+}
+
+export interface UrlMeta {
+  title: string
+  description: string
+  image: string
+}
+
+export interface UrlAPI {
+  fetchMeta: (url: string) => Promise<IpcResult<UrlMeta>>
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -39,6 +60,9 @@ declare global {
       workspace: WorkspaceAPI
       state: StateAPI
       fs: FileSystemAPI
+      image: ImageAPI
+      dialog: DialogAPI
+      url: UrlAPI
       terminal: TerminalAPI
     }
   }

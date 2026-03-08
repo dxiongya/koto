@@ -31,6 +31,23 @@ const api = {
       }
     },
   },
+  image: {
+    save: (data: ArrayBuffer, mimeType: string) =>
+      ipcRenderer.invoke(IpcChannels.IMAGE_SAVE, data, mimeType),
+    saveFromUrl: (imageUrl: string) =>
+      ipcRenderer.invoke(IpcChannels.IMAGE_SAVE_FROM_URL, imageUrl),
+    saveFromPath: (localPath: string) =>
+      ipcRenderer.invoke(IpcChannels.IMAGE_SAVE_FROM_PATH, localPath),
+    delete: (filename: string) =>
+      ipcRenderer.invoke(IpcChannels.IMAGE_DELETE, filename),
+  },
+  dialog: {
+    selectImages: () => ipcRenderer.invoke(IpcChannels.DIALOG_SELECT_IMAGES),
+  },
+  url: {
+    fetchMeta: (url: string) =>
+      ipcRenderer.invoke(IpcChannels.URL_FETCH_META, url),
+  },
   terminal: {
     create: (cwd?: string) => ipcRenderer.invoke(IpcChannels.TERMINAL_CREATE, cwd),
     write: (id: string, data: string) =>

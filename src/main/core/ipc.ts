@@ -5,6 +5,7 @@ import { FileSystemCore, setWorkspacePath, getWorkspacePath } from './fs'
 import { loadState, saveState, addRecentWorkspace } from './workspace-store'
 import { fileWatcher } from './watcher'
 import { ptyManager } from './pty-manager'
+import { saveImage, saveImageFromUrl, saveImageFromPath, deleteImage } from './image-storage'
 
 export function setupIpcHandlers(): void {
   // ── Workspace ──
@@ -98,5 +99,90 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.TERMINAL_CLOSE, (_, id: string) => {
     ptyManager.close(id)
+  })
+
+  // ── Image Storage ──
+
+  ipcMain.handle(IpcChannels.IMAGE_SAVE, async (_, data: ArrayBuffer, mimeType: string) => {
+    try {
+      const filename = await saveImage(data, mimeType)
+      return { ok: true, data: filename }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.IMAGE_SAVE_FROM_URL, async (_, imageUrl: string) => {
+    try {
+      const filename = await saveImageFromUrl(imageUrl)
+      return { ok: true, data: filename }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.IMAGE_SAVE_FROM_PATH, async (_, localPath: string) => {
+    try {
+      const filename = await saveImageFromPath(localPath)
+      return { ok: true, data: filename }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.IMAGE_DELETE, async (_, filename: string) => {
+    try {
+      await deleteImage(filename)
+      return { ok: true, data: undefined }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  // ── Dialog ──
+
+  // ── URL Metadata ──
+
+  ipcMain.handle(IpcChannels.URL_FETCH_META, async (_, url: string) => {
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; LiteBot/1.0)' },
+        signal: AbortSignal.timeout(8000),
+        redirect: 'follow',
+      })
+      if (!response.ok) return { ok: true, data: { title: '', description: '', image: '' } }
+
+      const html = await response.text()
+      const getMetaContent = (name: string): string => {
+        const re = new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]+content=["']([^"']+)["']`, 'i')
+        const altRe = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${name}["']`, 'i')
+        return re.exec(html)?.[1] || altRe.exec(html)?.[1] || ''
+      }
+      const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
+      const title = getMetaContent('og:title') || titleMatch?.[1]?.trim() || ''
+      const description = getMetaContent('og:description') || getMetaContent('description') || ''
+      const image = getMetaContent('og:image') || ''
+
+      return { ok: true, data: { title, description, image } }
+    } catch {
+      return { ok: true, data: { title: '', description: '', image: '' } }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.DIALOG_SELECT_IMAGES, async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return { ok: false, error: 'No focused window' }
+
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'] },
+      ],
+    })
+
+    if (result.canceled) {
+      return { ok: false, error: 'cancelled' }
+    }
+    return { ok: true, data: result.filePaths }
   })
 }

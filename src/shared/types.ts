@@ -44,6 +44,18 @@ export const IpcChannels = {
   TERMINAL_CLOSE: 'terminal:close',
   TERMINAL_DATA: 'terminal:data',
   TERMINAL_EXIT: 'terminal:exit',
+
+  // Image Storage
+  IMAGE_SAVE: 'image:save',
+  IMAGE_SAVE_FROM_URL: 'image:saveFromUrl',
+  IMAGE_SAVE_FROM_PATH: 'image:saveFromPath',
+  IMAGE_DELETE: 'image:delete',
+
+  // Dialog
+  DIALOG_SELECT_IMAGES: 'dialog:selectImages',
+
+  // URL Metadata
+  URL_FETCH_META: 'url:fetchMeta',
 } as const
 
 // ── File Stat ──

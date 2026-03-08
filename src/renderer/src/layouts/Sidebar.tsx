@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
-import { ChevronRight, ChevronDown, Loader2, Code, Chrome, FileText, Terminal, FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Globe } from 'lucide-react'
+import { ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal, FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Globe, Plus } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import type { AppType, FileNode } from '../../../shared/types'
 
@@ -170,7 +170,20 @@ export const Sidebar: React.FC = () => {
   const handleFileClick = useCallback(
     (path: string) => {
       setActiveFilePath(path)
-      setCurrentApp('code.app')
+      // If it's a .md file and we're in notes.app, stay there; otherwise go to code.app
+      if (path.endsWith('.md') && currentApp === 'notes.app') {
+        // stay in notes.app
+      } else {
+        setCurrentApp('code.app')
+      }
+    },
+    [setActiveFilePath, setCurrentApp, currentApp]
+  )
+
+  const handleNoteFileClick = useCallback(
+    (path: string) => {
+      setActiveFilePath(path)
+      setCurrentApp('notes.app')
     },
     [setActiveFilePath, setCurrentApp]
   )
@@ -203,8 +216,13 @@ export const Sidebar: React.FC = () => {
     const unsub = window.api.fs.onWatchEvent((event) => {
       const parentDir = getParentPath(event.path)
 
-      // If the change is in the workspace root or in an expanded directory, refresh
-      if (parentDir === workspacePathRef.current || expandedPaths.includes(parentDir)) {
+      // Refresh if change is in workspace root, expanded directory, or notes directory
+      const notesDir = workspacePathRef.current ? workspacePathRef.current + '/notes' : null
+      if (
+        parentDir === workspacePathRef.current ||
+        expandedPaths.includes(parentDir) ||
+        (notesDir && parentDir === notesDir)
+      ) {
         setRefreshCounter((c) => c + 1)
       }
     })
@@ -293,27 +311,15 @@ export const Sidebar: React.FC = () => {
         )}
 
         {/* notes.app */}
-        <div 
-          onClick={() => handleAppClick('notes.app')}
-          className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
-            ${currentApp === 'notes.app' ? 'bg-[#222222]' : 'hover:bg-[#1a1a1a]'}`}
-        >
-          {currentApp === 'notes.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#d4d4d4]" />}
-          <div className="flex items-center justify-center w-4 h-4 shrink-0 text-[#888]">
-            <FileText size={14} strokeWidth={2.5} />
-          </div>
-          <SplitName name="notes.app" isActive={currentApp === 'notes.app'} />
-          <div className="ml-auto">
-            {expandedSections.includes('notes.app') ? <ChevronDown size={14} className="text-[#666]" /> : <ChevronRight size={14} className="text-[#666]" />}
-          </div>
-        </div>
-        {expandedSections.includes('notes.app') && (
-          <div className="mb-3 mt-1">
-            <div className="pl-[32px] py-1 text-[13px] text-[#666] hover:text-[#b0b0b0] cursor-pointer">
-              New note...
-            </div>
-          </div>
-        )}
+        <NotesAppSection
+          currentApp={currentApp}
+          expanded={expandedSections.includes('notes.app')}
+          onHeaderClick={() => handleAppClick('notes.app')}
+          workspacePath={workspacePath}
+          activeFilePath={activeFilePath}
+          onFileClick={handleNoteFileClick}
+          refreshCounter={refreshCounter}
+        />
 
         {/* terminal.app */}
         <div 
@@ -339,5 +345,173 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
     </div>
+  )
+}
+
+// ── Notes App Sidebar Section ──
+
+const NotesAppSection: React.FC<{
+  currentApp: AppType
+  expanded: boolean
+  onHeaderClick: () => void
+  workspacePath: string | null
+  activeFilePath: string | null
+  onFileClick: (path: string) => void
+  refreshCounter: number
+}> = ({ currentApp, expanded, onHeaderClick, workspacePath, activeFilePath, onFileClick, refreshCounter }) => {
+  const [noteFiles, setNoteFiles] = useState<FileNode[]>([])
+  const [isCreating, setIsCreating] = useState(false)
+  const [newNoteName, setNewNoteName] = useState('')
+  const [localRefresh, setLocalRefresh] = useState(0)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const notesDir = workspacePath ? workspacePath + '/notes' : null
+
+  const reloadNotes = useCallback(() => {
+    if (!notesDir) return
+    window.api.fs.createDir(notesDir).then(() => {
+      window.api.fs.readDir(notesDir).then((res) => {
+        if (res.ok) {
+          setNoteFiles(
+            res.data.filter((f) => !f.isDirectory && f.name.endsWith('.md'))
+          )
+        }
+      })
+    })
+  }, [notesDir])
+
+  // Load notes from workspace/notes/ directory
+  useEffect(() => {
+    if (!expanded || !notesDir) {
+      setNoteFiles([])
+      return
+    }
+    reloadNotes()
+  }, [expanded, notesDir, refreshCounter, localRefresh, reloadNotes])
+
+  const handleCreateNote = useCallback(async () => {
+    if (!notesDir) return
+    const name = newNoteName.trim() || `untitled-${Date.now()}`
+    const fileName = name.endsWith('.md') ? name : `${name}.md`
+    const filePath = `${notesDir}/${fileName}`
+
+    await window.api.fs.createDir(notesDir)
+    const res = await window.api.fs.createFile(filePath)
+    if (res.ok) {
+      await window.api.fs.writeFile(filePath, `# ${name.replace('.md', '')}\n\n`)
+      // Refresh the list immediately, then open the file
+      setLocalRefresh((c) => c + 1)
+      onFileClick(filePath)
+    }
+    setIsCreating(false)
+    setNewNoteName('')
+  }, [notesDir, newNoteName, onFileClick])
+
+  const startCreating = useCallback(() => {
+    if (!workspacePath) return
+    setIsCreating(true)
+    setNewNoteName('')
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }, [workspacePath])
+
+  return (
+    <>
+      <div
+        onClick={onHeaderClick}
+        className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
+          ${currentApp === 'notes.app' ? 'bg-[#222222]' : 'hover:bg-[#1a1a1a]'}`}
+      >
+        {currentApp === 'notes.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#d4d4d4]" />}
+        <div className="flex items-center justify-center w-4 h-4 shrink-0 text-[#888]">
+          <FileText size={14} strokeWidth={2.5} />
+        </div>
+        <SplitName name="notes.app" isActive={currentApp === 'notes.app'} />
+        <div className="ml-auto flex items-center gap-1">
+          {workspacePath && (
+            <div
+              onClick={(e) => {
+                e.stopPropagation()
+                startCreating()
+              }}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-white/10"
+              title="New note"
+            >
+              <Plus size={12} className="text-[#888]" />
+            </div>
+          )}
+          {expanded ? <ChevronDown size={14} className="text-[#666]" /> : <ChevronRight size={14} className="text-[#666]" />}
+        </div>
+      </div>
+      {expanded && (
+        <div className="mb-3 mt-1">
+          {!workspacePath ? (
+            <div className="pl-[32px] py-1 text-[13px] text-[#555]">
+              Open a workspace first
+            </div>
+          ) : (
+            <>
+              {/* New note input */}
+              {isCreating && (
+                <div className="pl-[32px] pr-3 py-1 flex items-center gap-1.5">
+                  <FileText size={13} className="text-[#888] shrink-0" />
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={newNoteName}
+                    onChange={(e) => setNewNoteName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        handleCreateNote()
+                      }
+                      if (e.key === 'Escape') {
+                        setIsCreating(false)
+                        setNewNoteName('')
+                      }
+                    }}
+                    onBlur={() => {
+                      if (newNoteName.trim()) {
+                        handleCreateNote()
+                      } else {
+                        setIsCreating(false)
+                      }
+                    }}
+                    placeholder="note name..."
+                    className="flex-1 bg-transparent text-[13px] text-[#ccc] outline-none border-b border-[#333] placeholder-[#555] py-0.5"
+                  />
+                </div>
+              )}
+
+              {/* Note files list */}
+              {noteFiles.map((note) => {
+                const isActive = note.path === activeFilePath
+                return (
+                  <div
+                    key={note.path}
+                    onClick={() => onFileClick(note.path)}
+                    className={`pl-[32px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative
+                      ${isActive ? 'bg-[#222222]' : 'hover:bg-[#1a1a1a]'}`}
+                  >
+                    {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-[#d4d4d4]" />}
+                    <FileText size={13} className="text-[#888] shrink-0" />
+                    <SplitName name={note.name} isActive={isActive} />
+                  </div>
+                )
+              })}
+
+              {/* Empty state with create action */}
+              {noteFiles.length === 0 && !isCreating && (
+                <div
+                  onClick={startCreating}
+                  className="pl-[32px] py-1 text-[13px] text-[#555] hover:text-[#999] cursor-pointer"
+                >
+                  New note...
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </>
   )
 }
