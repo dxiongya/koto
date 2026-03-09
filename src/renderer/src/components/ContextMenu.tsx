@@ -24,6 +24,11 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
   globalShow?.({ x, y, items })
 }
 
+/** Imperatively hide context menu from anywhere */
+export function hideContextMenu(): void {
+  globalHide?.()
+}
+
 /** Hook for use in onContextMenu handlers */
 export function useContextMenu() {
   return useCallback((e: React.MouseEvent, items: ContextMenuItem[]) => {

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal,
   FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Plus, Moon, Sun, FolderOpen, FolderPlus, X,
-  Pencil, Trash2, FilePlus, FolderInput
+  Pencil, Trash2, FilePlus, FolderInput, Settings
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import { useContextMenu, type ContextMenuItem } from '../components/ContextMenu'
@@ -1017,6 +1017,15 @@ export const Sidebar: React.FC = () => {
           title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
         >
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+        </button>
+        <button
+          onClick={() => setCurrentApp('settings.app')}
+          className={`p-1.5 rounded-md hover:bg-bg-hover transition-colors ${
+            currentApp === 'settings.app' ? 'text-accent-main' : 'text-tx-faint hover:text-tx-main'
+          }`}
+          title="Settings"
+        >
+          <Settings size={15} />
         </button>
       </div>
 

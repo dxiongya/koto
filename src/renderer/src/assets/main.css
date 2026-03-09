@@ -1,8 +1,31 @@
 @import "tailwindcss";
 
+/* ─── Geist Fonts ────────────────────────────────────────────────────── */
+@font-face {
+  font-family: "Geist Mono";
+  src: url("./fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("./fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Pixel Square";
+  src: url("./fonts/GeistPixel-Square.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  
+
   --color-bg-app: var(--bg-app);
   --color-bg-sidebar: var(--bg-sidebar);
   --color-bg-hover: var(--bg-hover);
@@ -21,28 +44,8 @@
   --color-accent-bg: var(--accent-bg);
 }
 
+/* Default: Dark theme (applied by JS via applyTheme, these are fallbacks) */
 :root {
-  /* Warm Light Theme */
-  --bg-app: #FCFBF9;
-  --bg-sidebar: #F7F6F3;
-  --bg-hover: rgba(0, 0, 0, 0.05);
-  --bg-active: #E8F4F2; 
-  --bg-popover: #FFFFFF;
-  --bg-input: rgba(0, 0, 0, 0.03);
-
-  --tx-main: #2b2b2b;
-  --tx-muted: #666666;
-  --tx-faint: #888888;
-
-  --border-subtle: rgba(0, 0, 0, 0.08);
-  --border-strong: rgba(0, 0, 0, 0.16);
-
-  --accent-main: #2b8a73;
-  --accent-bg: #E8F4F2;
-}
-
-.dark {
-  /* Dark Theme */
   --bg-app: #111111;
   --bg-sidebar: #161616;
   --bg-hover: #1a1a1a;

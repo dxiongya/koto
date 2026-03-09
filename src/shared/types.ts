@@ -82,7 +82,7 @@ export interface FsWatchEvent {
 
 // ── App Types ──
 
-export type AppType = 'notes.app' | 'code.app' | 'browser.app' | 'terminal.app' | 'collector.app'
+export type AppType = 'notes.app' | 'code.app' | 'browser.app' | 'terminal.app' | 'collector.app' | 'settings.app'
 
 // ── Per-App State ──
 
@@ -99,7 +99,8 @@ export interface TerminalSessionInfo {
 
 export interface LiteConfig {
   lastApp: AppType
-  lastTheme: 'light' | 'dark'
+  lastTheme: string
+  fontFamily: string
   windowBounds: { x: number; y: number; width: number; height: number } | null
   sidebarOpen: boolean
   appStates: Record<AppType, PerAppState>
@@ -123,6 +124,7 @@ export const DEFAULT_PER_APP_STATE: PerAppState = {
 export const DEFAULT_LITE_CONFIG: LiteConfig = {
   lastApp: 'notes.app',
   lastTheme: 'dark',
+  fontFamily: 'sf-mono',
   windowBounds: null,
   sidebarOpen: true,
   appStates: {
@@ -131,6 +133,7 @@ export const DEFAULT_LITE_CONFIG: LiteConfig = {
     'browser.app': { ...DEFAULT_PER_APP_STATE },
     'terminal.app': { ...DEFAULT_PER_APP_STATE },
     'collector.app': { ...DEFAULT_PER_APP_STATE },
+    'settings.app': { ...DEFAULT_PER_APP_STATE },
   },
   notesExpandedGroups: [],
   notesSortBy: 'modified',

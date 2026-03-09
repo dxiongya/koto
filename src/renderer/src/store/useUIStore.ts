@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import type { AppType, PerAppState } from '../../../shared/types'
 import { DEFAULT_PER_APP_STATE } from '../../../shared/types'
+import type { FontId } from '../themes/types'
+import { builtinThemes, applyTheme, applyFont } from '../themes'
 
 export interface TerminalSession {
   id: string
@@ -8,8 +10,9 @@ export interface TerminalSession {
 }
 
 interface UIState {
-  // Theme
-  theme: 'light' | 'dark'
+  // Theme & Font
+  theme: string
+  fontFamily: FontId
 
   // Lite Home
   liteHome: string | null
@@ -42,7 +45,9 @@ interface UIState {
   setCurrentApp: (app: AppType) => void
   setShowCommandPalette: (show: boolean) => void
   toggleCommandPalette: () => void
+  setTheme: (themeId: string) => void
   toggleTheme: () => void
+  setFontFamily: (fontId: FontId) => void
   toggleSidebar: () => void
 
   // Per-app state: operates on currentApp
@@ -78,7 +83,7 @@ function persistState(patch: Record<string, unknown>): void {
   }, 300)
 }
 
-const ALL_APPS: AppType[] = ['notes.app', 'code.app', 'browser.app', 'terminal.app', 'collector.app']
+const ALL_APPS: AppType[] = ['notes.app', 'code.app', 'browser.app', 'terminal.app', 'collector.app', 'settings.app']
 
 function defaultAppStates(): Record<AppType, PerAppState> {
   const states = {} as Record<AppType, PerAppState>
@@ -90,6 +95,7 @@ function defaultAppStates(): Record<AppType, PerAppState> {
 
 export const useUIStore = create<UIState>((set, get) => ({
   theme: 'dark',
+  fontFamily: 'sf-mono' as FontId,
   liteHome: null,
   currentApp: 'notes.app',
   showCommandPalette: false,
@@ -112,15 +118,23 @@ export const useUIStore = create<UIState>((set, get) => ({
   setShowCommandPalette: (show) => set({ showCommandPalette: show }),
   toggleCommandPalette: () => set((s) => ({ showCommandPalette: !s.showCommandPalette })),
 
+  setTheme: (themeId) => {
+    const theme = builtinThemes[themeId]
+    if (!theme) return
+    set({ theme: themeId })
+    persistState({ lastTheme: themeId })
+    applyTheme(theme)
+  },
+
   toggleTheme: () => {
     const nextTheme = get().theme === 'dark' ? 'light' : 'dark'
-    set({ theme: nextTheme })
-    persistState({ lastTheme: nextTheme })
-    if (nextTheme === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
+    get().setTheme(nextTheme)
+  },
+
+  setFontFamily: (fontId) => {
+    set({ fontFamily: fontId })
+    persistState({ fontFamily: fontId })
+    applyFont(fontId)
   },
 
   toggleSidebar: () => {
