@@ -6,7 +6,7 @@ import fs from 'fs/promises'
 import fsSync from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
-import { getWorkspacePath } from './fs'
+import { getLiteHome } from './lite-home'
 
 const MIME_TO_EXT: Record<string, string> = {
   'image/png': '.png',
@@ -18,9 +18,9 @@ const MIME_TO_EXT: Record<string, string> = {
 }
 
 function getImagesDir(): string {
-  const wp = getWorkspacePath()
-  if (!wp) throw new Error('No workspace opened')
-  return path.join(wp, '.images')
+  const home = getLiteHome()
+  if (!home) throw new Error('Lite Home not initialized')
+  return path.join(home, 'images')
 }
 
 async function ensureImagesDir(): Promise<string> {
@@ -94,9 +94,9 @@ export async function deleteImage(filename: string): Promise<void> {
 
 /** Resolve image filename to absolute file path (for protocol handler) */
 export function resolveImagePath(filename: string): string | null {
-  const wp = getWorkspacePath()
-  if (!wp) return null
-  const dir = path.join(wp, '.images')
+  const home = getLiteHome()
+  if (!home) return null
+  const dir = path.join(home, 'images')
   const filePath = path.resolve(path.join(dir, filename))
   // Security check
   if (!filePath.startsWith(path.resolve(dir) + path.sep) && filePath !== path.resolve(dir)) {

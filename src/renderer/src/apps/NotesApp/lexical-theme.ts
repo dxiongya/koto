@@ -16,8 +16,8 @@ export const lexicalTheme: EditorThemeClasses = {
     highlight: 'bg-accent-main/20 text-accent-main px-0.5 rounded-sm',
   },
   list: {
-    ul: 'list-disc pl-6 mb-2 text-tx-main',
-    ol: 'list-decimal pl-6 mb-2 text-tx-main',
+    ul: 'editor-ul list-disc mb-2 text-tx-main',
+    ol: 'editor-ol list-decimal mb-2 text-tx-main',
     listitem: 'mb-1 editor-listitem',
     checklist: 'list-none editor-checklist mb-2',
     listitemChecked: 'line-through opacity-50 relative pl-6 list-none editor-listitem editor-listitem-checked',
@@ -62,4 +62,5 @@ export const lexicalTheme: EditorThemeClasses = {
   tableCellSelected: 'bg-accent-main/[0.06]',
   tableCellPrimarySelected: 'bg-accent-main/[0.04]',
   tableCellEditing: '',
+  hashtag: 'inline-flex items-center justify-center bg-accent-main/15 text-accent-main px-1.5 mx-0.5 rounded-md text-[0.9em] font-medium cursor-pointer hover:bg-accent-main/25 transition-colors align-baseline leading-none py-[0.15em]',
 }

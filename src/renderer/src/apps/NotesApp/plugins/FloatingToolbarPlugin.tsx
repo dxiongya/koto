@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { createPortal } from 'react-dom'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import {
   $getSelection,
@@ -14,6 +15,7 @@ import {
 import { $isHeadingNode, $createHeadingNode, type HeadingTagType } from '@lexical/rich-text'
 import { $setBlocksType } from '@lexical/selection'
 import { $isLinkNode, $toggleLink } from '@lexical/link'
+import { $isCodeNode } from '@lexical/code'
 import {
   Bold,
   Italic,
@@ -25,7 +27,9 @@ import {
   Heading2,
   Heading3,
   ArrowLeft,
-  Check
+  Check,
+  Copy,
+  Search
 } from 'lucide-react'
 import { mergeRegister } from '@lexical/utils'
 
@@ -37,6 +41,7 @@ interface ToolbarState {
   code: boolean
   link: boolean
   blockType: string
+  isCodeBlock: boolean
 }
 
 const EMPTY_STATE: ToolbarState = {
@@ -46,7 +51,8 @@ const EMPTY_STATE: ToolbarState = {
   highlight: false,
   code: false,
   link: false,
-  blockType: 'paragraph'
+  blockType: 'paragraph',
+  isCodeBlock: false
 }
 
 export function FloatingToolbarPlugin(): JSX.Element | null {
@@ -92,6 +98,18 @@ export function FloatingToolbarPlugin(): JSX.Element | null {
     }
 
     let blockType = 'paragraph'
+    let isCodeBlock = false
+    
+    // Check if inside a code block by traversing up
+    let n: LexicalNode | null = selection.anchor.getNode()
+    while (n) {
+      if ($isCodeNode(n)) {
+        isCodeBlock = true
+        break
+      }
+      n = n.getParent()
+    }
+
     try {
       const element = selection.anchor.getNode().getTopLevelElementOrThrow()
       if ($isHeadingNode(element)) blockType = element.getTag()
@@ -106,19 +124,26 @@ export function FloatingToolbarPlugin(): JSX.Element | null {
       highlight: selection.hasFormat('highlight'),
       code: selection.hasFormat('code'),
       link: isLink,
-      blockType
+      blockType,
+      isCodeBlock
     })
 
     const rect = range.getBoundingClientRect()
     const toolbarH = 36
     const gap = 8
+    
+    // Default to positioning above the selection
     let top = rect.top - toolbarH - gap
-    if (top < 8) top = rect.bottom + gap
+    let left = Math.max(160, Math.min(rect.left + rect.width / 2, window.innerWidth - 160))
+    
+    // If we're too close to the top of the window, or if we are in a code block 
+    // where placing it above might overlap with the code language toolbar,
+    // place it below the selection instead.
+    if (top < 32 || isCodeBlock) {
+      top = rect.bottom + gap
+    }
 
-    setPosition({
-      top,
-      left: Math.max(160, Math.min(rect.left + rect.width / 2, window.innerWidth - 160))
-    })
+    setPosition({ top, left })
     setIsVisible(true)
   }, [editor])
 
@@ -226,9 +251,30 @@ export function FloatingToolbarPlugin(): JSX.Element | null {
     }
   }, [editor, state.link, enterLinkMode])
 
+  const handleCopyCodeSelection = useCallback(() => {
+    editor.getEditorState().read(() => {
+      const selection = $getSelection()
+      if ($isRangeSelection(selection)) {
+        navigator.clipboard.writeText(selection.getTextContent())
+      }
+    })
+    setIsVisible(false)
+  }, [editor])
+
+  const handleSearchCodeSelection = useCallback(() => {
+    editor.getEditorState().read(() => {
+      const selection = $getSelection()
+      if ($isRangeSelection(selection)) {
+        const text = selection.getTextContent()
+        window.open(`https://google.com/search?q=${encodeURIComponent(text)}`, '_blank')
+      }
+    })
+    setIsVisible(false)
+  }, [editor])
+
   if (!isVisible) return null
 
-  return (
+  return createPortal(
     <div
       ref={toolbarRef}
       className="fixed z-50 animate-in fade-in duration-150"
@@ -267,6 +313,15 @@ export function FloatingToolbarPlugin(): JSX.Element | null {
             />
             <TBtn onClick={submitLink} active={false} title="Confirm">
               <Check className="w-3.5 h-3.5" />
+            </TBtn>
+          </>
+        ) : state.isCodeBlock ? (
+          <>
+            <TBtn onClick={handleCopyCodeSelection} active={false} title="Copy selection">
+              <Copy className="w-3.5 h-3.5" />
+            </TBtn>
+            <TBtn onClick={handleSearchCodeSelection} active={false} title="Search selection">
+              <Search className="w-3.5 h-3.5" />
             </TBtn>
           </>
         ) : (
@@ -323,7 +378,8 @@ export function FloatingToolbarPlugin(): JSX.Element | null {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

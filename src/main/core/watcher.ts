@@ -12,23 +12,37 @@ const IGNORE = new Set([
 ])
 
 export class FileWatcher {
-  private watcher: fs.FSWatcher | null = null
+  private watchers = new Map<string, fs.FSWatcher>()
   private debounceMap = new Map<string, ReturnType<typeof setTimeout>>()
 
-  start(workspacePath: string): void {
-    this.stop()
+  /** Watch liteHome/notes/ — always active */
+  watchNotes(notesDir: string): void {
+    this.startWatch('notes', notesDir)
+  }
 
+  /** Watch a code project directory — replaces previous project watch */
+  watchProject(projectPath: string): void {
+    this.stopWatch('project')
+    this.startWatch('project', projectPath)
+  }
+
+  stopAll(): void {
+    for (const [key] of this.watchers) {
+      this.stopWatch(key)
+    }
+    for (const t of this.debounceMap.values()) clearTimeout(t)
+    this.debounceMap.clear()
+  }
+
+  private startWatch(key: string, dirPath: string): void {
+    this.stopWatch(key)
     try {
-      this.watcher = fs.watch(workspacePath, { recursive: true }, (_eventType, filename) => {
+      const watcher = fs.watch(dirPath, { recursive: true }, (_eventType, filename) => {
         if (!filename) return
-
-        // Ignore hidden files and blacklisted directories
         const parts = filename.split(path.sep)
         if (parts.some((p) => p.startsWith('.') || IGNORE.has(p))) return
 
-        const fullPath = path.join(workspacePath, filename)
-
-        // Debounce per path: 150ms
+        const fullPath = path.join(dirPath, filename)
         const existing = this.debounceMap.get(fullPath)
         if (existing) clearTimeout(existing)
 
@@ -40,33 +54,28 @@ export class FileWatcher {
           }, 150),
         )
       })
+      this.watchers.set(key, watcher)
     } catch (err) {
-      console.error('FileWatcher: failed to start', err)
+      console.error(`FileWatcher: failed to start watch for ${key}`, err)
     }
   }
 
-  stop(): void {
-    if (this.watcher) {
-      this.watcher.close()
-      this.watcher = null
+  private stopWatch(key: string): void {
+    const watcher = this.watchers.get(key)
+    if (watcher) {
+      watcher.close()
+      this.watchers.delete(key)
     }
-    for (const t of this.debounceMap.values()) clearTimeout(t)
-    this.debounceMap.clear()
   }
 
   private async resolveAndEmit(fullPath: string): Promise<void> {
     let event: FsWatchEvent
-
     try {
       await fsp.access(fullPath)
-      // Path exists — could be create or update, we emit 'update' generically
-      // (renderer treats both as "re-fetch parent directory")
       event = { type: 'update', path: fullPath }
     } catch {
-      // Path doesn't exist — it was deleted
       event = { type: 'delete', path: fullPath }
     }
-
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send(IpcChannels.FS_WATCH_EVENT, event)
     }

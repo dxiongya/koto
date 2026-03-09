@@ -4,20 +4,25 @@ import { useUIStore } from '../store/useUIStore'
 
 export const Header: React.FC = () => {
   const currentApp = useUIStore((s) => s.currentApp)
-  const activeFilePath = useUIStore((s) => s.activeFilePath)
-  const workspacePath = useUIStore((s) => s.workspacePath)
+  const activeFilePath = useUIStore((s) => s.getActiveFilePath())
+  const liteHome = useUIStore((s) => s.liteHome)
+  const codeProjectPath = useUIStore((s) => s.codeProjectPath)
   const sidebarOpen = useUIStore((s) => s.sidebarOpen)
   const toggleSidebar = useUIStore((s) => s.toggleSidebar)
 
-  // Build breadcrumb from active file path relative to workspace
+  // Build breadcrumb relative to the appropriate root
   const breadcrumb: string[] = [currentApp]
-  if (activeFilePath && workspacePath) {
-    const rel = activeFilePath.startsWith(workspacePath)
-      ? activeFilePath.slice(workspacePath.length + 1)
-      : activeFilePath
-    breadcrumb.push(...rel.split('/'))
-  } else if (activeFilePath) {
-    breadcrumb.push(...activeFilePath.split('/').filter(Boolean).slice(-4))
+  if (activeFilePath) {
+    let rel = activeFilePath
+    // Strip liteHome prefix for notes/collector/browser
+    if (liteHome && activeFilePath.startsWith(liteHome)) {
+      rel = activeFilePath.slice(liteHome.length + 1)
+    }
+    // Strip project prefix for code.app
+    else if (codeProjectPath && activeFilePath.startsWith(codeProjectPath)) {
+      rel = activeFilePath.slice(codeProjectPath.length + 1)
+    }
+    breadcrumb.push(...rel.split('/').filter(Boolean))
   }
 
   return (
@@ -27,7 +32,7 @@ export const Header: React.FC = () => {
       }`}
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
-      <div 
+      <div
         className="flex items-center gap-2 mr-4"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       >

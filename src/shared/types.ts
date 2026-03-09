@@ -16,9 +16,12 @@ export type IpcResult<T = void> =
 // ── IPC Channel Names ──
 
 export const IpcChannels = {
-  // Workspace
-  WORKSPACE_OPEN: 'workspace:open',
-  WORKSPACE_GET: 'workspace:get',
+  // Lite Home
+  LITE_GET_HOME: 'lite:getHome',
+
+  // Project (code.app)
+  PROJECT_OPEN: 'project:open',
+  PROJECT_GET: 'project:get',
 
   // State Persistence
   STATE_GET: 'state:get',
@@ -81,14 +84,57 @@ export interface FsWatchEvent {
 
 export type AppType = 'notes.app' | 'code.app' | 'browser.app' | 'terminal.app' | 'collector.app'
 
-// ── Workspace State (Persistence) ──
+// ── Per-App State ──
 
-export interface WorkspaceState {
-  recentWorkspaces: string[]
-  lastWorkspacePath: string | null
+export interface PerAppState {
+  activeFilePath: string | null
+  expandedPaths: string[]
+}
+
+// ── Lite Config (Persistence) ──
+
+export interface TerminalSessionInfo {
+  title: string
+}
+
+export interface LiteConfig {
   lastApp: AppType
-  lastTheme?: 'light' | 'dark'
-  lastActiveFilePath: string | null
+  lastTheme: 'light' | 'dark'
   windowBounds: { x: number; y: number; width: number; height: number } | null
-  sidebarExpandedPaths: string[]
+  sidebarOpen: boolean
+  appStates: Record<AppType, PerAppState>
+  // notes.app
+  notesExpandedGroups: string[]
+  notesSortBy: 'modified' | 'name' | 'created'
+  // code.app
+  codeProjectPath: string | null
+  recentProjects: string[]
+  // terminal.app
+  terminalSessions: TerminalSessionInfo[]
+}
+
+// ── Default Per-App State ──
+
+export const DEFAULT_PER_APP_STATE: PerAppState = {
+  activeFilePath: null,
+  expandedPaths: [],
+}
+
+export const DEFAULT_LITE_CONFIG: LiteConfig = {
+  lastApp: 'notes.app',
+  lastTheme: 'dark',
+  windowBounds: null,
+  sidebarOpen: true,
+  appStates: {
+    'notes.app': { ...DEFAULT_PER_APP_STATE },
+    'code.app': { ...DEFAULT_PER_APP_STATE },
+    'browser.app': { ...DEFAULT_PER_APP_STATE },
+    'terminal.app': { ...DEFAULT_PER_APP_STATE },
+    'collector.app': { ...DEFAULT_PER_APP_STATE },
+  },
+  notesExpandedGroups: [],
+  notesSortBy: 'modified',
+  codeProjectPath: null,
+  recentProjects: [],
+  terminalSessions: [],
 }

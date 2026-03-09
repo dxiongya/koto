@@ -3,17 +3,18 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { setupIpcHandlers } from './core/ipc'
-import { loadState, saveState } from './core/workspace-store'
-import { setWorkspacePath } from './core/fs'
+import { initLiteHome, loadConfig, saveConfig } from './core/lite-home'
+import { setProjectPath } from './core/fs'
 import { fileWatcher } from './core/watcher'
 import { ptyManager } from './core/pty-manager'
 import { registerAssetProtocol } from './core/asset-protocol'
 
 function createWindow(): void {
-  const state = loadState()
+  const liteHome = initLiteHome()
+  const config = loadConfig()
 
   // Restore saved window bounds or use defaults
-  const bounds = state.windowBounds ?? { width: 1200, height: 800 }
+  const bounds = config.windowBounds ?? { width: 1200, height: 800 }
 
   const mainWindow = new BrowserWindow({
     ...bounds,
@@ -28,10 +29,13 @@ function createWindow(): void {
     },
   })
 
-  // Restore last workspace path into fs module + start watcher
-  if (state.lastWorkspacePath) {
-    setWorkspacePath(state.lastWorkspacePath)
-    fileWatcher.start(state.lastWorkspacePath)
+  // Always watch notes directory
+  fileWatcher.watchNotes(join(liteHome, 'notes'))
+
+  // Restore last project path for code.app
+  if (config.codeProjectPath) {
+    setProjectPath(config.codeProjectPath)
+    fileWatcher.watchProject(config.codeProjectPath)
   }
 
   // Save window bounds on resize/move (debounced)
@@ -40,7 +44,7 @@ function createWindow(): void {
     if (boundsTimer) clearTimeout(boundsTimer)
     boundsTimer = setTimeout(() => {
       const b = mainWindow.getBounds()
-      saveState({ windowBounds: b })
+      saveConfig({ windowBounds: b })
     }, 500)
   }
   mainWindow.on('resize', saveBounds)
@@ -74,13 +78,12 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
-  // Register custom asset protocol for serving workspace images
+  // Register custom asset protocol for serving images from liteHome/images/
   registerAssetProtocol()
 
-  // Setup Local Service Core IPC Handlers
+  // Setup IPC Handlers
   setupIpcHandlers()
 
   createWindow()
@@ -91,7 +94,7 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
-  fileWatcher.stop()
+  fileWatcher.stopAll()
   ptyManager.closeAll()
 })
 

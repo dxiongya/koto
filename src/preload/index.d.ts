@@ -1,7 +1,11 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { FileNode, FileStat, FsWatchEvent, IpcResult, WorkspaceState } from '../shared/types'
+import type { FileNode, FileStat, FsWatchEvent, IpcResult, LiteConfig } from '../shared/types'
 
-export interface WorkspaceAPI {
+export interface LiteAPI {
+  getHome: () => Promise<IpcResult<string>>
+}
+
+export interface ProjectAPI {
   open: () => Promise<IpcResult<string>>
   get: () => Promise<IpcResult<string>>
 }
@@ -19,8 +23,8 @@ export interface FileSystemAPI {
 }
 
 export interface StateAPI {
-  get: () => Promise<IpcResult<WorkspaceState>>
-  update: (patch: Partial<WorkspaceState>) => Promise<IpcResult<void>>
+  get: () => Promise<IpcResult<LiteConfig>>
+  update: (patch: Partial<LiteConfig>) => Promise<IpcResult<void>>
 }
 
 export interface TerminalAPI {
@@ -57,7 +61,8 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: {
-      workspace: WorkspaceAPI
+      lite: LiteAPI
+      project: ProjectAPI
       state: StateAPI
       fs: FileSystemAPI
       image: ImageAPI

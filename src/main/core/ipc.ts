@@ -1,22 +1,28 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { IpcChannels } from '../../shared/types'
-import type { WorkspaceState } from '../../shared/types'
-import { FileSystemCore, setWorkspacePath, getWorkspacePath } from './fs'
-import { loadState, saveState, addRecentWorkspace } from './workspace-store'
+import type { LiteConfig } from '../../shared/types'
+import { FileSystemCore, setProjectPath, getProjectPath } from './fs'
+import { getLiteHome, loadConfig, saveConfig, addRecentProject } from './lite-home'
 import { fileWatcher } from './watcher'
 import { ptyManager } from './pty-manager'
 import { saveImage, saveImageFromUrl, saveImageFromPath, deleteImage } from './image-storage'
 
 export function setupIpcHandlers(): void {
-  // ── Workspace ──
+  // ── Lite Home ──
 
-  ipcMain.handle(IpcChannels.WORKSPACE_OPEN, async () => {
+  ipcMain.handle(IpcChannels.LITE_GET_HOME, () => {
+    return { ok: true, data: getLiteHome() }
+  })
+
+  // ── Project (code.app) ──
+
+  ipcMain.handle(IpcChannels.PROJECT_OPEN, async () => {
     const win = BrowserWindow.getFocusedWindow()
     if (!win) return { ok: false, error: 'No focused window' }
 
     const result = await dialog.showOpenDialog(win, {
       properties: ['openDirectory'],
-      title: 'Open Workspace Folder',
+      title: 'Open Project Folder',
     })
 
     if (result.canceled || result.filePaths.length === 0) {
@@ -24,26 +30,26 @@ export function setupIpcHandlers(): void {
     }
 
     const selected = result.filePaths[0]
-    setWorkspacePath(selected)
-    addRecentWorkspace(selected)
-    saveState({ lastWorkspacePath: selected })
-    fileWatcher.start(selected)
+    setProjectPath(selected)
+    addRecentProject(selected)
+    saveConfig({ codeProjectPath: selected })
+    fileWatcher.watchProject(selected)
     return { ok: true, data: selected }
   })
 
-  ipcMain.handle(IpcChannels.WORKSPACE_GET, () => {
-    const p = getWorkspacePath()
-    return p ? { ok: true, data: p } : { ok: false, error: 'No workspace opened' }
+  ipcMain.handle(IpcChannels.PROJECT_GET, () => {
+    const p = getProjectPath()
+    return p ? { ok: true, data: p } : { ok: false, error: 'No project opened' }
   })
 
   // ── State Persistence ──
 
   ipcMain.handle(IpcChannels.STATE_GET, () => {
-    return { ok: true, data: loadState() }
+    return { ok: true, data: loadConfig() }
   })
 
-  ipcMain.handle(IpcChannels.STATE_UPDATE, (_, patch: Partial<WorkspaceState>) => {
-    saveState(patch)
+  ipcMain.handle(IpcChannels.STATE_UPDATE, (_, patch: Partial<LiteConfig>) => {
+    saveConfig(patch)
     return { ok: true, data: undefined }
   })
 
@@ -84,7 +90,7 @@ export function setupIpcHandlers(): void {
   // ── Terminal ──
 
   ipcMain.handle(IpcChannels.TERMINAL_CREATE, (_, cwd?: string) => {
-    const workingDir = cwd || getWorkspacePath() || process.env.HOME || '/'
+    const workingDir = cwd || getProjectPath() || process.env.HOME || '/'
     const id = ptyManager.create(workingDir)
     return { ok: true, data: id }
   })

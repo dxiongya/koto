@@ -3,9 +3,12 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { IpcChannels } from '../shared/types'
 
 const api = {
-  workspace: {
-    open: () => ipcRenderer.invoke(IpcChannels.WORKSPACE_OPEN),
-    get: () => ipcRenderer.invoke(IpcChannels.WORKSPACE_GET),
+  lite: {
+    getHome: () => ipcRenderer.invoke(IpcChannels.LITE_GET_HOME),
+  },
+  project: {
+    open: () => ipcRenderer.invoke(IpcChannels.PROJECT_OPEN),
+    get: () => ipcRenderer.invoke(IpcChannels.PROJECT_GET),
   },
   state: {
     get: () => ipcRenderer.invoke(IpcChannels.STATE_GET),

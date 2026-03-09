@@ -2,6 +2,14 @@ import * as pty from 'node-pty'
 import { BrowserWindow } from 'electron'
 import { IpcChannels } from '../../shared/types'
 
+/** Strip env vars that prevent nested CLI tools (e.g. Claude Code) from launching */
+function cleanEnv(): Record<string, string> {
+  const env = { ...process.env } as Record<string, string>
+  delete env['CLAUDECODE']
+  delete env['CLAUDE_CODE']
+  return env
+}
+
 interface PtySession {
   id: string
   process: pty.IPty
@@ -22,7 +30,7 @@ export class PtyManager {
       cols: 80,
       rows: 24,
       cwd,
-      env: process.env as Record<string, string>,
+      env: cleanEnv(),
     })
 
     proc.onData((data) => {

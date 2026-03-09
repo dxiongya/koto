@@ -12,6 +12,8 @@ import { HeadingNode, QuoteNode } from '@lexical/rich-text'
 import { ListNode, ListItemNode } from '@lexical/list'
 import { CodeNode, CodeHighlightNode } from '@lexical/code'
 import { LinkNode, AutoLinkNode } from '@lexical/link'
+import { HashtagNode } from '@lexical/hashtag'
+import { HashtagPlugin } from '@lexical/react/LexicalHashtagPlugin'
 import {
   TableNode,
   TableCellNode,
@@ -24,9 +26,10 @@ import {
   $convertFromMarkdownString,
   $convertToMarkdownString,
   TRANSFORMERS,
-  CHECK_LIST
+  CHECK_LIST,
+  type TextMatchTransformer
 } from '@lexical/markdown'
-import { $getRoot, $isParagraphNode } from 'lexical'
+import { $getRoot, $isParagraphNode, TextNode } from 'lexical'
 import type { EditorState } from 'lexical'
 import type { TextFormatTransformer, ElementTransformer } from '@lexical/markdown'
 import { $createCodeNode, $isCodeNode } from '@lexical/code'
@@ -42,6 +45,7 @@ import {
 import { HorizontalRuleNode, HR_TRANSFORMER } from './nodes/HorizontalRuleNode'
 import { CalloutNode } from './nodes/CalloutNode'
 import { ImageNode } from './nodes/ImageNode'
+import { $createHashtagNode, $isHashtagNode } from '@lexical/hashtag'
 
 // Plugins
 import { FloatingToolbarPlugin } from './plugins/FloatingToolbarPlugin'
@@ -58,6 +62,37 @@ import {
   MarkdownTableAutoConvertPlugin,
   TableActionPlugin
 } from './plugins/TablePlugin'
+
+const HASHTAG_TRANSFORMER: TextMatchTransformer = {
+  dependencies: [HashtagNode],
+  export: (node) => {
+    if (!$isHashtagNode(node)) return null
+    return node.getTextContent()
+  },
+  importRegExp: /(?:^|\s)(#[^\s#]+)/,
+  regExp: /(?:^|\s)(#[^\s#]+)$/,
+  replace: (textNode: TextNode, match: RegExpMatchArray) => {
+    // match[0] is the full match including preceding space (if any)
+    // match[1] is the captured hashtag string
+    const fullMatch = match[0]
+    const hashtag = match[1]
+    
+    // Calculate where the actual hashtag starts within the match
+    const hashtagOffset = fullMatch.indexOf(hashtag)
+    
+    if (hashtagOffset > 0) {
+      // If there is preceding whitespace, split the node
+      const [, hashtagTextNode] = textNode.splitText(hashtagOffset)
+      const hashtagNode = $createHashtagNode(hashtag)
+      hashtagTextNode.replace(hashtagNode)
+    } else {
+      const hashtagNode = $createHashtagNode(hashtag)
+      textNode.replace(hashtagNode)
+    }
+  },
+  trigger: '#',
+  type: 'text-match'
+}
 
 const HIGHLIGHT_TRANSFORMER: TextFormatTransformer = {
   format: ['highlight'],
@@ -115,6 +150,7 @@ const ALL_TRANSFORMERS = [
   TABLE_TRANSFORMER,
   HR_TRANSFORMER,
   HIGHLIGHT_TRANSFORMER,
+  HASHTAG_TRANSFORMER,
   CODE_BLOCK_SPACE_TRANSFORMER,
   CHECK_LIST,
   ...TRANSFORMERS
@@ -213,7 +249,8 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
         TableRowNode,
         HorizontalRuleNode,
         CalloutNode,
-        ImageNode
+        ImageNode,
+        HashtagNode
       ],
       editorState: () => {
         // 1. Extract table blocks BEFORE Lexical processes the markdown
@@ -284,6 +321,7 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
       <ListPlugin />
       <MarkdownShortcutPlugin transformers={ALL_TRANSFORMERS} />
       <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
+      <HashtagPlugin />
 
       {/* Checklist */}
       <CheckListPlugin />

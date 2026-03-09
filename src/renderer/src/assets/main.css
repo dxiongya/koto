@@ -126,6 +126,19 @@ body {
   color: #ff6b6b;
 }
 
+/* ─── Ordered & unordered lists ──────────────────────────────────────── */
+.editor-ul,
+.editor-ol {
+  padding-left: 1.5em;
+  margin-left: 0;
+}
+.editor-ul::marker,
+.editor-ol::marker,
+.editor-ul > li::marker,
+.editor-ol > li::marker {
+  color: var(--accent-main);
+}
+
 /* ─── Checklist items ────────────────────────────────────────────────── */
 ul.editor-checklist {
   padding-left: 0 !important;

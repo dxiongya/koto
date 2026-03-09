@@ -1,46 +1,26 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react'
-import { ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal, FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Globe, Plus, Moon, Sun } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import {
+  ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal,
+  FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Plus, Moon, Sun, FolderOpen, FolderPlus, X,
+  Pencil, Trash2, FilePlus, FolderInput
+} from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
+import { useContextMenu, type ContextMenuItem } from '../components/ContextMenu'
 import type { AppType, FileNode } from '../../../shared/types'
 
 // ── Helpers ──
 
-function getParentPath(filePath: string): string {
-  const idx = filePath.lastIndexOf('/')
-  return idx > 0 ? filePath.slice(0, idx) : filePath
-}
-
 function getFileIcon(fileName: string) {
   const ext = fileName.split('.').pop()?.toLowerCase()
   switch (ext) {
-    case 'tsx':
-    case 'ts':
-    case 'jsx':
-    case 'js':
-      return FileCode
-    case 'json':
-      return FileJson
-    case 'css':
-    case 'scss':
-    case 'sass':
-    case 'less':
-      return Palette
-    case 'md':
-    case 'txt':
-      return FileText
-    case 'png':
-    case 'jpg':
-    case 'jpeg':
-    case 'gif':
-    case 'svg':
-    case 'ico':
-    case 'webp':
-      return FileImage
-    case 'html':
-    case 'htm':
-      return FileType
-    default:
-      return File
+    case 'tsx': case 'ts': case 'jsx': case 'js': return FileCode
+    case 'json': return FileJson
+    case 'css': case 'scss': case 'sass': case 'less': return Palette
+    case 'md': case 'txt': return FileText
+    case 'png': case 'jpg': case 'jpeg': case 'gif': case 'svg': case 'ico': case 'webp': return FileImage
+    case 'html': case 'htm': return FileType
+    default: return File
   }
 }
 
@@ -60,7 +40,7 @@ const SplitName: React.FC<{ name: string; isActive?: boolean }> = ({ name, isAct
   return <span className={`truncate ${isActive ? 'text-accent-main font-medium' : 'text-tx-main'}`} style={{ fontSize: '13.5px' }}>{name}</span>
 }
 
-// ── File Tree Node ──
+// ── File Tree Node (for code.app) ──
 
 const FileTreeNode: React.FC<{
   node: FileNode
@@ -74,7 +54,6 @@ const FileTreeNode: React.FC<{
   const expanded = expandedPaths.includes(node.path)
   const [children, setChildren] = useState<FileNode[]>([])
 
-  // Load/reload children when expanded or when refreshCounter changes
   useEffect(() => {
     if (expanded && node.isDirectory) {
       window.api.fs.readDir(node.path).then((res) => {
@@ -92,9 +71,7 @@ const FileTreeNode: React.FC<{
   }, [node, onFileClick, onToggleDir])
 
   const isActive = node.path === activeFilePath
-  // Start indent at 32 for children, +16 per depth
-  const pl = 32 + depth * 16
-  
+  const pl = 20 + depth * 16
   const Icon = node.isDirectory ? null : getFileIcon(node.name)
 
   return (
@@ -105,15 +82,9 @@ const FileTreeNode: React.FC<{
         className={`flex items-center gap-1.5 py-[4px] pr-4 cursor-pointer text-[13px] tracking-wide relative group
           ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
       >
-        {isActive && (
-          <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />
-        )}
+        {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
         {node.isDirectory ? (
-          expanded ? (
-            <ChevronDown size={14} className="shrink-0 text-tx-muted" />
-          ) : (
-            <ChevronRight size={14} className="shrink-0 text-tx-muted" />
-          )
+          expanded ? <ChevronDown size={14} className="shrink-0 text-tx-muted" /> : <ChevronRight size={14} className="shrink-0 text-tx-muted" />
         ) : (
           <span className={`shrink-0 flex items-center justify-center ${isActive ? 'text-accent-main' : 'text-tx-muted'}`}>
             {node.name === 'loading.tsx' || node.name === 'loading.js' ? (
@@ -125,19 +96,760 @@ const FileTreeNode: React.FC<{
         )}
         <SplitName name={node.name} isActive={isActive} />
       </div>
-      {expanded &&
-        children.map((child) => (
-          <FileTreeNode
-            key={child.path}
-            node={child}
-            depth={depth + 1}
-            activeFilePath={activeFilePath}
-            expandedPaths={expandedPaths}
-            refreshCounter={refreshCounter}
-            onFileClick={onFileClick}
-            onToggleDir={onToggleDir}
-          />
-        ))}
+      {expanded && children.map((child) => (
+        <FileTreeNode
+          key={child.path}
+          node={child}
+          depth={depth + 1}
+          activeFilePath={activeFilePath}
+          expandedPaths={expandedPaths}
+          refreshCounter={refreshCounter}
+          onFileClick={onFileClick}
+          onToggleDir={onToggleDir}
+        />
+      ))}
+    </>
+  )
+}
+
+// ── App Section Header ──
+
+const AppSectionHeader: React.FC<{
+  appId: AppType
+  icon: React.ReactNode
+  currentApp: AppType
+  expanded: boolean
+  onClick: () => void
+  actions?: React.ReactNode
+}> = ({ appId, icon, currentApp, expanded, onClick, actions }) => (
+  <div
+    onClick={onClick}
+    className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
+      ${currentApp === appId ? 'bg-bg-active text-accent-main' : 'hover:bg-bg-hover text-tx-main'}`}
+  >
+    {currentApp === appId && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
+    <div className="flex items-center justify-center w-4 h-4 shrink-0 text-tx-muted">{icon}</div>
+    <SplitName name={appId} isActive={currentApp === appId} />
+    <div className="ml-auto flex items-center gap-1">
+      {actions}
+      {expanded ? <ChevronDown size={14} className="text-tx-faint" /> : <ChevronRight size={14} className="text-tx-faint" />}
+    </div>
+  </div>
+)
+
+// ── Notes App Section ──
+
+const NotesAppSection: React.FC<{
+  currentApp: AppType
+  expanded: boolean
+  onHeaderClick: () => void
+  liteHome: string | null
+  onFileClick: (path: string) => void
+  renameTrigger: number
+  selectedGroup: string | null
+  onGroupSelect: (path: string | null) => void
+}> = ({ currentApp, expanded, onHeaderClick, liteHome, onFileClick, renameTrigger, selectedGroup, onGroupSelect }) => {
+  const activeFilePath = useUIStore((s) => s.appStates['notes.app'].activeFilePath)
+  const notesExpandedGroups = useUIStore((s) => s.notesExpandedGroups)
+  const toggleNotesGroup = useUIStore((s) => s.toggleNotesGroup)
+  const openContextMenu = useContextMenu()
+  const [groups, setGroups] = useState<FileNode[]>([])
+  const [rootNotes, setRootNotes] = useState<FileNode[]>([])
+  const [groupNotes, setGroupNotes] = useState<Record<string, FileNode[]>>({})
+  const [refreshCounter, setRefreshCounter] = useState(0)
+
+  // Inline input state
+  const [inlineInput, setInlineInput] = useState<{
+    type: 'note' | 'group' | 'noteInGroup' | 'rename'
+    parentPath?: string   // group path for noteInGroup
+    renamePath?: string   // full path of item being renamed
+    renameIsDir?: boolean
+  } | null>(null)
+  const [inputValue, setInputValue] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Drag state
+  const [dragNotePath, setDragNotePath] = useState<string | null>(null)
+  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
+
+  const notesDir = liteHome ? liteHome + '/notes' : null
+
+  // Enter key rename trigger
+  useEffect(() => {
+    if (renameTrigger === 0 || currentApp !== 'notes.app' || !activeFilePath || inlineInput) return
+    // Determine if the active item is a dir (group) or file
+    const allGroupPaths = groups.map((g) => g.path)
+    const isDir = allGroupPaths.includes(activeFilePath)
+    // For notes.app, activeFilePath is always a file; groups are not "active" in the same way
+    // So we rename the active note file
+    showInput('rename', { renamePath: activeFilePath, renameIsDir: isDir })
+  }, [renameTrigger])
+
+  // ── Data loading ──
+
+  useEffect(() => {
+    if (!expanded || !notesDir) {
+      setGroups([])
+      setRootNotes([])
+      return
+    }
+    window.api.fs.readDir(notesDir).then((res) => {
+      if (!res.ok) return
+      setGroups(res.data.filter((f) => f.isDirectory))
+      setRootNotes(res.data.filter((f) => !f.isDirectory && f.name.endsWith('.md')))
+    })
+  }, [expanded, notesDir, refreshCounter])
+
+  useEffect(() => {
+    if (!expanded) return
+    const expandedGroupPaths = groups.filter((g) => notesExpandedGroups.includes(g.path))
+    const loadGroup = async (groupPath: string) => {
+      const res = await window.api.fs.readDir(groupPath)
+      return { path: groupPath, notes: res.ok ? res.data.filter((f) => !f.isDirectory && f.name.endsWith('.md')) : [] }
+    }
+    Promise.all(expandedGroupPaths.map((g) => loadGroup(g.path))).then((results) => {
+      const map: Record<string, FileNode[]> = {}
+      for (const r of results) map[r.path] = r.notes
+      setGroupNotes(map)
+    })
+  }, [expanded, groups, notesExpandedGroups, refreshCounter])
+
+  useEffect(() => {
+    if (!notesDir) return
+    const unsub = window.api.fs.onWatchEvent((event) => {
+      if (event.path.startsWith(notesDir)) setRefreshCounter((c) => c + 1)
+    })
+    return unsub
+  }, [notesDir])
+
+  // ── Inline input helpers ──
+
+  const showInput = useCallback((type: typeof inlineInput extends null ? never : NonNullable<typeof inlineInput>['type'], extra?: Partial<NonNullable<typeof inlineInput>>) => {
+    setInlineInput({ type, ...extra })
+    setInputValue(type === 'rename' && extra?.renamePath
+      ? extra.renamePath.split('/').pop()?.replace(/\.md$/, '') || ''
+      : '')
+    setTimeout(() => { inputRef.current?.focus(); inputRef.current?.select() }, 50)
+  }, [])
+
+  const cancelInput = useCallback(() => { setInlineInput(null); setInputValue('') }, [])
+
+  // ── CRUD operations ──
+
+  const nextUntitledName = useCallback(async (parentDir: string): Promise<string> => {
+    const res = await window.api.fs.readDir(parentDir)
+    const existing = res.ok ? res.data.map((f) => f.name) : []
+    if (!existing.includes('Untitled.md')) return 'Untitled'
+    let i = 2
+    while (existing.includes(`Untitled ${i}.md`)) i++
+    return `Untitled ${i}`
+  }, [])
+
+  const createNote = useCallback(async (parentDir: string, name?: string) => {
+    const noteName = name || await nextUntitledName(parentDir)
+    const fileName = noteName.endsWith('.md') ? noteName : `${noteName}.md`
+    const filePath = `${parentDir}/${fileName}`
+    const res = await window.api.fs.createFile(filePath)
+    if (res.ok) {
+      await window.api.fs.writeFile(filePath, `# ${noteName.replace(/\.md$/, '')}\n\n`)
+      setRefreshCounter((c) => c + 1)
+      onFileClick(filePath)
+    }
+  }, [onFileClick, nextUntitledName])
+
+  const createGroup = useCallback(async (name: string) => {
+    if (!notesDir) return
+    const groupPath = `${notesDir}/${name}`
+    await window.api.fs.createDir(groupPath)
+    setRefreshCounter((c) => c + 1)
+    toggleNotesGroup(groupPath)
+  }, [notesDir, toggleNotesGroup])
+
+  const renameItem = useCallback(async (oldPath: string, newName: string, isDir: boolean) => {
+    const parent = oldPath.substring(0, oldPath.lastIndexOf('/'))
+    const newPath = isDir ? `${parent}/${newName}` : `${parent}/${newName.endsWith('.md') ? newName : newName + '.md'}`
+    if (oldPath === newPath) return
+    const res = await window.api.fs.rename(oldPath, newPath)
+    if (res.ok) {
+      setRefreshCounter((c) => c + 1)
+      // If renamed file was active, update active path
+      if (oldPath === activeFilePath) onFileClick(newPath)
+    }
+  }, [activeFilePath, onFileClick])
+
+  const deleteItem = useCallback(async (itemPath: string) => {
+    const res = await window.api.fs.delete(itemPath)
+    if (res.ok) {
+      setRefreshCounter((c) => c + 1)
+      if (itemPath === activeFilePath) {
+        const store = useUIStore.getState()
+        const updated = { ...store.appStates, 'notes.app': { ...store.appStates['notes.app'], activeFilePath: null } }
+        useUIStore.setState({ appStates: updated })
+      }
+    }
+  }, [activeFilePath])
+
+  const moveNote = useCallback(async (notePath: string, targetDir: string) => {
+    const fileName = notePath.split('/').pop()!
+    const newPath = `${targetDir}/${fileName}`
+    if (notePath === newPath) return
+    const res = await window.api.fs.rename(notePath, newPath)
+    if (res.ok) {
+      setRefreshCounter((c) => c + 1)
+      if (notePath === activeFilePath) onFileClick(newPath)
+    }
+  }, [activeFilePath, onFileClick])
+
+  // ── Submit inline input ──
+
+  const handleInputSubmit = useCallback(async () => {
+    if (!inlineInput) return
+    const val = inputValue.trim()
+    if (!val) { cancelInput(); return }
+    switch (inlineInput.type) {
+      case 'note':
+        if (notesDir) await createNote(notesDir, val)
+        break
+      case 'group':
+        await createGroup(val)
+        break
+      case 'noteInGroup':
+        if (inlineInput.parentPath) await createNote(inlineInput.parentPath, val)
+        break
+      case 'rename':
+        if (inlineInput.renamePath) await renameItem(inlineInput.renamePath, val, !!inlineInput.renameIsDir)
+        break
+    }
+    cancelInput()
+  }, [inlineInput, inputValue, notesDir, createNote, createGroup, renameItem, cancelInput])
+
+  // ── Context menu builders ──
+
+  const groupContextItems = useCallback((group: FileNode): ContextMenuItem[] => [
+    { label: 'New Note', icon: <FilePlus size={14} />, onClick: async () => {
+      if (!notesExpandedGroups.includes(group.path)) toggleNotesGroup(group.path)
+      await createNote(group.path)
+    } },
+    { label: 'Rename', icon: <Pencil size={14} />, onClick: () => showInput('rename', { renamePath: group.path, renameIsDir: true }) },
+    { label: '', separator: true, onClick: () => {} },
+    { label: 'Delete', icon: <Trash2 size={14} />, danger: true, onClick: () => deleteItem(group.path) },
+  ], [showInput, deleteItem])
+
+  const noteContextItems = useCallback((note: FileNode): ContextMenuItem[] => {
+    const moveToItems: ContextMenuItem[] = []
+    const noteParent = note.path.substring(0, note.path.lastIndexOf('/'))
+    // "Move to root" if inside a group
+    if (notesDir && noteParent !== notesDir) {
+      moveToItems.push({ label: 'Move to Root', icon: <FolderInput size={14} />, onClick: () => moveNote(note.path, notesDir) })
+    }
+    // Move to each group (except current parent)
+    for (const g of groups) {
+      if (g.path !== noteParent) {
+        moveToItems.push({ label: `Move to ${g.name}`, icon: <FolderInput size={14} />, onClick: () => moveNote(note.path, g.path) })
+      }
+    }
+    return [
+      { label: 'Rename', icon: <Pencil size={14} />, onClick: () => showInput('rename', { renamePath: note.path, renameIsDir: false }) },
+      ...(moveToItems.length > 0 ? [{ label: '', separator: true, onClick: () => {} } as ContextMenuItem, ...moveToItems] : []),
+      { label: '', separator: true, onClick: () => {} },
+      { label: 'Delete', icon: <Trash2 size={14} />, danger: true, onClick: () => deleteItem(note.path) },
+    ]
+  }, [notesDir, groups, showInput, moveNote, deleteItem])
+
+  // ── Drag handlers ──
+
+  const handleDragStart = useCallback((e: React.DragEvent, notePath: string) => {
+    e.dataTransfer.setData('text/plain', notePath)
+    e.dataTransfer.effectAllowed = 'move'
+    setDragNotePath(notePath)
+  }, [])
+
+  const handleDragEnd = useCallback(() => {
+    setDragNotePath(null)
+    setDropTargetPath(null)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, targetPath: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDropTargetPath(targetPath)
+  }, [])
+
+  const handleDragLeave = useCallback(() => setDropTargetPath(null), [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetDir: string) => {
+    e.preventDefault()
+    setDropTargetPath(null)
+    setDragNotePath(null)
+
+    // Handle external file drops
+    if (e.dataTransfer.files.length > 0) {
+      for (const file of Array.from(e.dataTransfer.files)) {
+        if (file.name.endsWith('.md')) {
+          // Read external file content and create copy
+          const reader = new FileReader()
+          reader.onload = async () => {
+            const content = reader.result as string
+            const filePath = `${targetDir}/${file.name}`
+            await window.api.fs.createFile(filePath)
+            await window.api.fs.writeFile(filePath, content)
+            setRefreshCounter((c) => c + 1)
+          }
+          reader.readAsText(file)
+        }
+      }
+      return
+    }
+
+    // Handle internal note move
+    const sourcePath = e.dataTransfer.getData('text/plain')
+    if (sourcePath) await moveNote(sourcePath, targetDir)
+  }, [moveNote])
+
+  // ── Inline input component ──
+
+  const renderInput = (pl: number, icon: React.ReactNode) => (
+    <div className={`pr-3 py-1 flex items-center gap-1.5`} style={{ paddingLeft: pl }}>
+      <span className="text-tx-muted shrink-0">{icon}</span>
+      <input
+        ref={inputRef}
+        type="text"
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); handleInputSubmit() }
+          if (e.key === 'Escape') cancelInput()
+        }}
+        onBlur={() => { if (inputValue.trim()) handleInputSubmit(); else cancelInput() }}
+        placeholder={inlineInput?.type === 'group' ? 'group name...' : 'note name...'}
+        className="flex-1 bg-transparent text-[13px] text-tx-main outline-none border-b border-border-strong placeholder-tx-muted py-0.5"
+      />
+    </div>
+  )
+
+  // ── Header actions ──
+
+  const startCreating = useCallback(async () => {
+    if (!liteHome || !notesDir) return
+    if (!expanded) onHeaderClick()
+    // Determine target dir: group of active file, or root
+    let targetDir = notesDir
+    if (activeFilePath) {
+      const parentDir = activeFilePath.substring(0, activeFilePath.lastIndexOf('/'))
+      if (parentDir !== notesDir && parentDir.startsWith(notesDir + '/')) {
+        targetDir = parentDir
+        if (!notesExpandedGroups.includes(parentDir)) toggleNotesGroup(parentDir)
+      }
+    }
+    await createNote(targetDir)
+  }, [liteHome, notesDir, expanded, onHeaderClick, activeFilePath, notesExpandedGroups, toggleNotesGroup, createNote])
+
+  const startCreatingGroup = useCallback(() => {
+    if (!liteHome) return
+    if (!expanded) onHeaderClick()
+    showInput('group')
+  }, [liteHome, expanded, onHeaderClick, showInput])
+
+  return (
+    <>
+      <AppSectionHeader
+        appId="notes.app"
+        icon={<FileText size={14} strokeWidth={2.5} />}
+        currentApp={currentApp}
+        expanded={expanded}
+        onClick={onHeaderClick}
+        actions={
+          liteHome ? (
+            <>
+              <div
+                onClick={(e) => { e.stopPropagation(); startCreatingGroup() }}
+                className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors"
+                title="New group"
+              >
+                <FolderPlus size={14} />
+              </div>
+              <div
+                onClick={(e) => { e.stopPropagation(); startCreating() }}
+                className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors"
+                title="New note"
+              >
+                <Plus size={14} />
+              </div>
+            </>
+          ) : undefined
+        }
+      />
+      {expanded && (
+        <div className="mb-3 mt-1">
+          {!liteHome ? (
+            <div className="pl-[20px] py-1 text-[13px] text-tx-faint">Loading...</div>
+          ) : (
+            <>
+              {/* Top-level inline inputs */}
+              {inlineInput && (inlineInput.type === 'note' || inlineInput.type === 'group') &&
+                renderInput(20, inlineInput.type === 'group' ? <FolderPlus size={13} /> : <FileText size={13} />)
+              }
+
+              {/* Rename input for root-level items */}
+              {inlineInput?.type === 'rename' && inlineInput.renamePath && (() => {
+                const parent = inlineInput.renamePath!.substring(0, inlineInput.renamePath!.lastIndexOf('/'))
+                return parent === notesDir
+                  ? renderInput(20, inlineInput.renameIsDir ? <FolderPlus size={13} /> : <FileText size={13} />)
+                  : null
+              })()}
+
+              {/* Groups */}
+              {groups.map((group) => {
+                const isExpanded = notesExpandedGroups.includes(group.path)
+                const notes = groupNotes[group.path] || []
+                const isDropTarget = dropTargetPath === group.path
+                const isBeingRenamed = inlineInput?.type === 'rename' && inlineInput.renamePath === group.path
+                const isSelected = selectedGroup === group.path
+
+                if (isBeingRenamed) return null // rendered above
+
+                return (
+                  <React.Fragment key={group.path}>
+                    <div
+                      onClick={() => { toggleNotesGroup(group.path); onGroupSelect(group.path) }}
+                      onContextMenu={(e) => openContextMenu(e, groupContextItems(group))}
+                      onDragOver={(e) => handleDragOver(e, group.path)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, group.path)}
+                      className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative
+                        ${isDropTarget ? 'bg-accent-main/10 outline outline-1 outline-accent-main/30' : isSelected ? 'bg-bg-hover' : 'hover:bg-bg-hover'}`}
+                    >
+                      {isSelected && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-tx-faint" />}
+                      {isExpanded ? <ChevronDown size={13} className="shrink-0 text-tx-muted" /> : <ChevronRight size={13} className="shrink-0 text-tx-muted" />}
+                      <FolderOpen size={13} className="shrink-0 text-tx-muted" />
+                      <span className="text-tx-main truncate">{group.name}</span>
+                      {notes.length > 0 && <span className="ml-auto text-[11px] text-tx-faint">{notes.length}</span>}
+                    </div>
+
+                    {isExpanded && (
+                      <>
+                        {/* Inline input inside group */}
+                        {inlineInput && inlineInput.type === 'noteInGroup' && inlineInput.parentPath === group.path &&
+                          renderInput(36, <FileText size={13} />)
+                        }
+
+                        {notes.map((note) => {
+                          const isActive = note.path === activeFilePath
+                          const isDragging = dragNotePath === note.path
+                          const isNoteRenamed = inlineInput?.type === 'rename' && inlineInput.renamePath === note.path
+
+                          if (isNoteRenamed) return renderInput(36, <FileText size={13} />)
+
+                          return (
+                            <div
+                              key={note.path}
+                              onClick={() => onFileClick(note.path)}
+                              onContextMenu={(e) => openContextMenu(e, noteContextItems(note))}
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, note.path)}
+                              onDragEnd={handleDragEnd}
+                              className={`pl-[36px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative
+                                ${isDragging ? 'opacity-40' : ''}
+                                ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
+                            >
+                              {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
+                              <FileText size={13} className={`${isActive ? 'text-accent-main' : 'text-tx-muted'} shrink-0`} />
+                              <SplitName name={note.name} isActive={isActive} />
+                            </div>
+                          )
+                        })}
+                      </>
+                    )}
+                  </React.Fragment>
+                )
+              })}
+
+              {/* Root-level notes drop zone */}
+              <div
+                onDragOver={notesDir ? (e) => handleDragOver(e, notesDir) : undefined}
+                onDragLeave={handleDragLeave}
+                onDrop={notesDir ? (e) => handleDrop(e, notesDir) : undefined}
+                className={dropTargetPath === notesDir && dragNotePath ? 'bg-accent-main/5 outline outline-1 outline-accent-main/20 rounded mx-2' : ''}
+              >
+                {rootNotes.map((note) => {
+                  const isActive = note.path === activeFilePath
+                  const isDragging = dragNotePath === note.path
+                  const isNoteRenamed = inlineInput?.type === 'rename' && inlineInput.renamePath === note.path
+
+                  if (isNoteRenamed) return null // rendered at top
+
+                  return (
+                    <div
+                      key={note.path}
+                      onClick={() => onFileClick(note.path)}
+                      onContextMenu={(e) => openContextMenu(e, noteContextItems(note))}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, note.path)}
+                      onDragEnd={handleDragEnd}
+                      className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative
+                        ${isDragging ? 'opacity-40' : ''}
+                        ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
+                    >
+                      {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
+                      <FileText size={13} className={`${isActive ? 'text-accent-main' : 'text-tx-muted'} shrink-0`} />
+                      <SplitName name={note.name} isActive={isActive} />
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Empty state */}
+              {groups.length === 0 && rootNotes.length === 0 && !inlineInput && (
+                <div onClick={startCreating} className="pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer">
+                  New note...
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── Code App Section ──
+
+const CodeAppSection: React.FC<{
+  currentApp: AppType
+  expanded: boolean
+  onHeaderClick: () => void
+  codeProjectPath: string | null
+}> = ({ currentApp, expanded, onHeaderClick, codeProjectPath }) => {
+  const activeFilePath = useUIStore((s) => s.appStates['code.app'].activeFilePath)
+  const expandedPaths = useUIStore((s) => s.appStates['code.app'].expandedPaths)
+  const toggleExpandedPath = useUIStore((s) => s.toggleExpandedPath)
+  const [rootNodes, setRootNodes] = useState<FileNode[]>([])
+  const [refreshCounter, setRefreshCounter] = useState(0)
+
+  useEffect(() => {
+    if (!expanded || !codeProjectPath) {
+      setRootNodes([])
+      return
+    }
+    const projectName = codeProjectPath.split('/').pop() || 'project'
+    setRootNodes([{ name: projectName, path: codeProjectPath, isDirectory: true }])
+    // Auto-expand root
+    const currentExpanded = useUIStore.getState().appStates['code.app'].expandedPaths
+    if (!currentExpanded.includes(codeProjectPath)) {
+      // We need to set it for code.app specifically
+      const saved = useUIStore.getState().currentApp
+      useUIStore.setState({ currentApp: 'code.app' })
+      toggleExpandedPath(codeProjectPath)
+      useUIStore.setState({ currentApp: saved })
+    }
+  }, [expanded, codeProjectPath])
+
+  // File watcher for project
+  useEffect(() => {
+    if (!codeProjectPath) return
+    const unsub = window.api.fs.onWatchEvent((event) => {
+      if (event.path.startsWith(codeProjectPath)) {
+        setRefreshCounter((c) => c + 1)
+      }
+    })
+    return unsub
+  }, [codeProjectPath])
+
+  const handleOpenFolder = useCallback(async () => {
+    const res = await window.api.project.open()
+    if (res.ok) {
+      useUIStore.getState().addRecentProject(res.data)
+    }
+  }, [])
+
+  const handleFileClick = useCallback((path: string) => {
+    // Set active file for code.app specifically
+    const store = useUIStore.getState()
+    const updated = {
+      ...store.appStates,
+      'code.app': { ...store.appStates['code.app'], activeFilePath: path },
+    }
+    useUIStore.setState({ appStates: updated, currentApp: 'code.app' })
+  }, [])
+
+  const handleToggleDir = useCallback((path: string) => {
+    // Toggle for code.app specifically
+    const store = useUIStore.getState()
+    const current = store.appStates['code.app'].expandedPaths
+    const next = current.includes(path) ? current.filter((p) => p !== path) : [...current, path]
+    const updated = {
+      ...store.appStates,
+      'code.app': { ...store.appStates['code.app'], expandedPaths: next },
+    }
+    useUIStore.setState({ appStates: updated })
+  }, [])
+
+  return (
+    <>
+      <AppSectionHeader
+        appId="code.app"
+        icon={<LayoutTemplate size={14} strokeWidth={2.5} />}
+        currentApp={currentApp}
+        expanded={expanded}
+        onClick={onHeaderClick}
+      />
+      {expanded && (
+        <div className="mb-3 mt-1">
+          {!codeProjectPath ? (
+            <div onClick={handleOpenFolder} className="pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer">
+              Open a folder...
+            </div>
+          ) : (
+            rootNodes.map((node) => (
+              <FileTreeNode
+                key={node.path}
+                node={node}
+                depth={0}
+                activeFilePath={activeFilePath}
+                expandedPaths={expandedPaths}
+                refreshCounter={refreshCounter}
+                onFileClick={handleFileClick}
+                onToggleDir={handleToggleDir}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+// ── Terminal App Section ──
+
+const TerminalAppSection: React.FC<{
+  currentApp: AppType
+  expanded: boolean
+  onHeaderClick: () => void
+  renameTrigger: number
+  onFocusSidebar?: () => void
+}> = ({ currentApp, expanded, onHeaderClick, renameTrigger, onFocusSidebar }) => {
+  const sessions = useUIStore((s) => s.terminalSessions)
+  const activeTerminalId = useUIStore((s) => s.activeTerminalId)
+  const addSession = useUIStore((s) => s.addTerminalSession)
+  const removeSession = useUIStore((s) => s.removeTerminalSession)
+  const setActiveId = useUIStore((s) => s.setActiveTerminalId)
+  const codeProjectPath = useUIStore((s) => s.codeProjectPath)
+  const setCurrentApp = useUIStore((s) => s.setCurrentApp)
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const renameInputRef = useRef<HTMLInputElement>(null)
+
+  // Enter key rename trigger
+  useEffect(() => {
+    if (renameTrigger === 0 || currentApp !== 'terminal.app' || !activeTerminalId || renamingId) return
+    const session = sessions.find((s) => s.id === activeTerminalId)
+    if (session) {
+      setRenamingId(session.id)
+      setRenameValue(session.title)
+      setTimeout(() => { renameInputRef.current?.focus(); renameInputRef.current?.select() }, 50)
+    }
+  }, [renameTrigger])
+
+  const handleRenameSubmit = useCallback(() => {
+    if (!renamingId) return
+    const val = renameValue.trim()
+    if (val) {
+      const next = useUIStore.getState().terminalSessions.map((t) => t.id === renamingId ? { ...t, title: val } : t)
+      useUIStore.setState({ terminalSessions: next })
+      window.api.state.update({ terminalSessions: next.map((t) => ({ title: t.title })) })
+    }
+    setRenamingId(null)
+    setRenameValue('')
+  }, [renamingId, renameValue])
+
+  const handleCreate = useCallback(async () => {
+    const res = await window.api.terminal.create(codeProjectPath ?? undefined)
+    if (res.ok) {
+      addSession({ id: res.data, title: `Terminal ${sessions.length + 1}` })
+      setCurrentApp('terminal.app')
+    }
+  }, [codeProjectPath, sessions.length, addSession, setCurrentApp])
+
+  const handleClose = useCallback((e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    window.api.terminal.close(id)
+    removeSession(id)
+  }, [removeSession])
+
+  const handleSelect = useCallback((id: string) => {
+    setActiveId(id)
+    setCurrentApp('terminal.app')
+    onFocusSidebar?.()
+  }, [setActiveId, setCurrentApp, onFocusSidebar])
+
+  return (
+    <>
+      <AppSectionHeader
+        appId="terminal.app"
+        icon={<Terminal size={14} strokeWidth={2.5} />}
+        currentApp={currentApp}
+        expanded={expanded}
+        onClick={onHeaderClick}
+        actions={
+          <div
+            onClick={(e) => { e.stopPropagation(); if (!expanded) onHeaderClick(); handleCreate() }}
+            className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors"
+            title="New terminal"
+          >
+            <Plus size={14} />
+          </div>
+        }
+      />
+      {expanded && (
+        <div className="mb-3 mt-1">
+          {sessions.length === 0 ? (
+            <div onClick={handleCreate} className="pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer">
+              New terminal...
+            </div>
+          ) : (
+            sessions.map((session) => {
+              const isActive = session.id === activeTerminalId && currentApp === 'terminal.app'
+              const isRenaming = renamingId === session.id
+              return (
+                <div
+                  key={session.id}
+                  onClick={() => handleSelect(session.id)}
+                  className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
+                    ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
+                >
+                  {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
+                  <Terminal size={13} className={`${isActive ? 'text-accent-main' : 'text-tx-muted'} shrink-0`} />
+                  {isRenaming ? (
+                    <input
+                      ref={renameInputRef}
+                      type="text"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); handleRenameSubmit() }
+                        if (e.key === 'Escape') { setRenamingId(null); setRenameValue('') }
+                      }}
+                      onBlur={() => { if (renameValue.trim()) handleRenameSubmit(); else { setRenamingId(null); setRenameValue('') } }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-1 bg-transparent text-[13px] text-tx-main outline-none border-b border-border-strong py-0.5"
+                    />
+                  ) : (
+                    <span className={`truncate ${isActive ? 'text-accent-main font-medium' : 'text-tx-main'}`}>{session.title}</span>
+                  )}
+                  {!isRenaming && (
+                    <button
+                      onClick={(e) => handleClose(e, session.id)}
+                      className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 text-tx-faint hover:text-tx-main transition-opacity"
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+              )
+            })
+          )}
+        </div>
+      )}
     </>
   )
 }
@@ -147,207 +859,156 @@ const FileTreeNode: React.FC<{
 export const Sidebar: React.FC = () => {
   const currentApp = useUIStore((s) => s.currentApp)
   const setCurrentApp = useUIStore((s) => s.setCurrentApp)
-  const workspacePath = useUIStore((s) => s.workspacePath)
-  const setWorkspacePath = useUIStore((s) => s.setWorkspacePath)
-  const activeFilePath = useUIStore((s) => s.activeFilePath)
-  const setActiveFilePath = useUIStore((s) => s.setActiveFilePath)
-  const expandedPaths = useUIStore((s) => s.sidebarExpandedPaths)
-  const toggleSidebarPath = useUIStore((s) => s.toggleSidebarPath)
+  const liteHome = useUIStore((s) => s.liteHome)
+  const codeProjectPath = useUIStore((s) => s.codeProjectPath)
+  const theme = useUIStore((s) => s.theme)
+  const toggleTheme = useUIStore((s) => s.toggleTheme)
 
-  const [rootNodes, setRootNodes] = useState<FileNode[]>([])
-  const [refreshCounter, setRefreshCounter] = useState(0)
-  const [expandedSections, setExpandedSections] = useState<string[]>(['code.app'])
-  const workspacePathRef = useRef(workspacePath)
-  workspacePathRef.current = workspacePath
+  const [expandedSections, setExpandedSections] = useState<string[]>(['notes.app'])
+  const [renameTrigger, setRenameTrigger] = useState(0)
+  const [notesSelectedGroup, setNotesSelectedGroup] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<{ path: string; name: string } | null>(null)
+  const sidebarRef = useRef<HTMLDivElement>(null)
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!confirmDelete) return
+    const res = await window.api.fs.delete(confirmDelete.path)
+    if (res.ok) {
+      setNotesSelectedGroup(null)
+      const store = useUIStore.getState()
+      const active = store.appStates['notes.app'].activeFilePath
+      if (active && active.startsWith(confirmDelete.path + '/')) {
+        useUIStore.setState({
+          appStates: { ...store.appStates, 'notes.app': { ...store.appStates['notes.app'], activeFilePath: null } },
+        })
+      }
+    }
+    setConfirmDelete(null)
+    sidebarRef.current?.focus()
+  }, [confirmDelete])
+
+  const handleSidebarKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const tag = (e.target as HTMLElement)?.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+    // Enter → confirm delete dialog if open, otherwise rename
+    if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+      e.preventDefault()
+      if (confirmDelete) {
+        handleConfirmDelete()
+        return
+      }
+      setRenameTrigger((c) => c + 1)
+    }
+
+    // Escape → close confirm dialog
+    if (e.key === 'Escape' && confirmDelete) {
+      e.preventDefault()
+      setConfirmDelete(null)
+      return
+    }
+
+    // Cmd+Delete / Cmd+Backspace → delete active item
+    if ((e.key === 'Backspace' || e.key === 'Delete') && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      const store = useUIStore.getState()
+      const app = store.currentApp
+      if (app === 'notes.app') {
+        // Group selected → confirm delete
+        if (notesSelectedGroup) {
+          const name = notesSelectedGroup.split('/').pop() || ''
+          setConfirmDelete({ path: notesSelectedGroup, name })
+          return
+        }
+        // File selected → delete directly
+        const filePath = store.appStates['notes.app'].activeFilePath
+        if (filePath) window.api.fs.delete(filePath).then((res) => {
+          if (res.ok) {
+            useUIStore.setState({
+              appStates: { ...store.appStates, 'notes.app': { ...store.appStates['notes.app'], activeFilePath: null } },
+            })
+          }
+        })
+      } else if (app === 'terminal.app') {
+        const id = store.activeTerminalId
+        if (id) {
+          window.api.terminal.close(id)
+          store.removeTerminalSession(id)
+        }
+      }
+    }
+  }, [confirmDelete, handleConfirmDelete, notesSelectedGroup])
 
   const handleAppClick = (appId: AppType) => {
     setCurrentApp(appId)
     setExpandedSections((prev) =>
       prev.includes(appId) ? prev.filter((s) => s !== appId) : [...prev, appId]
     )
+    sidebarRef.current?.focus()
   }
 
-  const handleFileClick = useCallback(
-    (path: string) => {
-      setActiveFilePath(path)
-      // If it's a .md file and we're in notes.app, stay there; otherwise go to code.app
-      if (path.endsWith('.md') && currentApp === 'notes.app') {
-        // stay in notes.app
-      } else {
-        setCurrentApp('code.app')
-      }
-    },
-    [setActiveFilePath, setCurrentApp, currentApp]
-  )
-
-  const handleNoteFileClick = useCallback(
-    (path: string) => {
-      setActiveFilePath(path)
-      setCurrentApp('notes.app')
-    },
-    [setActiveFilePath, setCurrentApp]
-  )
-
-  // Load root directory when workspace changes
-  useEffect(() => {
-    if (!workspacePath) {
-      setRootNodes([])
-      return
+  const handleNoteFileClick = useCallback((path: string) => {
+    const store = useUIStore.getState()
+    const updated = {
+      ...store.appStates,
+      'notes.app': { ...store.appStates['notes.app'], activeFilePath: path },
     }
-    
-    // Instead of reading the dir and flattening, treat the workspace itself as the root node
-    const workspaceName = workspacePath.split('/').pop() || 'workspace'
-    const rootNode: FileNode = {
-      name: workspaceName,
-      path: workspacePath,
-      isDirectory: true
-    }
-    
-    setRootNodes([rootNode])
-    
-    // We should probably auto-expand this new root node
-    if (!expandedPaths.includes(workspacePath)) {
-      toggleSidebarPath(workspacePath)
-    }
-  }, [workspacePath, refreshCounter])
-
-  // Subscribe to file watcher events
-  useEffect(() => {
-    const unsub = window.api.fs.onWatchEvent((event) => {
-      const parentDir = getParentPath(event.path)
-
-      // Refresh if change is in workspace root, expanded directory, or notes directory
-      const notesDir = workspacePathRef.current ? workspacePathRef.current + '/notes' : null
-      if (
-        parentDir === workspacePathRef.current ||
-        expandedPaths.includes(parentDir) ||
-        (notesDir && parentDir === notesDir)
-      ) {
-        setRefreshCounter((c) => c + 1)
-      }
-    })
-    return unsub
-  }, [expandedPaths])
-
-  const handleOpenFolder = useCallback(async () => {
-    const res = await window.api.workspace.open()
-    if (res.ok) {
-      setWorkspacePath(res.data)
-      setActiveFilePath(null)
-    }
-  }, [setWorkspacePath, setActiveFilePath])
-
-  const theme = useUIStore((s) => s.theme)
-  const toggleTheme = useUIStore((s) => s.toggleTheme)
+    useUIStore.setState({ appStates: updated, currentApp: 'notes.app' })
+    setNotesSelectedGroup(null)
+    sidebarRef.current?.focus()
+  }, [])
 
   return (
-    <div className="w-[260px] flex flex-col bg-bg-app text-[14px] overflow-hidden shrink-0">
+    <div
+      ref={sidebarRef}
+      tabIndex={-1}
+      onKeyDown={handleSidebarKeyDown}
+      className="w-[260px] flex flex-col bg-bg-app text-[14px] overflow-hidden shrink-0 outline-none"
+    >
       {/* Top drag area for macOS */}
       <div className="h-8 w-full shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
 
-      {/* File Tree / Apps List */}
+      {/* App Sections */}
       <div className="flex-1 overflow-y-auto pb-4 pt-2">
-        {/* code.app */}
-        <div 
-          onClick={() => handleAppClick('code.app')}
-          className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
-            ${currentApp === 'code.app' ? 'bg-bg-active text-accent-main' : 'hover:bg-bg-hover text-tx-main'}`}
-        >
-          {currentApp === 'code.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
-          <div className="flex items-center justify-center w-4 h-4 shrink-0 text-tx-muted">
-            <LayoutTemplate size={14} strokeWidth={2.5} />
-          </div>
-          <SplitName name="code.app" isActive={currentApp === 'code.app'} />
-          <div className="ml-auto">
-            {expandedSections.includes('code.app') ? <ChevronDown size={14} className="text-tx-faint" /> : <ChevronRight size={14} className="text-tx-faint" />}
-          </div>
-        </div>
-        
-        {expandedSections.includes('code.app') && (
-          <div className="mb-3 mt-1">
-            {rootNodes.length === 0 && !workspacePath ? (
-              <div 
-                onClick={handleOpenFolder}
-                className="pl-[32px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer"
-              >
-                Open a folder...
-              </div>
-            ) : (
-              rootNodes.map((node) => (
-                <FileTreeNode
-                  key={node.path}
-                  node={node}
-                  depth={0}
-                  activeFilePath={activeFilePath}
-                  expandedPaths={expandedPaths}
-                  refreshCounter={refreshCounter}
-                  onFileClick={handleFileClick}
-                  onToggleDir={toggleSidebarPath}
-                />
-              ))
-            )}
-          </div>
-        )}
-
-        {/* browser.app */}
-        <div 
-          onClick={() => handleAppClick('browser.app')}
-          className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
-            ${currentApp === 'browser.app' ? 'bg-bg-active text-accent-main' : 'hover:bg-bg-hover text-tx-main'}`}
-        >
-          {currentApp === 'browser.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
-          <div className="flex items-center justify-center w-4 h-4 shrink-0 text-tx-muted">
-            <Chrome size={14} strokeWidth={2.5} />
-          </div>
-          <SplitName name="browser.app" isActive={currentApp === 'browser.app'} />
-          <div className="ml-auto">
-            {expandedSections.includes('browser.app') ? <ChevronDown size={14} className="text-tx-faint" /> : <ChevronRight size={14} className="text-tx-faint" />}
-          </div>
-        </div>
-        {expandedSections.includes('browser.app') && (
-          <div className="mb-3 mt-1">
-            <div className="pl-[32px] py-1 flex items-center gap-2 text-[13px] cursor-pointer hover:bg-bg-hover">
-              <Globe size={13} className="text-tx-muted" />
-              <SplitName name="my-store.com" />
-            </div>
-          </div>
-        )}
-
         {/* notes.app */}
         <NotesAppSection
           currentApp={currentApp}
           expanded={expandedSections.includes('notes.app')}
           onHeaderClick={() => handleAppClick('notes.app')}
-          workspacePath={workspacePath}
-          activeFilePath={activeFilePath}
+          liteHome={liteHome}
           onFileClick={handleNoteFileClick}
-          refreshCounter={refreshCounter}
+          renameTrigger={renameTrigger}
+          selectedGroup={notesSelectedGroup}
+          onGroupSelect={setNotesSelectedGroup}
+        />
+
+        {/* code.app */}
+        <CodeAppSection
+          currentApp={currentApp}
+          expanded={expandedSections.includes('code.app')}
+          onHeaderClick={() => handleAppClick('code.app')}
+          codeProjectPath={codeProjectPath}
+        />
+
+        {/* browser.app */}
+        <AppSectionHeader
+          appId="browser.app"
+          icon={<Chrome size={14} strokeWidth={2.5} />}
+          currentApp={currentApp}
+          expanded={expandedSections.includes('browser.app')}
+          onClick={() => handleAppClick('browser.app')}
         />
 
         {/* terminal.app */}
-        <div 
-          onClick={() => handleAppClick('terminal.app')}
-          className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
-            ${currentApp === 'terminal.app' ? 'bg-bg-active text-accent-main' : 'hover:bg-bg-hover text-tx-main'}`}
-        >
-          {currentApp === 'terminal.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
-          <div className="flex items-center justify-center w-4 h-4 shrink-0 text-tx-muted">
-            <Terminal size={14} strokeWidth={2.5} />
-          </div>
-          <SplitName name="terminal.app" isActive={currentApp === 'terminal.app'} />
-          <div className="ml-auto">
-            {expandedSections.includes('terminal.app') ? <ChevronDown size={14} className="text-tx-faint" /> : <ChevronRight size={14} className="text-tx-faint" />}
-          </div>
-        </div>
-        {expandedSections.includes('terminal.app') && (
-          <div className="mb-3 mt-1">
-            <div className="pl-[32px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer">
-              New terminal...
-            </div>
-          </div>
-        )}
+        <TerminalAppSection
+          currentApp={currentApp}
+          expanded={expandedSections.includes('terminal.app')}
+          onHeaderClick={() => handleAppClick('terminal.app')}
+          renameTrigger={renameTrigger}
+          onFocusSidebar={() => sidebarRef.current?.focus()}
+        />
       </div>
-      
+
       {/* Bottom Actions */}
       <div className="shrink-0 p-3 flex justify-between items-center border-t border-border-subtle">
         <button
@@ -358,175 +1019,33 @@ export const Sidebar: React.FC = () => {
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
         </button>
       </div>
-    </div>
-  )
-}
 
-// ── Notes App Sidebar Section ──
-
-const NotesAppSection: React.FC<{
-  currentApp: AppType
-  expanded: boolean
-  onHeaderClick: () => void
-  workspacePath: string | null
-  activeFilePath: string | null
-  onFileClick: (path: string) => void
-  refreshCounter: number
-}> = ({ currentApp, expanded, onHeaderClick, workspacePath, activeFilePath, onFileClick, refreshCounter }) => {
-  const [noteFiles, setNoteFiles] = useState<FileNode[]>([])
-  const [isCreating, setIsCreating] = useState(false)
-  const [newNoteName, setNewNoteName] = useState('')
-  const [localRefresh, setLocalRefresh] = useState(0)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const notesDir = workspacePath ? workspacePath + '/notes' : null
-
-  const reloadNotes = useCallback(() => {
-    if (!notesDir) return
-    window.api.fs.createDir(notesDir).then(() => {
-      window.api.fs.readDir(notesDir).then((res) => {
-        if (res.ok) {
-          setNoteFiles(
-            res.data.filter((f) => !f.isDirectory && f.name.endsWith('.md'))
-          )
-        }
-      })
-    })
-  }, [notesDir])
-
-  // Load notes from workspace/notes/ directory
-  useEffect(() => {
-    if (!expanded || !notesDir) {
-      setNoteFiles([])
-      return
-    }
-    reloadNotes()
-  }, [expanded, notesDir, refreshCounter, localRefresh, reloadNotes])
-
-  const handleCreateNote = useCallback(async () => {
-    if (!notesDir) return
-    const name = newNoteName.trim() || `untitled-${Date.now()}`
-    const fileName = name.endsWith('.md') ? name : `${name}.md`
-    const filePath = `${notesDir}/${fileName}`
-
-    await window.api.fs.createDir(notesDir)
-    const res = await window.api.fs.createFile(filePath)
-    if (res.ok) {
-      await window.api.fs.writeFile(filePath, `# ${name.replace('.md', '')}\n\n`)
-      // Refresh the list immediately, then open the file
-      setLocalRefresh((c) => c + 1)
-      onFileClick(filePath)
-    }
-    setIsCreating(false)
-    setNewNoteName('')
-  }, [notesDir, newNoteName, onFileClick])
-
-  const startCreating = useCallback(() => {
-    if (!workspacePath) return
-    setIsCreating(true)
-    setNewNoteName('')
-    setTimeout(() => inputRef.current?.focus(), 50)
-  }, [workspacePath])
-
-  return (
-    <>
-      <div
-        onClick={onHeaderClick}
-        className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
-          ${currentApp === 'notes.app' ? 'bg-bg-active text-accent-main' : 'hover:bg-bg-hover text-tx-main'}`}
-      >
-        {currentApp === 'notes.app' && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
-        <div className="flex items-center justify-center w-4 h-4 shrink-0 text-tx-muted">
-          <FileText size={14} strokeWidth={2.5} />
-        </div>
-        <SplitName name="notes.app" isActive={currentApp === 'notes.app'} />
-        <div className="ml-auto flex items-center gap-1">
-          {workspacePath && (
-            <div
-              onClick={(e) => {
-                e.stopPropagation()
-                if (!expanded) onHeaderClick()
-                startCreating()
-              }}
-              className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors"
-              title="New note"
-            >
-              <Plus size={14} />
+      {/* Delete confirmation — portal to app root */}
+      {confirmDelete && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[20vh] bg-black/50">
+          <div className="p-5 bg-bg-sidebar border border-border-subtle rounded-xl shadow-2xl w-[320px]">
+            <p className="text-[14px] text-tx-main font-medium mb-2">Delete folder?</p>
+            <p className="text-[13px] text-tx-muted mb-5 leading-relaxed">
+              <span className="font-medium text-tx-main">{confirmDelete.name}</span> and all its contents will be permanently deleted.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => { setConfirmDelete(null); sidebarRef.current?.focus() }}
+                className="px-4 py-1.5 text-[13px] text-tx-muted rounded-md hover:bg-bg-hover transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-4 py-1.5 text-[13px] text-red-400 bg-red-500/10 rounded-md hover:bg-red-500/20 transition-colors font-medium"
+              >
+                Delete
+              </button>
             </div>
-          )}
-          {expanded ? <ChevronDown size={14} className="text-tx-faint" /> : <ChevronRight size={14} className="text-tx-faint" />}
-        </div>
-      </div>
-      {expanded && (
-        <div className="mb-3 mt-1">
-          {!workspacePath ? (
-            <div className="pl-[32px] py-1 text-[13px] text-tx-faint">
-              Open a workspace first
-            </div>
-          ) : (
-            <>
-              {/* New note input */}
-              {isCreating && (
-                <div className="pl-[32px] pr-3 py-1 flex items-center gap-1.5">
-                  <FileText size={13} className="text-tx-muted shrink-0" />
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={newNoteName}
-                    onChange={(e) => setNewNoteName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault()
-                        handleCreateNote()
-                      }
-                      if (e.key === 'Escape') {
-                        setIsCreating(false)
-                        setNewNoteName('')
-                      }
-                    }}
-                    onBlur={() => {
-                      if (newNoteName.trim()) {
-                        handleCreateNote()
-                      } else {
-                        setIsCreating(false)
-                      }
-                    }}
-                    placeholder="note name..."
-                    className="flex-1 bg-transparent text-[13px] text-tx-main outline-none border-b border-border-strong placeholder-tx-muted py-0.5"
-                  />
-                </div>
-              )}
-
-              {/* Note files list */}
-              {noteFiles.map((note) => {
-                const isActive = note.path === activeFilePath
-                return (
-                  <div
-                    key={note.path}
-                    onClick={() => onFileClick(note.path)}
-                    className={`pl-[32px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative
-                      ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
-                  >
-                    {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
-                    <FileText size={13} className={`${isActive ? 'text-accent-main' : 'text-tx-muted'} shrink-0`} />
-                    <SplitName name={note.name} isActive={isActive} />
-                  </div>
-                )
-              })}
-
-              {/* Empty state with create action */}
-              {noteFiles.length === 0 && !isCreating && (
-                <div
-                  onClick={startCreating}
-                  className="pl-[32px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer"
-                >
-                  New note...
-                </div>
-              )}
-            </>
-          )}
-        </div>
+          </div>
+        </div>,
+        document.body,
       )}
-    </>
+    </div>
   )
 }

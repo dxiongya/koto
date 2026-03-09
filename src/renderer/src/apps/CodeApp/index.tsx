@@ -4,7 +4,7 @@ import { CodeMirrorEditor } from './CodeMirrorEditor'
 
 export const CodeApp: React.FC = () => {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
-  const activeFilePath = useUIStore((s) => s.activeFilePath)
+  const activeFilePath = useUIStore((s) => s.appStates['code.app'].activeFilePath)
   const [content, setContent] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)

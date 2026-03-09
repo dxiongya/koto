@@ -11,6 +11,7 @@ import {
   COMMAND_PRIORITY_CRITICAL,
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_UP_COMMAND,
+  KEY_ENTER_COMMAND,
   type NodeKey,
   type LexicalEditor
 } from 'lexical'
@@ -107,9 +108,48 @@ export function TableExitPlugin(): null {
       COMMAND_PRIORITY_CRITICAL
     )
 
+    const unEnter = editor.registerCommand(
+      KEY_ENTER_COMMAND,
+      (e) => {
+        if (!e) return false
+        // Cmd/Ctrl + Enter -> Insert row below (or above if shift is pressed)
+        if (e.metaKey || e.ctrlKey) {
+          const result = getCellRow($getSelection())
+          if (!result) return false
+          
+          e.preventDefault()
+          const { row } = result
+          
+          editor.update(() => {
+            const colCount = row.getChildren().length
+            const newRow = $createTableRowNode()
+            for (let i = 0; i < colCount; i++) {
+              const newCell = $createTableCellNode(0)
+              newCell.append($createParagraphNode())
+              newRow.append(newCell)
+            }
+            if (e.shiftKey) {
+              row.insertBefore(newRow)
+            } else {
+              row.insertAfter(newRow)
+            }
+            // Move selection to the first cell of the newly created row
+            const firstCell = newRow.getChildAtIndex(0)
+            if (firstCell && $isTableCellNode(firstCell)) {
+              firstCell.selectStart()
+            }
+          })
+          return true
+        }
+        return false
+      },
+      COMMAND_PRIORITY_CRITICAL
+    )
+
     return () => {
       unDown()
       unUp()
+      unEnter()
     }
   }, [editor])
 

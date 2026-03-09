@@ -1,31 +1,42 @@
 import fs from 'fs/promises'
 import path from 'path'
 import type { FileNode, FileStat, IpcResult } from '../../shared/types'
+import { getLiteHome } from './lite-home'
 
-let workspacePath: string | null = null
+let projectPath: string | null = null
 
-export function getWorkspacePath(): string | null {
-  return workspacePath
+export function getProjectPath(): string | null {
+  return projectPath
 }
 
-export function setWorkspacePath(p: string): void {
-  workspacePath = p
+export function setProjectPath(p: string | null): void {
+  projectPath = p
 }
 
 /**
- * Validate that targetPath is inside the workspace root.
- * Prevents path traversal attacks (e.g. ../../etc/passwd).
+ * Validate that targetPath is inside any allowed root.
+ * Allowed roots: liteHome (notes, images, etc.) + current project directory.
  */
-function assertInsideWorkspace(targetPath: string): string {
-  if (!workspacePath) {
-    throw new Error('No workspace opened')
-  }
+function assertInsideAllowedPaths(targetPath: string): string {
   const resolved = path.resolve(targetPath)
-  const root = path.resolve(workspacePath)
-  if (!resolved.startsWith(root + path.sep) && resolved !== root) {
-    throw new Error('Access denied: path outside workspace')
+
+  const allowedRoots: string[] = []
+
+  const home = getLiteHome()
+  if (home) allowedRoots.push(path.resolve(home))
+  if (projectPath) allowedRoots.push(path.resolve(projectPath))
+
+  if (allowedRoots.length === 0) {
+    throw new Error('No allowed paths configured')
   }
-  return resolved
+
+  for (const root of allowedRoots) {
+    if (resolved === root || resolved.startsWith(root + path.sep)) {
+      return resolved
+    }
+  }
+
+  throw new Error('Access denied: path outside allowed directories')
 }
 
 function wrapOk<T>(data: T): IpcResult<T> {
@@ -40,7 +51,7 @@ function wrapErr(error: unknown): IpcResult<never> {
 export const FileSystemCore = {
   async readDir(targetPath: string): Promise<IpcResult<FileNode[]>> {
     try {
-      const resolved = assertInsideWorkspace(targetPath)
+      const resolved = assertInsideAllowedPaths(targetPath)
       const entries = await fs.readdir(resolved, { withFileTypes: true })
 
       const nodes: FileNode[] = entries
@@ -64,7 +75,7 @@ export const FileSystemCore = {
 
   async readFile(targetPath: string): Promise<IpcResult<string>> {
     try {
-      const resolved = assertInsideWorkspace(targetPath)
+      const resolved = assertInsideAllowedPaths(targetPath)
       const content = await fs.readFile(resolved, 'utf-8')
       return wrapOk(content)
     } catch (error) {
@@ -74,7 +85,7 @@ export const FileSystemCore = {
 
   async writeFile(targetPath: string, content: string): Promise<IpcResult<void>> {
     try {
-      const resolved = assertInsideWorkspace(targetPath)
+      const resolved = assertInsideAllowedPaths(targetPath)
       await fs.writeFile(resolved, content, 'utf-8')
       return wrapOk(undefined)
     } catch (error) {
@@ -84,7 +95,7 @@ export const FileSystemCore = {
 
   async createFile(targetPath: string): Promise<IpcResult<void>> {
     try {
-      const resolved = assertInsideWorkspace(targetPath)
+      const resolved = assertInsideAllowedPaths(targetPath)
       await fs.writeFile(resolved, '', 'utf-8')
       return wrapOk(undefined)
     } catch (error) {
@@ -94,7 +105,7 @@ export const FileSystemCore = {
 
   async createDir(targetPath: string): Promise<IpcResult<void>> {
     try {
-      const resolved = assertInsideWorkspace(targetPath)
+      const resolved = assertInsideAllowedPaths(targetPath)
       await fs.mkdir(resolved, { recursive: true })
       return wrapOk(undefined)
     } catch (error) {
@@ -104,8 +115,8 @@ export const FileSystemCore = {
 
   async rename(oldPath: string, newPath: string): Promise<IpcResult<void>> {
     try {
-      const resolvedOld = assertInsideWorkspace(oldPath)
-      const resolvedNew = assertInsideWorkspace(newPath)
+      const resolvedOld = assertInsideAllowedPaths(oldPath)
+      const resolvedNew = assertInsideAllowedPaths(newPath)
       await fs.rename(resolvedOld, resolvedNew)
       return wrapOk(undefined)
     } catch (error) {
@@ -115,7 +126,7 @@ export const FileSystemCore = {
 
   async delete(targetPath: string): Promise<IpcResult<void>> {
     try {
-      const resolved = assertInsideWorkspace(targetPath)
+      const resolved = assertInsideAllowedPaths(targetPath)
       const stat = await fs.stat(resolved)
       if (stat.isDirectory()) {
         await fs.rm(resolved, { recursive: true })
@@ -130,7 +141,7 @@ export const FileSystemCore = {
 
   async stat(targetPath: string): Promise<IpcResult<FileStat>> {
     try {
-      const resolved = assertInsideWorkspace(targetPath)
+      const resolved = assertInsideAllowedPaths(targetPath)
       const s = await fs.stat(resolved)
       return wrapOk({
         name: path.basename(resolved),

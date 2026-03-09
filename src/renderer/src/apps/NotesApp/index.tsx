@@ -5,9 +5,8 @@ import { FileText } from 'lucide-react'
 
 export const NotesApp: React.FC = () => {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
-  const activeFilePath = useUIStore((s) => s.activeFilePath)
-  const workspacePath = useUIStore((s) => s.workspacePath)
-  const setActiveFilePath = useUIStore((s) => s.setActiveFilePath)
+  const activeFilePath = useUIStore((s) => s.appStates['notes.app'].activeFilePath)
+  const liteHome = useUIStore((s) => s.liteHome)
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [editorKey, setEditorKey] = useState(0)
@@ -26,7 +25,6 @@ export const NotesApp: React.FC = () => {
         setContent('')
       }
       setLoading(false)
-      // Force re-mount LexicalEditor on file switch
       setEditorKey((k) => k + 1)
     })
   }, [activeFilePath])
@@ -41,15 +39,27 @@ export const NotesApp: React.FC = () => {
   )
 
   const handleQuickCreate = useCallback(async () => {
-    if (!workspacePath) return
-    const notesDir = `${workspacePath}/notes`
-    await window.api.fs.createDir(notesDir)
-    const fileName = `untitled-${Date.now()}.md`
-    const filePath = `${notesDir}/${fileName}`
+    if (!liteHome) return
+    const notesDir = `${liteHome}/notes`
+    const res = await window.api.fs.readDir(notesDir)
+    const existing = res.ok ? res.data.map((f) => f.name) : []
+    let name = 'Untitled'
+    if (existing.includes('Untitled.md')) {
+      let i = 2
+      while (existing.includes(`Untitled ${i}.md`)) i++
+      name = `Untitled ${i}`
+    }
+    const filePath = `${notesDir}/${name}.md`
     await window.api.fs.createFile(filePath)
-    await window.api.fs.writeFile(filePath, '# Untitled\n\n')
-    setActiveFilePath(filePath)
-  }, [workspacePath, setActiveFilePath])
+    await window.api.fs.writeFile(filePath, `# ${name}\n\n`)
+    // Set active file for notes.app
+    const store = useUIStore.getState()
+    const updated = {
+      ...store.appStates,
+      'notes.app': { ...store.appStates['notes.app'], activeFilePath: filePath },
+    }
+    useUIStore.setState({ appStates: updated })
+  }, [liteHome])
 
   const blurClass = showCommandPalette
     ? 'filter blur-[3px] opacity-50 transition-all duration-300'
@@ -60,7 +70,7 @@ export const NotesApp: React.FC = () => {
       <div className={`flex-1 flex flex-col items-center justify-center gap-4 text-tx-faint ${blurClass}`}>
         <FileText size={32} className="text-tx-faint" />
         <div className="text-sm">No note selected</div>
-        {workspacePath && (
+        {liteHome && (
           <button
             onClick={handleQuickCreate}
             className="px-4 py-1.5 text-[13px] text-tx-muted border border-border-strong rounded-md hover:border-tx-faint hover:text-tx-main transition-colors"

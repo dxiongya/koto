@@ -27,8 +27,8 @@ import { createPortal } from 'react-dom'
 import { Copy, Check, ChevronDown, Code2 } from 'lucide-react'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 
-const CODE_FENCE_RE = /^```(\w+)?$/
-const CODE_FENCE_PARTIAL_RE = /^```(\w+)$/
+const CODE_FENCE_RE = /^```([a-zA-Z0-9_+-]+)?\s*$/
+const CODE_FENCE_PARTIAL_RE = /^```([a-zA-Z0-9_+-]+)\s*$/
 
 const LANGUAGE_OPTIONS = getCodeLanguageOptions()
 
@@ -49,7 +49,7 @@ export function CodeBlockEnhancementPlugin(): JSX.Element {
   useEffect(() => {
     return editor.registerCommand(
       KEY_ENTER_COMMAND,
-      () => {
+      (e) => {
         const selection = $getSelection()
         if (!$isRangeSelection(selection) || !selection.isCollapsed()) return false
         const node = selection.anchor.getNode()
@@ -58,7 +58,11 @@ export function CodeBlockEnhancementPlugin(): JSX.Element {
         const text = parent.getTextContent()
         const match = text.match(CODE_FENCE_RE)
         if (!match) return false
-        const codeNode = $createCodeNode(match[1])
+        
+        if (e) e.preventDefault()
+        
+        const lang = match[1] || 'text'
+        const codeNode = $createCodeNode(lang)
         parent.replace(codeNode)
         codeNode.select()
         return true
@@ -204,10 +208,11 @@ function CodeFenceLangSuggestion({
     if (!suggestion) return
     const unregEnter = editor.registerCommand(
       KEY_ENTER_COMMAND,
-      () => {
+      (e) => {
         if (!suggestion) return false
         const selected = suggestion.matches[activeIndex]
         if (selected) {
+          if (e) e.preventDefault()
           createCodeBlock(selected[0])
           return true
         }
@@ -217,10 +222,11 @@ function CodeFenceLangSuggestion({
     )
     const unregTab = editor.registerCommand(
       KEY_TAB_COMMAND,
-      () => {
+      (e) => {
         if (!suggestion) return false
         const selected = suggestion.matches[activeIndex]
         if (selected) {
+          if (e) e.preventDefault()
           createCodeBlock(selected[0])
           return true
         }
@@ -230,8 +236,9 @@ function CodeFenceLangSuggestion({
     )
     const unregDown = editor.registerCommand(
       KEY_ARROW_DOWN_COMMAND,
-      () => {
+      (e) => {
         if (!suggestion) return false
+        if (e) e.preventDefault()
         setActiveIndex((i) => Math.min(i + 1, suggestion.matches.length - 1))
         return true
       },
@@ -239,8 +246,9 @@ function CodeFenceLangSuggestion({
     )
     const unregUp = editor.registerCommand(
       KEY_ARROW_UP_COMMAND,
-      () => {
+      (e) => {
         if (!suggestion) return false
+        if (e) e.preventDefault()
         setActiveIndex((i) => Math.max(i - 1, 0))
         return true
       },
@@ -248,8 +256,9 @@ function CodeFenceLangSuggestion({
     )
     const unregEsc = editor.registerCommand(
       KEY_ESCAPE_COMMAND,
-      () => {
+      (e) => {
         if (!suggestion) return false
+        if (e) e.preventDefault()
         setSuggestion(null)
         return true
       },
