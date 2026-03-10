@@ -1,4 +1,6 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
+import fs from 'fs'
+import path from 'path'
 import { IpcChannels } from '../../shared/types'
 import type { LiteConfig } from '../../shared/types'
 import { FileSystemCore, setProjectPath, getProjectPath } from './fs'
@@ -105,6 +107,36 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.TERMINAL_CLOSE, (_, id: string) => {
     ptyManager.close(id)
+  })
+
+  ipcMain.handle(IpcChannels.TERMINAL_GET_CWD, (_, id: string) => {
+    const cwd = ptyManager.getCwd(id)
+    return { ok: true, data: cwd }
+  })
+
+  ipcMain.handle(IpcChannels.TERMINAL_SAVE_BUFFER, (_, sessionKey: string, buffer: string) => {
+    try {
+      const dir = path.join(getLiteHome(), 'terminals')
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(path.join(dir, `${sessionKey}.txt`), buffer, 'utf-8')
+      return { ok: true, data: undefined }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.TERMINAL_LOAD_BUFFER, (_, sessionKey: string) => {
+    try {
+      const filePath = path.join(getLiteHome(), 'terminals', `${sessionKey}.txt`)
+      if (fs.existsSync(filePath)) {
+        const data = fs.readFileSync(filePath, 'utf-8')
+        fs.unlinkSync(filePath) // clean up after loading
+        return { ok: true, data }
+      }
+      return { ok: false, error: 'not found' }
+    } catch {
+      return { ok: false, error: 'read failed' }
+    }
   })
 
   // ── Image Storage ──

@@ -36,6 +36,7 @@
   --color-tx-main: var(--tx-main);
   --color-tx-muted: var(--tx-muted);
   --color-tx-faint: var(--tx-faint);
+  --color-tx-active: var(--tx-active);
 
   --color-border-subtle: var(--border-subtle);
   --color-border-strong: var(--border-strong);
@@ -56,6 +57,7 @@
   --tx-main: #cccccc;
   --tx-muted: #888888;
   --tx-faint: #555555;
+  --tx-active: #5eead4;
 
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-strong: #333333;

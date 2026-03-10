@@ -1,23 +1,26 @@
 import type { ThemeDefinition } from './types'
 
+// Based on Cursor's "Anysphere Dark" theme
+// Uses alpha-channel whites for a cohesive transparent feel
 export const cursorDarkTheme: ThemeDefinition = {
   id: 'cursor-dark',
   name: 'Dark',
   group: 'Cursor',
   isDark: true,
   colors: {
-    'bg-app': '#1e1e1e',
-    'bg-sidebar': '#181818',
-    'bg-hover': '#2a2a2a',
-    'bg-active': '#37373d',
-    'bg-popover': '#252526',
-    'bg-input': '#3c3c3c',
-    'tx-main': '#d4d4d4',
-    'tx-muted': '#858585',
-    'tx-faint': '#5a5a5a',
-    'border-subtle': 'rgba(255, 255, 255, 0.06)',
-    'border-strong': '#3c3c3c',
-    'accent-main': '#007acc',
-    'accent-bg': '#264f78',
+    'bg-app': '#181818',
+    'bg-sidebar': '#141414',
+    'bg-hover': 'rgba(228, 228, 228, 0.07)',
+    'bg-active': 'rgba(228, 228, 228, 0.12)',
+    'bg-popover': '#141414',
+    'bg-input': 'rgba(228, 228, 228, 0.04)',
+    'tx-main': 'rgba(228, 228, 228, 0.92)',
+    'tx-muted': 'rgba(228, 228, 228, 0.55)',
+    'tx-faint': 'rgba(228, 228, 228, 0.26)',
+    'tx-active': 'rgba(228, 228, 228, 0.92)',
+    'border-subtle': 'rgba(228, 228, 228, 0.07)',
+    'border-strong': 'rgba(228, 228, 228, 0.12)',
+    'accent-main': '#88C0D0',
+    'accent-bg': 'rgba(136, 192, 208, 0.12)',
   },
 }

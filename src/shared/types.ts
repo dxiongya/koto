@@ -45,6 +45,9 @@ export const IpcChannels = {
   TERMINAL_WRITE: 'terminal:write',
   TERMINAL_RESIZE: 'terminal:resize',
   TERMINAL_CLOSE: 'terminal:close',
+  TERMINAL_GET_CWD: 'terminal:getCwd',
+  TERMINAL_SAVE_BUFFER: 'terminal:saveBuffer',
+  TERMINAL_LOAD_BUFFER: 'terminal:loadBuffer',
   TERMINAL_DATA: 'terminal:data',
   TERMINAL_EXIT: 'terminal:exit',
 
@@ -95,6 +98,7 @@ export interface PerAppState {
 
 export interface TerminalSessionInfo {
   title: string
+  cwd?: string
 }
 
 export interface LiteConfig {

@@ -17,6 +17,7 @@ export const lightTheme: ThemeDefinition = {
     'tx-faint': '#888888',
     'border-subtle': 'rgba(0, 0, 0, 0.08)',
     'border-strong': 'rgba(0, 0, 0, 0.16)',
+    'tx-active': '#2b8a73',
     'accent-main': '#2b8a73',
     'accent-bg': '#E8F4F2',
   },

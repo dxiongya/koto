@@ -17,6 +17,7 @@ export const darkTheme: ThemeDefinition = {
     'tx-faint': '#555555',
     'border-subtle': 'rgba(255, 255, 255, 0.08)',
     'border-strong': '#333333',
+    'tx-active': '#5eead4',
     'accent-main': '#5eead4',
     'accent-bg': '#2d3748',
   },

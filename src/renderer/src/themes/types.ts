@@ -12,6 +12,7 @@ export interface ThemeColors {
   'tx-faint': string
   'border-subtle': string
   'border-strong': string
+  'tx-active': string
   'accent-main': string
   'accent-bg': string
 }

@@ -32,12 +32,12 @@ const SplitName: React.FC<{ name: string; isActive?: boolean }> = ({ name, isAct
     const ext = name.slice(lastDot)
     return (
       <span className="truncate" style={{ fontSize: '13.5px' }}>
-        <span className={isActive ? 'text-accent-main font-medium' : 'text-tx-main'}>{base}</span>
-        <span className={isActive ? 'text-accent-main/70' : 'text-tx-muted'}>{ext}</span>
+        <span className={isActive ? 'text-tx-active font-medium' : 'text-tx-main'}>{base}</span>
+        <span className={isActive ? 'text-tx-active/70' : 'text-tx-muted'}>{ext}</span>
       </span>
     )
   }
-  return <span className={`truncate ${isActive ? 'text-accent-main font-medium' : 'text-tx-main'}`} style={{ fontSize: '13.5px' }}>{name}</span>
+  return <span className={`truncate ${isActive ? 'text-tx-active font-medium' : 'text-tx-main'}`} style={{ fontSize: '13.5px' }}>{name}</span>
 }
 
 // ── File Tree Node (for code.app) ──
@@ -86,7 +86,7 @@ const FileTreeNode: React.FC<{
         {node.isDirectory ? (
           expanded ? <ChevronDown size={14} className="shrink-0 text-tx-muted" /> : <ChevronRight size={14} className="shrink-0 text-tx-muted" />
         ) : (
-          <span className={`shrink-0 flex items-center justify-center ${isActive ? 'text-accent-main' : 'text-tx-muted'}`}>
+          <span className={`shrink-0 flex items-center justify-center ${isActive ? 'text-tx-active' : 'text-tx-muted'}`}>
             {node.name === 'loading.tsx' || node.name === 'loading.js' ? (
               <Loader2 size={12} className="animate-spin" />
             ) : (
@@ -125,7 +125,7 @@ const AppSectionHeader: React.FC<{
   <div
     onClick={onClick}
     className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
-      ${currentApp === appId ? 'bg-bg-active text-accent-main' : 'hover:bg-bg-hover text-tx-main'}`}
+      ${currentApp === appId ? 'bg-bg-active text-tx-active' : 'hover:bg-bg-hover text-tx-main'}`}
   >
     {currentApp === appId && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
     <div className="flex items-center justify-center w-4 h-4 shrink-0 text-tx-muted">{icon}</div>
@@ -553,7 +553,7 @@ const NotesAppSection: React.FC<{
                                 ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
                             >
                               {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
-                              <FileText size={13} className={`${isActive ? 'text-accent-main' : 'text-tx-muted'} shrink-0`} />
+                              <FileText size={13} className={`${isActive ? 'text-tx-active' : 'text-tx-muted'} shrink-0`} />
                               <SplitName name={note.name} isActive={isActive} />
                             </div>
                           )
@@ -591,7 +591,7 @@ const NotesAppSection: React.FC<{
                         ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
                     >
                       {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
-                      <FileText size={13} className={`${isActive ? 'text-accent-main' : 'text-tx-muted'} shrink-0`} />
+                      <FileText size={13} className={`${isActive ? 'text-tx-active' : 'text-tx-muted'} shrink-0`} />
                       <SplitName name={note.name} isActive={isActive} />
                     </div>
                   )
@@ -763,9 +763,10 @@ const TerminalAppSection: React.FC<{
   }, [renamingId, renameValue])
 
   const handleCreate = useCallback(async () => {
-    const res = await window.api.terminal.create(codeProjectPath ?? undefined)
+    const cwd = codeProjectPath ?? undefined
+    const res = await window.api.terminal.create(cwd)
     if (res.ok) {
-      addSession({ id: res.data, title: `Terminal ${sessions.length + 1}` })
+      addSession({ id: res.data, title: `Terminal ${sessions.length + 1}`, cwd: cwd })
       setCurrentApp('terminal.app')
     }
   }, [codeProjectPath, sessions.length, addSession, setCurrentApp])
@@ -818,7 +819,7 @@ const TerminalAppSection: React.FC<{
                     ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
                 >
                   {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
-                  <Terminal size={13} className={`${isActive ? 'text-accent-main' : 'text-tx-muted'} shrink-0`} />
+                  <Terminal size={13} className={`${isActive ? 'text-tx-active' : 'text-tx-muted'} shrink-0`} />
                   {isRenaming ? (
                     <input
                       ref={renameInputRef}
@@ -834,7 +835,7 @@ const TerminalAppSection: React.FC<{
                       className="flex-1 bg-transparent text-[13px] text-tx-main outline-none border-b border-border-strong py-0.5"
                     />
                   ) : (
-                    <span className={`truncate ${isActive ? 'text-accent-main font-medium' : 'text-tx-main'}`}>{session.title}</span>
+                    <span className={`truncate ${isActive ? 'text-tx-active font-medium' : 'text-tx-main'}`}>{session.title}</span>
                   )}
                   {!isRenaming && (
                     <button
@@ -863,6 +864,15 @@ export const Sidebar: React.FC = () => {
   const codeProjectPath = useUIStore((s) => s.codeProjectPath)
   const theme = useUIStore((s) => s.theme)
   const toggleTheme = useUIStore((s) => s.toggleTheme)
+
+  // Self-heal liteHome if lost (e.g. HMR store reset)
+  useEffect(() => {
+    if (!liteHome) {
+      window.api.lite.getHome().then((res) => {
+        if (res.ok) useUIStore.getState().setLiteHome(res.data)
+      })
+    }
+  }, [liteHome])
 
   const [expandedSections, setExpandedSections] = useState<string[]>(['notes.app'])
   const [renameTrigger, setRenameTrigger] = useState(0)
@@ -1021,7 +1031,7 @@ export const Sidebar: React.FC = () => {
         <button
           onClick={() => setCurrentApp('settings.app')}
           className={`p-1.5 rounded-md hover:bg-bg-hover transition-colors ${
-            currentApp === 'settings.app' ? 'text-accent-main' : 'text-tx-faint hover:text-tx-main'
+            currentApp === 'settings.app' ? 'text-tx-active' : 'text-tx-faint hover:text-tx-main'
           }`}
           title="Settings"
         >

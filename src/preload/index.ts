@@ -58,6 +58,11 @@ const api = {
     resize: (id: string, cols: number, rows: number) =>
       ipcRenderer.invoke(IpcChannels.TERMINAL_RESIZE, id, cols, rows),
     close: (id: string) => ipcRenderer.invoke(IpcChannels.TERMINAL_CLOSE, id),
+    getCwd: (id: string) => ipcRenderer.invoke(IpcChannels.TERMINAL_GET_CWD, id),
+    saveBuffer: (sessionKey: string, buffer: string) =>
+      ipcRenderer.invoke(IpcChannels.TERMINAL_SAVE_BUFFER, sessionKey, buffer),
+    loadBuffer: (sessionKey: string) =>
+      ipcRenderer.invoke(IpcChannels.TERMINAL_LOAD_BUFFER, sessionKey),
     onData: (callback: (id: string, data: string) => void) => {
       const handler = (_: unknown, id: string, data: string): void => callback(id, data)
       ipcRenderer.on(IpcChannels.TERMINAL_DATA, handler)

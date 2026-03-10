@@ -7,6 +7,9 @@ import { builtinThemes, applyTheme, applyFont } from '../themes'
 export interface TerminalSession {
   id: string
   title: string
+  cwd?: string
+  /** Transient: restored buffer content, not persisted */
+  _restoredBuffer?: string
 }
 
 interface UIState {
@@ -74,12 +77,15 @@ interface UIState {
   setActiveTerminalId: (id: string | null) => void
 }
 
-// Debounced persist to main process
+// Debounced persist to main process — merges patches within the debounce window
 let persistTimer: ReturnType<typeof setTimeout> | null = null
+let pendingPatch: Record<string, unknown> = {}
 function persistState(patch: Record<string, unknown>): void {
+  Object.assign(pendingPatch, patch)
   if (persistTimer) clearTimeout(persistTimer)
   persistTimer = setTimeout(() => {
-    window.api.state.update(patch)
+    window.api.state.update(pendingPatch)
+    pendingPatch = {}
   }, 300)
 }
 
@@ -239,7 +245,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   addTerminalSession: (session) => {
     const next = [...get().terminalSessions, session]
     set({ terminalSessions: next, activeTerminalId: session.id })
-    persistState({ terminalSessions: next.map((t) => ({ title: t.title })) })
+    persistState({ terminalSessions: next.map((t) => ({ title: t.title, cwd: t.cwd })) })
   },
 
   removeTerminalSession: (id) => {
@@ -249,7 +255,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       ? (next.length > 0 ? next[next.length - 1].id : null)
       : prev.activeTerminalId
     set({ terminalSessions: next, activeTerminalId: newActiveId })
-    persistState({ terminalSessions: next.map((t) => ({ title: t.title })) })
+    persistState({ terminalSessions: next.map((t) => ({ title: t.title, cwd: t.cwd })) })
   },
 
   setActiveTerminalId: (id) => set({ activeTerminalId: id }),

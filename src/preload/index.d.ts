@@ -32,6 +32,9 @@ export interface TerminalAPI {
   write: (id: string, data: string) => Promise<void>
   resize: (id: string, cols: number, rows: number) => Promise<void>
   close: (id: string) => Promise<void>
+  getCwd: (id: string) => Promise<IpcResult<string | null>>
+  saveBuffer: (sessionKey: string, buffer: string) => Promise<IpcResult<void>>
+  loadBuffer: (sessionKey: string) => Promise<IpcResult<string>>
   onData: (callback: (id: string, data: string) => void) => () => void
   onExit: (callback: (id: string, exitCode: number) => void) => () => void
 }

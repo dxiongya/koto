@@ -35,8 +35,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         <div className="flex-1 flex flex-col relative overflow-hidden">
           {children}
         </div>
-        <CommandPalette />
       </div>
+      <CommandPalette />
     </div>
   );
 };

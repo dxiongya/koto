@@ -1,4 +1,5 @@
 import * as pty from 'node-pty'
+import { execSync } from 'child_process'
 import { BrowserWindow } from 'electron'
 import { IpcChannels } from '../../shared/types'
 
@@ -13,6 +14,7 @@ function cleanEnv(): Record<string, string> {
 interface PtySession {
   id: string
   process: pty.IPty
+  initialCwd: string
 }
 
 export class PtyManager {
@@ -46,8 +48,34 @@ export class PtyManager {
       }
     })
 
-    this.sessions.set(id, { id, process: proc })
+    this.sessions.set(id, { id, process: proc, initialCwd: cwd })
     return id
+  }
+
+  /** Get the current working directory of a PTY session */
+  getCwd(id: string): string | null {
+    const session = this.sessions.get(id)
+    if (!session) return null
+    try {
+      const pid = session.process.pid
+      // macOS: use lsof to find cwd
+      if (process.platform === 'darwin') {
+        const out = execSync(`lsof -p ${pid} -Fn 2>/dev/null | grep '^n/' | grep cwd`, {
+          encoding: 'utf-8',
+          timeout: 2000,
+        })
+        const match = out.match(/^n(.+)$/m)
+        if (match) return match[1]
+      }
+      // Linux: read /proc symlink
+      if (process.platform === 'linux') {
+        const fs = require('fs')
+        return fs.readlinkSync(`/proc/${pid}/cwd`)
+      }
+    } catch {
+      // fallback
+    }
+    return session.initialCwd
   }
 
   write(id: string, data: string): void {

@@ -1,43 +1,32 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { useUIStore } from '../../store/useUIStore'
-import { getThemeGroups, fontList } from '../../themes'
+import { builtinThemes, getThemeGroups, fontList } from '../../themes'
 import type { FontId, ThemeDefinition } from '../../themes'
-import { Check } from 'lucide-react'
+import { Check, Sun, Moon } from 'lucide-react'
 
-const ThemeCard: React.FC<{ t: ThemeDefinition; active: boolean; onClick: () => void }> = ({ t, active, onClick }) => (
-  <button
-    onClick={onClick}
-    className={`relative rounded-lg border p-3 text-left transition-colors ${
-      active ? 'border-accent-main' : 'border-border-subtle hover:border-border-strong'
-    }`}
+/** Mini app preview using a theme's colors */
+const ThemePreview: React.FC<{ t: ThemeDefinition }> = ({ t }) => (
+  <div
+    className="rounded-md h-[52px] overflow-hidden flex"
+    style={{ backgroundColor: t.colors['bg-app'], border: `1px solid ${t.colors['border-subtle']}` }}
   >
-    {/* Mini preview */}
-    <div
-      className="rounded-md h-16 mb-2 overflow-hidden flex"
-      style={{ backgroundColor: t.colors['bg-app'], border: `1px solid ${t.colors['border-subtle']}` }}
-    >
-      <div className="w-[40%] h-full" style={{ backgroundColor: t.colors['bg-sidebar'] }}>
-        <div className="pt-3 px-2 space-y-1.5">
-          <div className="h-1.5 w-8 rounded" style={{ backgroundColor: t.colors['tx-faint'] }} />
-          <div className="h-1.5 w-12 rounded" style={{ backgroundColor: t.colors['accent-main'] }} />
-          <div className="h-1.5 w-10 rounded" style={{ backgroundColor: t.colors['tx-faint'] }} />
-        </div>
-      </div>
-      <div className="flex-1 pt-3 px-2 space-y-1.5">
-        <div className="h-1.5 w-full rounded" style={{ backgroundColor: t.colors['tx-faint'], opacity: 0.4 }} />
-        <div className="h-1.5 w-3/4 rounded" style={{ backgroundColor: t.colors['tx-faint'], opacity: 0.3 }} />
-        <div className="h-1.5 w-5/6 rounded" style={{ backgroundColor: t.colors['tx-faint'], opacity: 0.2 }} />
+    <div className="w-[38%] h-full" style={{ backgroundColor: t.colors['bg-sidebar'] }}>
+      <div className="pt-2.5 px-2 space-y-1.5">
+        <div className="h-1 w-6 rounded-full" style={{ backgroundColor: t.colors['tx-faint'] }} />
+        <div className="h-1 w-9 rounded-full" style={{ backgroundColor: t.colors['accent-main'] }} />
+        <div className="h-1 w-7 rounded-full" style={{ backgroundColor: t.colors['tx-faint'] }} />
       </div>
     </div>
-    <div className="flex items-center justify-between">
-      <span className="text-tx-main text-sm">{t.name}</span>
-      {active && <Check size={14} className="text-accent-main" />}
+    <div className="flex-1 pt-2.5 px-2 space-y-1.5">
+      <div className="h-1 w-full rounded-full" style={{ backgroundColor: t.colors['tx-faint'], opacity: 0.35 }} />
+      <div className="h-1 w-3/4 rounded-full" style={{ backgroundColor: t.colors['tx-faint'], opacity: 0.25 }} />
+      <div className="h-1 w-5/6 rounded-full" style={{ backgroundColor: t.colors['tx-faint'], opacity: 0.18 }} />
     </div>
-  </button>
+  </div>
 )
 
 const SettingsApp: React.FC = () => {
-  const theme = useUIStore((s) => s.theme)
+  const currentThemeId = useUIStore((s) => s.theme)
   const fontFamily = useUIStore((s) => s.fontFamily)
   const setTheme = useUIStore((s) => s.setTheme)
   const setFontFamily = useUIStore((s) => s.setFontFamily)
@@ -47,7 +36,28 @@ const SettingsApp: React.FC = () => {
     ? 'filter blur-[3px] opacity-50 transition-all duration-300'
     : 'transition-all duration-300'
 
-  const themeGroups = getThemeGroups()
+  const themeGroups = useMemo(() => getThemeGroups(), [])
+
+  // Determine current group and dark/light state
+  const currentTheme = builtinThemes[currentThemeId]
+  const currentGroup = currentTheme?.group ?? 'Lite'
+  const isDark = currentTheme?.isDark ?? true
+
+  // Switch group: keep current dark/light preference, find matching theme in new group
+  const handleGroupSelect = (group: string) => {
+    const groupThemes = themeGroups.find((g) => g.group === group)?.themes
+    if (!groupThemes) return
+    const match = groupThemes.find((t) => t.isDark === isDark) || groupThemes[0]
+    setTheme(match.id)
+  }
+
+  // Toggle dark/light within the same group
+  const handleModeToggle = (dark: boolean) => {
+    const groupThemes = themeGroups.find((g) => g.group === currentGroup)?.themes
+    if (!groupThemes) return
+    const match = groupThemes.find((t) => t.isDark === dark)
+    if (match) setTheme(match.id)
+  }
 
   return (
     <div className={`flex-1 overflow-y-auto ${blurClass}`}>
@@ -57,22 +67,54 @@ const SettingsApp: React.FC = () => {
         {/* ── Theme ── */}
         <section className="mb-10">
           <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Theme</h2>
-          <div className="space-y-6">
-            {themeGroups.map(({ group, themes }) => (
-              <div key={group}>
-                <div className="text-tx-faint text-[12px] font-medium mb-2">{group}</div>
-                <div className="grid grid-cols-2 gap-3">
-                  {themes.map((t) => (
-                    <ThemeCard
-                      key={t.id}
-                      t={t}
-                      active={theme === t.id}
-                      onClick={() => setTheme(t.id)}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+
+          {/* Group selector */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            {themeGroups.map(({ group, themes }) => {
+              const isActive = currentGroup === group
+              const previewTheme = themes.find((t) => t.isDark) || themes[0]
+              return (
+                <button
+                  key={group}
+                  onClick={() => handleGroupSelect(group)}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    isActive ? 'border-accent-main' : 'border-border-subtle hover:border-border-strong'
+                  }`}
+                >
+                  <ThemePreview t={previewTheme} />
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-tx-main text-sm font-medium">{group}</span>
+                    {isActive && <Check size={14} className="text-accent-main" />}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Dark / Light toggle */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleModeToggle(true)}
+              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                isDark
+                  ? 'bg-accent-main/10 text-accent-main'
+                  : 'text-tx-muted hover:bg-bg-hover'
+              }`}
+            >
+              <Moon size={14} />
+              Dark
+            </button>
+            <button
+              onClick={() => handleModeToggle(false)}
+              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                !isDark
+                  ? 'bg-accent-main/10 text-accent-main'
+                  : 'text-tx-muted hover:bg-bg-hover'
+              }`}
+            >
+              <Sun size={14} />
+              Light
+            </button>
           </div>
         </section>
 
@@ -113,4 +155,5 @@ const SettingsApp: React.FC = () => {
   )
 }
 
+export { SettingsApp }
 export default SettingsApp
