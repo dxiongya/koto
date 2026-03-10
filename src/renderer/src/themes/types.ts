@@ -19,6 +19,7 @@ export interface ThemeColors {
 export interface ThemeDefinition {
   id: string
   name: string
+  group: string
   isDark: boolean
   colors: ThemeColors
 }

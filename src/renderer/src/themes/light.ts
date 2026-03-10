@@ -3,6 +3,7 @@ import type { ThemeDefinition } from './types'
 export const lightTheme: ThemeDefinition = {
   id: 'light',
   name: 'Light',
+  group: 'Lite',
   isDark: false,
   colors: {
     'bg-app': '#FCFBF9',

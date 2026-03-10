@@ -1,8 +1,40 @@
 import React from 'react'
 import { useUIStore } from '../../store/useUIStore'
-import { builtinThemes, fontList } from '../../themes'
-import type { FontId } from '../../themes'
+import { getThemeGroups, fontList } from '../../themes'
+import type { FontId, ThemeDefinition } from '../../themes'
 import { Check } from 'lucide-react'
+
+const ThemeCard: React.FC<{ t: ThemeDefinition; active: boolean; onClick: () => void }> = ({ t, active, onClick }) => (
+  <button
+    onClick={onClick}
+    className={`relative rounded-lg border p-3 text-left transition-colors ${
+      active ? 'border-accent-main' : 'border-border-subtle hover:border-border-strong'
+    }`}
+  >
+    {/* Mini preview */}
+    <div
+      className="rounded-md h-16 mb-2 overflow-hidden flex"
+      style={{ backgroundColor: t.colors['bg-app'], border: `1px solid ${t.colors['border-subtle']}` }}
+    >
+      <div className="w-[40%] h-full" style={{ backgroundColor: t.colors['bg-sidebar'] }}>
+        <div className="pt-3 px-2 space-y-1.5">
+          <div className="h-1.5 w-8 rounded" style={{ backgroundColor: t.colors['tx-faint'] }} />
+          <div className="h-1.5 w-12 rounded" style={{ backgroundColor: t.colors['accent-main'] }} />
+          <div className="h-1.5 w-10 rounded" style={{ backgroundColor: t.colors['tx-faint'] }} />
+        </div>
+      </div>
+      <div className="flex-1 pt-3 px-2 space-y-1.5">
+        <div className="h-1.5 w-full rounded" style={{ backgroundColor: t.colors['tx-faint'], opacity: 0.4 }} />
+        <div className="h-1.5 w-3/4 rounded" style={{ backgroundColor: t.colors['tx-faint'], opacity: 0.3 }} />
+        <div className="h-1.5 w-5/6 rounded" style={{ backgroundColor: t.colors['tx-faint'], opacity: 0.2 }} />
+      </div>
+    </div>
+    <div className="flex items-center justify-between">
+      <span className="text-tx-main text-sm">{t.name}</span>
+      {active && <Check size={14} className="text-accent-main" />}
+    </div>
+  </button>
+)
 
 const SettingsApp: React.FC = () => {
   const theme = useUIStore((s) => s.theme)
@@ -15,6 +47,8 @@ const SettingsApp: React.FC = () => {
     ? 'filter blur-[3px] opacity-50 transition-all duration-300'
     : 'transition-all duration-300'
 
+  const themeGroups = getThemeGroups()
+
   return (
     <div className={`flex-1 overflow-y-auto ${blurClass}`}>
       <div className="max-w-[560px] mx-auto py-12 px-6">
@@ -23,40 +57,21 @@ const SettingsApp: React.FC = () => {
         {/* ── Theme ── */}
         <section className="mb-10">
           <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Theme</h2>
-          <div className="grid grid-cols-2 gap-3">
-            {Object.values(builtinThemes).map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTheme(t.id)}
-                className={`relative rounded-lg border p-3 text-left transition-colors ${
-                  theme === t.id
-                    ? 'border-accent-main'
-                    : 'border-border-subtle hover:border-border-strong'
-                }`}
-              >
-                {/* Mini preview */}
-                <div
-                  className="rounded-md h-16 mb-2 border border-border-subtle overflow-hidden"
-                  style={{ backgroundColor: t.colors['bg-app'] }}
-                >
-                  <div
-                    className="w-[40%] h-full"
-                    style={{ backgroundColor: t.colors['bg-sidebar'] }}
-                  >
-                    <div className="pt-3 px-2 space-y-1.5">
-                      <div className="h-1.5 w-8 rounded" style={{ backgroundColor: t.colors['tx-faint'] }} />
-                      <div className="h-1.5 w-12 rounded" style={{ backgroundColor: t.colors['accent-main'] }} />
-                      <div className="h-1.5 w-10 rounded" style={{ backgroundColor: t.colors['tx-faint'] }} />
-                    </div>
-                  </div>
+          <div className="space-y-6">
+            {themeGroups.map(({ group, themes }) => (
+              <div key={group}>
+                <div className="text-tx-faint text-[12px] font-medium mb-2">{group}</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {themes.map((t) => (
+                    <ThemeCard
+                      key={t.id}
+                      t={t}
+                      active={theme === t.id}
+                      onClick={() => setTheme(t.id)}
+                    />
+                  ))}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-tx-main text-sm">{t.name}</span>
-                  {theme === t.id && (
-                    <Check size={14} className="text-accent-main" />
-                  )}
-                </div>
-              </button>
+              </div>
             ))}
           </div>
         </section>

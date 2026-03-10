@@ -1,16 +1,33 @@
 import type { ThemeDefinition, FontId } from './types'
 import { darkTheme } from './dark'
 import { lightTheme } from './light'
+import { cursorDarkTheme } from './cursor-dark'
+import { cursorLightTheme } from './cursor-light'
 import { fonts } from './fonts'
 
 export { darkTheme } from './dark'
 export { lightTheme } from './light'
+export { cursorDarkTheme } from './cursor-dark'
+export { cursorLightTheme } from './cursor-light'
 export { fonts, fontList } from './fonts'
 export type { ThemeDefinition, ThemeColors, FontId, FontDefinition } from './types'
 
 export const builtinThemes: Record<string, ThemeDefinition> = {
   dark: darkTheme,
   light: lightTheme,
+  'cursor-dark': cursorDarkTheme,
+  'cursor-light': cursorLightTheme,
+}
+
+/** All themes grouped by group name, preserving insertion order */
+export function getThemeGroups(): { group: string; themes: ThemeDefinition[] }[] {
+  const map = new Map<string, ThemeDefinition[]>()
+  for (const t of Object.values(builtinThemes)) {
+    const list = map.get(t.group) || []
+    list.push(t)
+    map.set(t.group, list)
+  }
+  return Array.from(map.entries()).map(([group, themes]) => ({ group, themes }))
 }
 
 /** Apply a theme by setting CSS custom properties on :root */
