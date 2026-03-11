@@ -79,6 +79,10 @@ const api = {
       }
     },
   },
+  search: {
+    content: (query: string, dirs: string[], maxResults?: number) =>
+      ipcRenderer.invoke(IpcChannels.SEARCH_CONTENT, query, dirs, maxResults),
+  },
 }
 
 if (process.contextIsolated) {

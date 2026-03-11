@@ -62,6 +62,9 @@ export const IpcChannels = {
 
   // URL Metadata
   URL_FETCH_META: 'url:fetchMeta',
+
+  // Search
+  SEARCH_CONTENT: 'search:content',
 } as const
 
 // ── File Stat ──
@@ -101,6 +104,12 @@ export interface TerminalSessionInfo {
   cwd?: string
 }
 
+export interface RecentFileEntry {
+  path: string
+  app: AppType
+  openedAt: number
+}
+
 export interface LiteConfig {
   lastApp: AppType
   lastTheme: string
@@ -116,6 +125,8 @@ export interface LiteConfig {
   recentProjects: string[]
   // terminal.app
   terminalSessions: TerminalSessionInfo[]
+  // recent files
+  recentFiles: RecentFileEntry[]
 }
 
 // ── Default Per-App State ──
@@ -144,4 +155,5 @@ export const DEFAULT_LITE_CONFIG: LiteConfig = {
   codeProjectPath: null,
   recentProjects: [],
   terminalSessions: [],
+  recentFiles: [],
 }

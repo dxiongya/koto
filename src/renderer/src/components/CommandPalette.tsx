@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Search, FileText, FileCode, Terminal, Settings, Globe, Archive,
-  Plus, PanelLeft, Moon, Sun, ArrowRight,
+  Plus, PanelLeft, Moon, Sun, ArrowRight, Hash, Clock,
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import type { AppType } from '../../../shared/types'
@@ -12,9 +12,12 @@ interface PaletteItem {
   id: string
   label: string
   hint?: string
+  detail?: string
   icon: React.FC<{ size?: number; className?: string }>
   category: string
   action: () => void
+  /** Higher = sorted first within category */
+  boost?: number
 }
 
 // ── Fuzzy match ──
@@ -35,17 +38,25 @@ function fuzzyScore(query: string, text: string): number {
   let score = 0
   let qi = 0
   let lastMatch = -1
+
+  // Exact substring match — big bonus
+  if (t.includes(q)) score += 50
+
   for (let ti = 0; ti < t.length && qi < q.length; ti++) {
     if (t[ti] === q[qi]) {
       score += 10
       // Consecutive match bonus
       if (lastMatch === ti - 1) score += 5
       // Start-of-word bonus
-      if (ti === 0 || t[ti - 1] === '/' || t[ti - 1] === '.' || t[ti - 1] === ' ') score += 8
+      if (ti === 0 || '/. -_'.includes(t[ti - 1])) score += 8
+      // Prefix match bonus
+      if (qi === ti) score += 3
       lastMatch = ti
       qi++
     }
   }
+  // Shorter text = better match (less noise)
+  if (qi === q.length) score += Math.max(0, 20 - t.length)
   return qi === q.length ? score : 0
 }
 
@@ -131,10 +142,16 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
   const terminalSessions = useUIStore((s) => s.terminalSessions)
   const currentApp = useUIStore((s) => s.currentApp)
   const theme = useUIStore((s) => s.theme)
+  const recentFiles = useUIStore((s) => s.recentFiles)
 
   // Loaded file lists
   const [noteFiles, setNoteFiles] = useState<{ name: string; path: string }[]>([])
   const [codeFiles, setCodeFiles] = useState<{ name: string; path: string }[]>([])
+
+  // Content search results
+  const [searchResults, setSearchResults] = useState<PaletteItem[]>([])
+  const [searching, setSearching] = useState(false)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Load files on mount
   useEffect(() => {
@@ -154,13 +171,92 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     inputRef.current?.focus()
   }, [])
 
-  // Detect command mode
+  // Detect modes
   const isCommandMode = query.startsWith('>')
-  const searchQuery = isCommandMode ? query.slice(1).trim() : query.trim()
+  const isSearchMode = query.startsWith('#')
+  const searchQuery = isCommandMode
+    ? query.slice(1).trim()
+    : isSearchMode
+      ? query.slice(1).trim()
+      : query.trim()
+
+  // Content search with debounce
+  useEffect(() => {
+    if (!isSearchMode || searchQuery.length < 2) {
+      setSearchResults([])
+      setSearching(false)
+      return
+    }
+
+    setSearching(true)
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+
+    searchTimerRef.current = setTimeout(async () => {
+      const dirs: string[] = []
+      if (liteHome) dirs.push(`${liteHome}/notes`)
+      if (codeProjectPath) dirs.push(codeProjectPath)
+
+      if (dirs.length === 0) {
+        setSearchResults([])
+        setSearching(false)
+        return
+      }
+
+      const res = await window.api.search.content(searchQuery, dirs, 30)
+      if (!res.ok) {
+        setSearchResults([])
+        setSearching(false)
+        return
+      }
+
+      const store = useUIStore.getState()
+      const items: PaletteItem[] = res.data.map((match, i) => {
+        const isNote = liteHome && match.filePath.startsWith(`${liteHome}/notes`)
+        return {
+          id: `search:${match.filePath}:${match.line}:${i}`,
+          label: match.fileName,
+          hint: `L${match.line}`,
+          detail: match.content,
+          icon: isNote ? FileText : FileCode,
+          category: 'Search Results',
+          action: () => {
+            const app: AppType = isNote ? 'notes.app' : 'code.app'
+            store.setCurrentApp(app)
+            const appStates = store.appStates
+            useUIStore.setState({
+              appStates: {
+                ...appStates,
+                [app]: { ...appStates[app], activeFilePath: match.filePath },
+              },
+            })
+          },
+        }
+      })
+
+      setSearchResults(items)
+      setSearching(false)
+      setSelectedIndex(0)
+    }, 300)
+
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    }
+  }, [isSearchMode, searchQuery, liteHome, codeProjectPath])
+
+  // Recent files set for boost lookup
+  const recentPathSet = useMemo(() => {
+    const map = new Map<string, number>()
+    recentFiles.forEach((f, i) => map.set(f.path, recentFiles.length - i))
+    return map
+  }, [recentFiles])
 
   // Build items
   const items = useMemo((): PaletteItem[] => {
     const store = useUIStore.getState()
+
+    // Content search mode — only show search results
+    if (isSearchMode) return searchResults
+
     const all: PaletteItem[] = []
 
     if (isCommandMode) {
@@ -171,10 +267,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
           label: 'New Note',
           icon: Plus,
           category: 'Actions',
-          action: () => {
-            store.setCurrentApp('notes.app')
-            // Trigger note creation via sidebar
-          },
+          action: () => store.setCurrentApp('notes.app'),
         },
         {
           id: 'cmd:new-terminal',
@@ -235,7 +328,6 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
         },
       ]
 
-      // Add app switch commands
       for (const [appId, meta] of Object.entries(APP_META)) {
         if (appId === currentApp) continue
         commands.push({
@@ -250,7 +342,31 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       return commands
     }
 
-    // ── Search mode: resources + apps + actions ──
+    // ── Default search mode ──
+
+    // Recent files (shown first when no query)
+    for (const recent of recentFiles.slice(0, 8)) {
+      const fileName = recent.path.split('/').pop() || recent.path
+      const isNote = recent.app === 'notes.app'
+      all.push({
+        id: `recent:${recent.path}`,
+        label: fileName,
+        hint: isNote ? 'notes' : recent.path.split('/').slice(-2, -1)[0],
+        icon: Clock,
+        category: 'Recent',
+        boost: recentPathSet.get(recent.path) || 0,
+        action: () => {
+          store.setCurrentApp(recent.app)
+          const appStates = store.appStates
+          useUIStore.setState({
+            appStates: {
+              ...appStates,
+              [recent.app]: { ...appStates[recent.app], activeFilePath: recent.path },
+            },
+          })
+        },
+      })
+    }
 
     // App switching
     for (const [appId, meta] of Object.entries(APP_META)) {
@@ -266,6 +382,8 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
     // Note files
     for (const file of noteFiles) {
+      // Skip if already in recent
+      if (recentPathSet.has(file.path)) continue
       all.push({
         id: `note:${file.path}`,
         label: file.name,
@@ -286,10 +404,11 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
     // Code files
     for (const file of codeFiles) {
+      if (recentPathSet.has(file.path)) continue
       all.push({
         id: `code:${file.path}`,
         label: file.name,
-        hint: codeProjectPath ? file.name.split('/').slice(0, -1).join('/') : undefined,
+        hint: file.name.split('/').slice(0, -1).join('/') || undefined,
         icon: FileCode,
         category: 'Code',
         action: () => {
@@ -320,7 +439,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       })
     }
 
-    // Quick actions (always shown when no query)
+    // Quick actions
     all.push(
       {
         id: 'action:new-note',
@@ -350,20 +469,30 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     )
 
     return all
-  }, [isCommandMode, noteFiles, codeFiles, terminalSessions, currentApp, codeProjectPath, theme])
+  }, [isCommandMode, isSearchMode, searchResults, noteFiles, codeFiles, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet])
 
   // Filter + sort
   const filtered = useMemo(() => {
-    if (!searchQuery) return items
+    if (isSearchMode) return items // already filtered by search
+    if (!searchQuery) {
+      // No query: show recent first, then actions, then apps
+      return items
+    }
     return items
       .filter((item) => fuzzyMatch(searchQuery, item.label))
-      .sort((a, b) => fuzzyScore(searchQuery, b.label) - fuzzyScore(searchQuery, a.label))
-  }, [items, searchQuery])
+      .sort((a, b) => {
+        const scoreA = fuzzyScore(searchQuery, a.label) + (a.boost || 0) * 2
+        const scoreB = fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 2
+        return scoreB - scoreA
+      })
+  }, [items, searchQuery, isSearchMode])
 
   // Group by category
   const grouped = useMemo(() => {
     const groups: { category: string; items: PaletteItem[] }[] = []
-    const categoryOrder = ['Actions', 'Apps', 'Notes', 'Code', 'Terminals']
+    const categoryOrder = isSearchMode
+      ? ['Search Results']
+      : ['Recent', 'Actions', 'Apps', 'Notes', 'Code', 'Terminals']
     const map = new Map<string, PaletteItem[]>()
 
     for (const item of filtered) {
@@ -372,13 +501,16 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       map.set(item.category, arr)
     }
 
+    // When there's a query, hide Recent if files are found in Notes/Code
+    const hasQuery = searchQuery.length > 0
     for (const cat of categoryOrder) {
-      const items = map.get(cat)
-      if (items?.length) groups.push({ category: cat, items: items.slice(0, 10) })
+      if (hasQuery && cat === 'Recent') continue // recent is noise when searching
+      const catItems = map.get(cat)
+      if (catItems?.length) groups.push({ category: cat, items: catItems.slice(0, 10) })
     }
 
     return groups
-  }, [filtered])
+  }, [filtered, isSearchMode, searchQuery])
 
   // Flat list for keyboard navigation
   const flatItems = useMemo(() => grouped.flatMap((g) => g.items), [grouped])
@@ -424,6 +556,12 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     el?.scrollIntoView({ block: 'nearest' })
   }, [selectedIndex])
 
+  const placeholder = isCommandMode
+    ? 'Type a command...'
+    : isSearchMode
+      ? 'Search file contents...'
+      : 'Search files, apps, actions...'
+
   return (
     <>
       {/* Backdrop */}
@@ -433,7 +571,11 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       <div className="fixed top-[12%] left-1/2 -translate-x-1/2 w-[90%] max-w-[520px] bg-bg-popover rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-border-strong overflow-hidden z-[101] flex flex-col">
         {/* Search input */}
         <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border-subtle">
-          <Search size={15} className="text-tx-faint shrink-0" />
+          {isSearchMode ? (
+            <Hash size={15} className="text-accent-main shrink-0" />
+          ) : (
+            <Search size={15} className="text-tx-faint shrink-0" />
+          )}
           <input
             ref={inputRef}
             value={query}
@@ -441,22 +583,39 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
               setQuery(e.target.value)
               setSelectedIndex(0)
             }}
-            placeholder={isCommandMode ? 'Type a command...' : 'Search files, apps, actions...'}
+            placeholder={placeholder}
             className="flex-1 bg-transparent text-tx-main text-[13px] outline-none placeholder:text-tx-faint"
             spellCheck={false}
           />
-          {!isCommandMode && (
-            <kbd className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle">
-              {'>'} cmds
-            </kbd>
-          )}
+          <div className="flex items-center gap-1.5">
+            {!isCommandMode && !isSearchMode && (
+              <>
+                <kbd
+                  className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
+                  onClick={() => { setQuery('>'); inputRef.current?.focus() }}
+                >
+                  {'>'} cmds
+                </kbd>
+                <kbd
+                  className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
+                  onClick={() => { setQuery('#'); inputRef.current?.focus() }}
+                >
+                  # search
+                </kbd>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Results */}
-        <div ref={listRef} className="max-h-[340px] overflow-y-auto py-1">
-          {grouped.length === 0 ? (
+        <div ref={listRef} className="max-h-[380px] overflow-y-auto py-1">
+          {searching ? (
             <div className="px-4 py-6 text-center text-tx-faint text-[13px]">
-              No results found
+              Searching...
+            </div>
+          ) : grouped.length === 0 ? (
+            <div className="px-4 py-6 text-center text-tx-faint text-[13px]">
+              {isSearchMode && searchQuery.length < 2 ? 'Type at least 2 characters...' : 'No results found'}
             </div>
           ) : (
             grouped.map((group) => (
@@ -480,15 +639,24 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
                         isSelected ? 'bg-accent-bg text-accent-main' : 'text-tx-main hover:bg-bg-hover'
                       }`}
                     >
-                      <item.icon size={15} className={isSelected ? 'text-accent-main' : 'text-tx-faint'} />
-                      <span className="flex-1 text-[13px] truncate">
-                        <HighlightMatch text={item.label} query={searchQuery} />
-                      </span>
-                      {item.hint && (
-                        <span className="text-[11px] text-tx-faint truncate max-w-[140px]">
-                          {item.hint}
-                        </span>
-                      )}
+                      <item.icon size={15} className={`shrink-0 ${isSelected ? 'text-accent-main' : 'text-tx-faint'}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[13px] truncate">
+                            <HighlightMatch text={item.label} query={isSearchMode ? '' : searchQuery} />
+                          </span>
+                          {item.hint && (
+                            <span className="text-[11px] text-tx-faint truncate max-w-[140px] shrink-0">
+                              {item.hint}
+                            </span>
+                          )}
+                        </div>
+                        {item.detail && (
+                          <div className="text-[11px] text-tx-faint truncate mt-0.5">
+                            {item.detail}
+                          </div>
+                        )}
+                      </div>
                       {isSelected && (
                         <ArrowRight size={12} className="text-accent-main shrink-0" />
                       )}

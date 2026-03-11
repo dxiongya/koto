@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppType, PerAppState } from '../../../shared/types'
+import type { AppType, PerAppState, RecentFileEntry } from '../../../shared/types'
 import { DEFAULT_PER_APP_STATE } from '../../../shared/types'
 import type { FontId } from '../themes/types'
 import { builtinThemes, applyTheme, applyFont } from '../themes'
@@ -42,6 +42,9 @@ interface UIState {
   terminalSessions: TerminalSession[]
   activeTerminalId: string | null
 
+  // recent files
+  recentFiles: RecentFileEntry[]
+
   // ── Actions ──
 
   setLiteHome: (path: string) => void
@@ -75,6 +78,9 @@ interface UIState {
   addTerminalSession: (session: TerminalSession) => void
   removeTerminalSession: (id: string) => void
   setActiveTerminalId: (id: string | null) => void
+
+  // recent files
+  trackRecentFile: (filePath: string, app: AppType) => void
 }
 
 // Debounced persist to main process — merges patches within the debounce window
@@ -113,6 +119,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   recentProjects: [],
   terminalSessions: [],
   activeTerminalId: null,
+  recentFiles: [],
 
   setLiteHome: (path) => set({ liteHome: path }),
 
@@ -166,6 +173,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     }
     set({ appStates: updated })
     persistState({ appStates: updated })
+    if (path) get().trackRecentFile(path, currentApp)
   },
 
   getExpandedPaths: () => {
@@ -206,6 +214,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     }
     set({ currentApp: app, appStates: updated })
     persistState({ lastApp: app, appStates: updated })
+    get().trackRecentFile(filePath, app)
   },
 
   // ── notes.app ──
@@ -259,4 +268,15 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
 
   setActiveTerminalId: (id) => set({ activeTerminalId: id }),
+
+  // ── recent files ──
+
+  trackRecentFile: (filePath, app) => {
+    const current = get().recentFiles
+    const filtered = current.filter((f) => f.path !== filePath)
+    filtered.unshift({ path: filePath, app, openedAt: Date.now() })
+    const next = filtered.slice(0, 20)
+    set({ recentFiles: next })
+    persistState({ recentFiles: next })
+  },
 }))

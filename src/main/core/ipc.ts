@@ -8,6 +8,7 @@ import { getLiteHome, loadConfig, saveConfig, addRecentProject } from './lite-ho
 import { fileWatcher } from './watcher'
 import { ptyManager } from './pty-manager'
 import { saveImage, saveImageFromUrl, saveImageFromPath, deleteImage } from './image-storage'
+import { searchFilesContent } from './search'
 
 export function setupIpcHandlers(): void {
   // ── Lite Home ──
@@ -223,4 +224,18 @@ export function setupIpcHandlers(): void {
     }
     return { ok: true, data: result.filePaths }
   })
+
+  // ── Content Search ──
+
+  ipcMain.handle(
+    IpcChannels.SEARCH_CONTENT,
+    async (_, query: string, dirs: string[], maxResults: number = 50) => {
+      try {
+        const results = searchFilesContent(query, dirs, maxResults)
+        return { ok: true, data: results }
+      } catch (e) {
+        return { ok: false, error: String(e) }
+      }
+    },
+  )
 }

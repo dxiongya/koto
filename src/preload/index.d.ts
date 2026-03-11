@@ -60,6 +60,17 @@ export interface UrlAPI {
   fetchMeta: (url: string) => Promise<IpcResult<UrlMeta>>
 }
 
+export interface SearchMatch {
+  filePath: string
+  fileName: string
+  line: number
+  content: string
+}
+
+export interface SearchAPI {
+  content: (query: string, dirs: string[], maxResults?: number) => Promise<IpcResult<SearchMatch[]>>
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -72,6 +83,7 @@ declare global {
       dialog: DialogAPI
       url: UrlAPI
       terminal: TerminalAPI
+      search: SearchAPI
     }
   }
 }
