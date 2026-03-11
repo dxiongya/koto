@@ -48,6 +48,10 @@ export function loadConfig(): LiteConfig {
         ...DEFAULT_LITE_CONFIG.appStates,
         ...(parsed.appStates || {}),
       },
+      ai: {
+        ...DEFAULT_LITE_CONFIG.ai,
+        ...(parsed.ai || {}),
+      },
     }
   } catch {
     return { ...DEFAULT_LITE_CONFIG }
@@ -63,6 +67,14 @@ export function saveConfig(patch: Partial<LiteConfig>): void {
     merged.appStates = {
       ...current.appStates,
       ...patch.appStates,
+    }
+  }
+
+  // Deep merge ai settings if provided
+  if (patch.ai) {
+    merged.ai = {
+      ...current.ai,
+      ...patch.ai,
     }
   }
 

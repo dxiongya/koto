@@ -164,12 +164,10 @@ export function RadixCheckListPlugin(): JSX.Element | null {
       scheduleSync,
       { skipInitialization: false }
     )
-    const removeUpdate = editor.registerUpdateListener(scheduleSync)
     const removeEditable = editor.registerEditableListener(scheduleSync)
 
     return () => {
       removeMutation()
-      removeUpdate()
       removeEditable()
     }
   }, [editor, scheduleSync])

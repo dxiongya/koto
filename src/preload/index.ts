@@ -83,6 +83,16 @@ const api = {
     content: (query: string, dirs: string[], maxResults?: number) =>
       ipcRenderer.invoke(IpcChannels.SEARCH_CONTENT, query, dirs, maxResults),
   },
+  ai: {
+    chat: (
+      providerId: string,
+      messages: Array<{ role: string; content: string }>,
+      temperature?: number,
+      maxTokens?: number
+    ) => ipcRenderer.invoke(IpcChannels.AI_CHAT, providerId, messages, temperature, maxTokens),
+    testConnection: (provider: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.AI_TEST_CONNECTION, provider),
+  },
   shortcut: {
     onShortcut: (callback: (shortcut: string) => void) => {
       const handler = (_: unknown, shortcut: string): void => callback(shortcut)

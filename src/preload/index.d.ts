@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { FileNode, FileStat, FsWatchEvent, IpcResult, LiteConfig } from '../shared/types'
+import type { FileNode, FileStat, FsWatchEvent, IpcResult, LiteConfig, AIChatMessage, AIChatResponse } from '../shared/types'
 
 export interface LiteAPI {
   getHome: () => Promise<IpcResult<string>>
@@ -76,6 +76,16 @@ export interface ShortcutAPI {
   fileSwitcherState: (open: boolean) => void
 }
 
+export interface AIAPI {
+  chat: (
+    providerId: string,
+    messages: AIChatMessage[],
+    temperature?: number,
+    maxTokens?: number
+  ) => Promise<IpcResult<AIChatResponse>>
+  testConnection: (provider: Record<string, unknown>) => Promise<IpcResult<string>>
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -90,6 +100,7 @@ declare global {
       terminal: TerminalAPI
       search: SearchAPI
       shortcut: ShortcutAPI
+      ai: AIAPI
     }
   }
 }

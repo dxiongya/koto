@@ -45,6 +45,12 @@ import {
 import { HorizontalRuleNode, HR_TRANSFORMER } from './nodes/HorizontalRuleNode'
 import { CalloutNode } from './nodes/CalloutNode'
 import { ImageNode } from './nodes/ImageNode'
+import {
+  CollapsibleContainerNode,
+  CollapsibleTitleNode,
+  CollapsibleContentNode
+} from './nodes/CollapsibleNodes'
+import { GhostTextNode } from './nodes/GhostTextNode'
 import { $createHashtagNode, $isHashtagNode } from '@lexical/hashtag'
 
 // Plugins
@@ -55,8 +61,15 @@ import { CheckListPlugin, AutoCheckListMarkdownPlugin } from './plugins/CheckLis
 import { RadixCheckListPlugin } from './plugins/RadixCheckListPlugin'
 import { CodeBlockEnhancementPlugin } from './plugins/CodeBlockEnhancementPlugin'
 import { CalloutPlugin } from './plugins/CalloutPlugin'
+import {
+  CollapsiblePlugin,
+  COLLAPSIBLE_TRANSFORMER,
+  extractCollapsibleBlocks,
+  $replaceCollapsiblePlaceholders
+} from './plugins/CollapsiblePlugin'
 import { PastePlugin } from './plugins/PastePlugin'
 import { LinkPreviewPlugin } from './plugins/LinkPreviewPlugin'
+import { GhostTextPlugin, _hasGhostText } from './plugins/GhostTextPlugin'
 import {
   TableExitPlugin,
   MarkdownTableAutoConvertPlugin,
@@ -148,6 +161,7 @@ const TABLE_TRANSFORMER: ElementTransformer = {
 
 const ALL_TRANSFORMERS = [
   TABLE_TRANSFORMER,
+  COLLAPSIBLE_TRANSFORMER,
   HR_TRANSFORMER,
   HIGHLIGHT_TRANSFORMER,
   HASHTAG_TRANSFORMER,
@@ -250,11 +264,17 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
         HorizontalRuleNode,
         CalloutNode,
         ImageNode,
-        HashtagNode
+        HashtagNode,
+        CollapsibleContainerNode,
+        CollapsibleTitleNode,
+        CollapsibleContentNode,
+        GhostTextNode
       ],
       editorState: () => {
-        // 1. Extract table blocks BEFORE Lexical processes the markdown
-        const { text: withoutTables, tables } = extractTableBlocks(initialContent)
+        // 1a. Extract collapsible blocks BEFORE other processing
+        const { text: withoutCollapsibles, blocks: collapsibleBlocks } = extractCollapsibleBlocks(initialContent)
+        // 1b. Extract table blocks BEFORE Lexical processes the markdown
+        const { text: withoutTables, tables } = extractTableBlocks(withoutCollapsibles)
 
         // 2. Preserve blank lines by inserting zero-width space markers
         const processed = withoutTables.replace(/\n{3,}/g, (match) => {
@@ -277,6 +297,11 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
         if (tables.length > 0) {
           $replacePlaceholdersWithTables(tables)
         }
+
+        // 5. Replace placeholders with actual CollapsibleNodes
+        if (collapsibleBlocks.length > 0) {
+          $replaceCollapsiblePlaceholders(collapsibleBlocks)
+        }
       },
       onError: (error: Error) => {
         console.error('Lexical error:', error)
@@ -290,6 +315,8 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
     (editorState: EditorState) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       saveTimerRef.current = setTimeout(() => {
+        // Don't auto-save while ghost text is showing (it's a transient DecoratorNode)
+        if (_hasGhostText) return
         editorState.read(() => {
           const md = $convertToMarkdownString(ALL_TRANSFORMERS)
           onSave(md)
@@ -340,6 +367,9 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
       {/* Callout */}
       <CalloutPlugin />
 
+      {/* Collapsible / Toggle */}
+      <CollapsiblePlugin />
+
       {/* Paste (images, markdown, tables) */}
       <PastePlugin />
 
@@ -348,6 +378,9 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
       <KeyboardShortcutsPlugin />
       <SlashCommandPlugin />
       <LinkPreviewPlugin />
+
+      {/* AI Ghost Text (Tab Completion) */}
+      <GhostTextPlugin />
     </LexicalComposer>
   )
 }

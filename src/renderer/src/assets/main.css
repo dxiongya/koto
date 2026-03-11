@@ -200,6 +200,60 @@ ul.editor-checklist {
   background-color: rgba(94, 234, 212, 0.04) !important;
 }
 
+/* ─── Collapsible / Toggle blocks ────────────────────────────────────── */
+.collapsible-container {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  margin: 8px 0 12px;
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+.collapsible-container[open] {
+  background: rgba(255, 255, 255, 0.015);
+}
+.collapsible-title {
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--tx-main);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background-color 0.12s;
+}
+.collapsible-title:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.collapsible-title::before {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--tx-muted);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.collapsible-container[open] > .collapsible-title::before {
+  transform: rotate(90deg);
+}
+/* Hide default marker */
+.collapsible-title::-webkit-details-marker,
+.collapsible-title::marker {
+  display: none;
+}
+.collapsible-content {
+  padding: 4px 16px 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+.collapsible-content > p:last-child {
+  margin-bottom: 0;
+}
+
 /* ─── Code block language badge (CSS data-attr) ──────────────────────── */
 [data-lang-label]::after {
   content: attr(data-lang-label);
@@ -212,4 +266,26 @@ ul.editor-checklist {
   pointer-events: none;
   font-family: var(--font-mono);
   text-transform: lowercase;
+}
+
+/* ─── Ghost Text (AI Completion) ────────────────────────────────────── */
+
+/* Non-code: DecoratorNode (inline in the Lexical node tree) */
+.ghost-text-inline {
+  color: #888;
+  opacity: 0.6;
+  pointer-events: none;
+  user-select: none;
+  font-style: italic;
+}
+
+/* Code blocks: fixed-position ghost text at cursor */
+.ghost-text-code-overlay {
+  color: #888;
+  opacity: 0.6;
+  pointer-events: none;
+  user-select: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  white-space: pre;
 }

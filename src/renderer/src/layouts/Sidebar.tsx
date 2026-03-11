@@ -272,10 +272,14 @@ const NotesAppSection: React.FC<{
     const res = await window.api.fs.rename(oldPath, newPath)
     if (res.ok) {
       setRefreshCounter((c) => c + 1)
-      // If renamed file was active, update active path
-      if (oldPath === activeFilePath) onFileClick(newPath)
+      // If renamed file was active, update active path in-place (no navigation side effects)
+      if (oldPath === activeFilePath) {
+        const store = useUIStore.getState()
+        const updated = { ...store.appStates, 'notes.app': { ...store.appStates['notes.app'], activeFilePath: newPath } }
+        useUIStore.setState({ appStates: updated })
+      }
     }
-  }, [activeFilePath, onFileClick])
+  }, [activeFilePath])
 
   const deleteItem = useCallback(async (itemPath: string) => {
     const res = await window.api.fs.delete(itemPath)
@@ -490,14 +494,6 @@ const NotesAppSection: React.FC<{
                 renderInput(20, inlineInput.type === 'group' ? <FolderPlus size={13} /> : <FileText size={13} />)
               }
 
-              {/* Rename input for root-level items */}
-              {inlineInput?.type === 'rename' && inlineInput.renamePath && (() => {
-                const parent = inlineInput.renamePath!.substring(0, inlineInput.renamePath!.lastIndexOf('/'))
-                return parent === notesDir
-                  ? renderInput(20, inlineInput.renameIsDir ? <FolderPlus size={13} /> : <FileText size={13} />)
-                  : null
-              })()}
-
               {/* Groups */}
               {groups.map((group) => {
                 const isExpanded = notesExpandedGroups.includes(group.path)
@@ -506,7 +502,11 @@ const NotesAppSection: React.FC<{
                 const isBeingRenamed = inlineInput?.type === 'rename' && inlineInput.renamePath === group.path
                 const isSelected = selectedGroup === group.path
 
-                if (isBeingRenamed) return null // rendered above
+                if (isBeingRenamed) return (
+                  <React.Fragment key={group.path}>
+                    {renderInput(20, <FolderPlus size={13} />)}
+                  </React.Fragment>
+                )
 
                 return (
                   <React.Fragment key={group.path}>
@@ -576,7 +576,11 @@ const NotesAppSection: React.FC<{
                   const isDragging = dragNotePath === note.path
                   const isNoteRenamed = inlineInput?.type === 'rename' && inlineInput.renamePath === note.path
 
-                  if (isNoteRenamed) return null // rendered at top
+                  if (isNoteRenamed) return (
+                    <React.Fragment key={note.path}>
+                      {renderInput(20, <FileText size={13} />)}
+                    </React.Fragment>
+                  )
 
                   return (
                     <div

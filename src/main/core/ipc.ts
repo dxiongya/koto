@@ -9,6 +9,8 @@ import { fileWatcher } from './watcher'
 import { ptyManager } from './pty-manager'
 import { saveImage, saveImageFromUrl, saveImageFromPath, deleteImage } from './image-storage'
 import { searchFilesContent } from './search'
+import { aiChat, aiTestConnection } from './ai-service'
+import type { AIProviderConfig, AIChatMessage } from '../../shared/types'
 
 export function setupIpcHandlers(): void {
   // ── Lite Home ──
@@ -224,6 +226,28 @@ export function setupIpcHandlers(): void {
     }
     return { ok: true, data: result.filePaths }
   })
+
+  // ── AI ──
+
+  ipcMain.handle(
+    IpcChannels.AI_CHAT,
+    async (
+      _,
+      providerId: string,
+      messages: AIChatMessage[],
+      temperature?: number,
+      maxTokens?: number
+    ) => {
+      return aiChat(providerId, messages, temperature, maxTokens)
+    }
+  )
+
+  ipcMain.handle(
+    IpcChannels.AI_TEST_CONNECTION,
+    async (_, provider: AIProviderConfig) => {
+      return aiTestConnection(provider)
+    }
+  )
 
   // ── Content Search ──
 

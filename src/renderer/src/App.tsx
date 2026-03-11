@@ -52,6 +52,7 @@ export default function App() {
         if (c.codeProjectPath) useUIStore.setState({ codeProjectPath: c.codeProjectPath })
         if (c.recentProjects) useUIStore.setState({ recentProjects: c.recentProjects })
         if (c.recentFiles) useUIStore.setState({ recentFiles: c.recentFiles })
+        if (c.ai) useUIStore.setState({ ai: { ...useUIStore.getState().ai, ...c.ai } })
 
         // terminal.app — recreate PTY sessions with saved cwd + buffer
         if (c.terminalSessions?.length > 0) {

@@ -66,6 +66,10 @@ export const IpcChannels = {
   // Search
   SEARCH_CONTENT: 'search:content',
 
+  // AI
+  AI_CHAT: 'ai:chat',
+  AI_TEST_CONNECTION: 'ai:testConnection',
+
   // Shortcuts forwarded from main process
   SHORTCUT: 'shortcut',
 } as const
@@ -100,6 +104,75 @@ export interface PerAppState {
   expandedPaths: string[]
 }
 
+// ── AI Provider Types ──
+
+export type AIProviderType = 'openai' | 'anthropic' | 'google' | 'openai-compatible'
+
+export interface AIProviderConfig {
+  id: string
+  name: string
+  type: AIProviderType
+  apiKey: string
+  baseUrl: string
+  model: string
+  enabled: boolean
+}
+
+export type AIFeature = 'completion' | 'chat'
+
+export interface AIFeatureRouting {
+  completion: string | null  // provider ID, null = use active
+  chat: string | null
+}
+
+export interface AISettings {
+  providers: AIProviderConfig[]
+  activeProviderId: string | null
+  featureRouting: AIFeatureRouting
+}
+
+export const DEFAULT_AI_SETTINGS: AISettings = {
+  providers: [],
+  activeProviderId: null,
+  featureRouting: { completion: null, chat: null },
+}
+
+/** Known base URLs per provider type */
+export const AI_PROVIDER_BASE_URLS: Record<AIProviderType, string> = {
+  openai: 'https://api.openai.com/v1',
+  anthropic: 'https://api.anthropic.com',
+  google: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  'openai-compatible': '',
+}
+
+/** Suggested models per provider type */
+export const AI_PROVIDER_MODELS: Record<AIProviderType, string[]> = {
+  openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'o3-mini'],
+  anthropic: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-haiku-4-5-20251001'],
+  google: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+  'openai-compatible': [],
+}
+
+// ── AI Chat Types ──
+
+export interface AIChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+export interface AIChatRequest {
+  providerId: string
+  messages: AIChatMessage[]
+  temperature?: number
+  maxTokens?: number
+}
+
+export interface AIChatResponse {
+  content: string
+  model: string
+  usage?: { promptTokens: number; completionTokens: number }
+}
+
 // ── Lite Config (Persistence) ──
 
 export interface TerminalSessionInfo {
@@ -130,6 +203,8 @@ export interface LiteConfig {
   terminalSessions: TerminalSessionInfo[]
   // recent files
   recentFiles: RecentFileEntry[]
+  // AI
+  ai: AISettings
 }
 
 // ── Default Per-App State ──
@@ -159,4 +234,5 @@ export const DEFAULT_LITE_CONFIG: LiteConfig = {
   recentProjects: [],
   terminalSessions: [],
   recentFiles: [],
+  ai: { ...DEFAULT_AI_SETTINGS },
 }

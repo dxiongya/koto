@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { AppType, PerAppState, RecentFileEntry } from '../../../shared/types'
-import { DEFAULT_PER_APP_STATE } from '../../../shared/types'
+import type { AppType, PerAppState, RecentFileEntry, AISettings, AIProviderConfig, AIFeature } from '../../../shared/types'
+import { DEFAULT_PER_APP_STATE, DEFAULT_AI_SETTINGS } from '../../../shared/types'
 import type { FontId } from '../themes/types'
 import { builtinThemes, applyTheme, applyFont } from '../themes'
 
@@ -54,6 +54,9 @@ interface UIState {
   navBackStack: NavEntry[]
   navForwardStack: NavEntry[]
 
+  // AI
+  ai: AISettings
+
   // file switcher (Ctrl+Tab)
   showFileSwitcher: boolean
 
@@ -101,6 +104,15 @@ interface UIState {
   navigateBack: () => void
   navigateForward: () => void
   setShowFileSwitcher: (show: boolean) => void
+
+  // AI
+  setAIProviders: (providers: AIProviderConfig[]) => void
+  addAIProvider: (provider: AIProviderConfig) => void
+  updateAIProvider: (id: string, patch: Partial<AIProviderConfig>) => void
+  removeAIProvider: (id: string) => void
+  setActiveAIProvider: (id: string | null) => void
+  setAIFeatureProvider: (feature: AIFeature, providerId: string | null) => void
+  getAIProviderForFeature: (feature: AIFeature) => AIProviderConfig | null
 }
 
 // Debounced persist to main process — merges patches within the debounce window
@@ -140,6 +152,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   terminalSessions: [],
   activeTerminalId: null,
   recentFiles: [],
+  ai: { ...DEFAULT_AI_SETTINGS },
   navBackStack: [],
   navForwardStack: [],
   showFileSwitcher: false,
@@ -368,5 +381,60 @@ export const useUIStore = create<UIState>((set, get) => ({
     const next = filtered.slice(0, 20)
     set({ recentFiles: next })
     persistState({ recentFiles: next })
+  },
+
+  // ── AI ──
+
+  setAIProviders: (providers) => {
+    const ai = { ...get().ai, providers }
+    set({ ai })
+    persistState({ ai })
+  },
+
+  addAIProvider: (provider) => {
+    const ai = { ...get().ai }
+    ai.providers = [...ai.providers, provider]
+    // Auto-activate if first provider
+    if (!ai.activeProviderId) ai.activeProviderId = provider.id
+    set({ ai })
+    persistState({ ai })
+  },
+
+  updateAIProvider: (id, patch) => {
+    const ai = { ...get().ai }
+    ai.providers = ai.providers.map((p) => (p.id === id ? { ...p, ...patch } : p))
+    set({ ai })
+    persistState({ ai })
+  },
+
+  removeAIProvider: (id) => {
+    const ai = { ...get().ai }
+    ai.providers = ai.providers.filter((p) => p.id !== id)
+    if (ai.activeProviderId === id) {
+      ai.activeProviderId = ai.providers[0]?.id ?? null
+    }
+    set({ ai })
+    persistState({ ai })
+  },
+
+  setActiveAIProvider: (id) => {
+    const ai = { ...get().ai, activeProviderId: id }
+    set({ ai })
+    persistState({ ai })
+  },
+
+  setAIFeatureProvider: (feature, providerId) => {
+    const ai = { ...get().ai }
+    ai.featureRouting = { ...ai.featureRouting, [feature]: providerId }
+    set({ ai })
+    persistState({ ai })
+  },
+
+  getAIProviderForFeature: (feature) => {
+    const { ai } = get()
+    const routedId = ai.featureRouting[feature]
+    const targetId = routedId ?? ai.activeProviderId
+    if (!targetId) return null
+    return ai.providers.find((p) => p.id === targetId && p.enabled) ?? null
   },
 }))

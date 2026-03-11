@@ -20,10 +20,16 @@ import {
   AlertTriangle,
   Lightbulb,
   AlertCircle,
-  ImageIcon
+  ImageIcon,
+  ChevronRight
 } from 'lucide-react'
 import { $createHorizontalRuleNode } from '../nodes/HorizontalRuleNode'
 import { $createImageNode } from '../nodes/ImageNode'
+import {
+  $createCollapsibleContainerNode,
+  $createCollapsibleTitleNode,
+  $createCollapsibleContentNode
+} from '../nodes/CollapsibleNodes'
 
 const BUILTIN_ITEMS: Array<{
   id: string
@@ -94,6 +100,13 @@ const BUILTIN_ITEMS: Array<{
     description: 'Import images',
     keywords: ['image', 'img', 'photo', 'picture'],
     icon: ImageIcon
+  },
+  {
+    id: 'toggle',
+    name: 'Toggle',
+    description: 'Collapsible block',
+    keywords: ['toggle', 'collapsible', 'details', 'accordion', 'fold'],
+    icon: ChevronRight
   }
 ]
 
@@ -205,6 +218,23 @@ export function SlashCommandPlugin(): JSX.Element | null {
           const afterP = $createParagraphNode()
           $insertNodes([callout, afterP])
           innerP.selectStart()
+        })
+        return
+      }
+
+      if (id === 'toggle') {
+        editor.update(() => {
+          const selection = $getSelection()
+          if (!$isRangeSelection(selection)) return
+          const container = $createCollapsibleContainerNode(true)
+          const title = $createCollapsibleTitleNode()
+          const content = $createCollapsibleContentNode()
+          const innerP = $createParagraphNode()
+          content.append(innerP)
+          const afterP = $createParagraphNode()
+          container.append(title, content)
+          $insertNodes([container, afterP])
+          title.selectStart()
         })
         return
       }
