@@ -1,6 +1,6 @@
-import { app, shell, BrowserWindow, ipcMain, protocol } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol, Menu } from 'electron'
 import { join } from 'path'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { electronApp, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { setupIpcHandlers } from './core/ipc'
 import { initLiteHome, loadConfig, saveConfig } from './core/lite-home'
@@ -9,11 +9,14 @@ import { fileWatcher } from './core/watcher'
 import { ptyManager } from './core/pty-manager'
 import { registerAssetProtocol } from './core/asset-protocol'
 
+function sendToRenderer(win: BrowserWindow, shortcut: string): void {
+  win.webContents.send('shortcut', shortcut)
+}
+
 function createWindow(): void {
   const liteHome = initLiteHome()
   const config = loadConfig()
 
-  // Restore saved window bounds or use defaults
   const bounds = config.windowBounds ?? { width: 1200, height: 800 }
 
   const mainWindow = new BrowserWindow({
@@ -50,6 +53,35 @@ function createWindow(): void {
   mainWindow.on('resize', saveBounds)
   mainWindow.on('move', saveBounds)
 
+  // Intercept keyboard shortcuts that Chromium eats
+  let fileSwitcherOpen = false
+
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    // Detect Ctrl release when file switcher is open
+    if (fileSwitcherOpen && input.type === 'keyUp' && (input.key === 'Control' || input.key === 'Meta')) {
+      fileSwitcherOpen = false
+      sendToRenderer(mainWindow, 'ctrl-release')
+      return
+    }
+
+    if (input.type !== 'keyDown') return
+
+    // Ctrl+Tab / Ctrl+Shift+Tab — file switcher
+    // Do NOT preventDefault so that Ctrl keyUp can still reach the renderer
+    if (input.control && !input.meta && !input.alt && (input.key === 'Tab' || input.code === 'Tab')) {
+      fileSwitcherOpen = true
+      sendToRenderer(mainWindow, input.shift ? 'ctrl+shift+tab' : 'ctrl+tab')
+      return
+    }
+
+    // Ctrl+- (Go Back) / Ctrl+Shift+- (Go Forward)
+    if (input.control && !input.meta && !input.alt && (input.key === '-' || input.code === 'Minus')) {
+      event.preventDefault()
+      sendToRenderer(mainWindow, input.shift ? 'ctrl+shift+-' : 'ctrl+-')
+      return
+    }
+  })
+
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
   })
@@ -74,19 +106,80 @@ protocol.registerSchemesAsPrivileged([
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.electron')
 
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
-  })
+  // NOTE: removed optimizer.watchWindowShortcuts — it can intercept our custom shortcuts
 
   ipcMain.on('ping', () => console.log('pong'))
 
-  // Register custom asset protocol for serving images from liteHome/images/
   registerAssetProtocol()
-
-  // Setup IPC Handlers
   setupIpcHandlers()
-
   createWindow()
+
+  // ── Application Menu with accelerators as backup ──
+  const sendShortcut = (name: string): void => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (win) sendToRenderer(win, name)
+  }
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'Lite',
+      submenu: [
+        { role: 'about' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'Navigate',
+      submenu: [
+        { label: 'Go Back', accelerator: 'Ctrl+-', click: () => sendShortcut('ctrl+-') },
+        { label: 'Go Forward', accelerator: 'Ctrl+Shift+-', click: () => sendShortcut('ctrl+shift+-') },
+        { type: 'separator' },
+        { label: 'Switch File', accelerator: 'Ctrl+Tab', click: () => sendShortcut('ctrl+tab') },
+        { label: 'Switch File (Prev)', accelerator: 'Ctrl+Shift+Tab', click: () => sendShortcut('ctrl+shift+tab') },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'zoom' },
+        { role: 'close' },
+      ],
+    },
+  ]
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

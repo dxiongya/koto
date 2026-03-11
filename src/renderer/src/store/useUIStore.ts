@@ -4,6 +4,11 @@ import { DEFAULT_PER_APP_STATE } from '../../../shared/types'
 import type { FontId } from '../themes/types'
 import { builtinThemes, applyTheme, applyFont } from '../themes'
 
+export interface NavEntry {
+  app: AppType
+  filePath: string | null
+}
+
 export interface TerminalSession {
   id: string
   title: string
@@ -45,6 +50,16 @@ interface UIState {
   // recent files
   recentFiles: RecentFileEntry[]
 
+  // navigation history
+  navBackStack: NavEntry[]
+  navForwardStack: NavEntry[]
+
+  // file switcher (Ctrl+Tab)
+  showFileSwitcher: boolean
+
+  // transient: initial query for command palette (e.g. '>' from Cmd+Shift+P)
+  _commandPaletteInitialQuery: string | null
+
   // ── Actions ──
 
   setLiteHome: (path: string) => void
@@ -81,6 +96,11 @@ interface UIState {
 
   // recent files
   trackRecentFile: (filePath: string, app: AppType) => void
+
+  // navigation
+  navigateBack: () => void
+  navigateForward: () => void
+  setShowFileSwitcher: (show: boolean) => void
 }
 
 // Debounced persist to main process — merges patches within the debounce window
@@ -120,6 +140,10 @@ export const useUIStore = create<UIState>((set, get) => ({
   terminalSessions: [],
   activeTerminalId: null,
   recentFiles: [],
+  navBackStack: [],
+  navForwardStack: [],
+  showFileSwitcher: false,
+  _commandPaletteInitialQuery: null,
 
   setLiteHome: (path) => set({ liteHome: path }),
 
@@ -166,7 +190,14 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
 
   setActiveFilePath: (path) => {
-    const { currentApp, appStates } = get()
+    const { currentApp, appStates, navBackStack } = get()
+    // Push current location to back stack before navigating
+    const prevFile = appStates[currentApp]?.activeFilePath ?? null
+    if (path !== prevFile) {
+      const entry: NavEntry = { app: currentApp, filePath: prevFile }
+      const newBack = [...navBackStack, entry].slice(-50)
+      set({ navBackStack: newBack, navForwardStack: [] })
+    }
     const updated = {
       ...appStates,
       [currentApp]: { ...appStates[currentApp], activeFilePath: path },
@@ -207,7 +238,13 @@ export const useUIStore = create<UIState>((set, get) => ({
   // ── Cross-app navigation ──
 
   openInApp: (app, filePath) => {
-    const { appStates } = get()
+    const { currentApp, appStates, navBackStack } = get()
+    // Push current location to back stack
+    const prevFile = appStates[currentApp]?.activeFilePath ?? null
+    const entry: NavEntry = { app: currentApp, filePath: prevFile }
+    const newBack = [...navBackStack, entry].slice(-50)
+    set({ navBackStack: newBack, navForwardStack: [] })
+
     const updated = {
       ...appStates,
       [app]: { ...appStates[app], activeFilePath: filePath },
@@ -268,6 +305,59 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
 
   setActiveTerminalId: (id) => set({ activeTerminalId: id }),
+
+  // ── navigation ──
+
+  navigateBack: () => {
+    const { navBackStack, navForwardStack, currentApp, appStates } = get()
+    if (navBackStack.length === 0) return
+
+    const target = navBackStack[navBackStack.length - 1]
+    const newBack = navBackStack.slice(0, -1)
+
+    // Push current to forward stack
+    const currentFile = appStates[currentApp]?.activeFilePath ?? null
+    const newForward = [...navForwardStack, { app: currentApp, filePath: currentFile }]
+
+    // Navigate to target
+    const updated = {
+      ...appStates,
+      [target.app]: { ...appStates[target.app], activeFilePath: target.filePath },
+    }
+    set({
+      navBackStack: newBack,
+      navForwardStack: newForward,
+      currentApp: target.app,
+      appStates: updated,
+    })
+    persistState({ lastApp: target.app, appStates: updated })
+  },
+
+  navigateForward: () => {
+    const { navBackStack, navForwardStack, currentApp, appStates } = get()
+    if (navForwardStack.length === 0) return
+
+    const target = navForwardStack[navForwardStack.length - 1]
+    const newForward = navForwardStack.slice(0, -1)
+
+    // Push current to back stack
+    const currentFile = appStates[currentApp]?.activeFilePath ?? null
+    const newBack = [...navBackStack, { app: currentApp, filePath: currentFile }]
+
+    const updated = {
+      ...appStates,
+      [target.app]: { ...appStates[target.app], activeFilePath: target.filePath },
+    }
+    set({
+      navBackStack: newBack,
+      navForwardStack: newForward,
+      currentApp: target.app,
+      appStates: updated,
+    })
+    persistState({ lastApp: target.app, appStates: updated })
+  },
+
+  setShowFileSwitcher: (show) => set({ showFileSwitcher: show }),
 
   // ── recent files ──
 

@@ -71,6 +71,11 @@ export interface SearchAPI {
   content: (query: string, dirs: string[], maxResults?: number) => Promise<IpcResult<SearchMatch[]>>
 }
 
+export interface ShortcutAPI {
+  onShortcut: (callback: (shortcut: string) => void) => () => void
+  fileSwitcherState: (open: boolean) => void
+}
+
 declare global {
   interface Window {
     electron: ElectronAPI
@@ -84,6 +89,7 @@ declare global {
       url: UrlAPI
       terminal: TerminalAPI
       search: SearchAPI
+      shortcut: ShortcutAPI
     }
   }
 }

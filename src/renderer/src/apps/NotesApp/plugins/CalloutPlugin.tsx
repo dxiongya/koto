@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import {
-  $getRoot,
   $isTextNode,
   $getSelection,
   $isRangeSelection,
@@ -11,7 +10,7 @@ import {
   KEY_ARROW_DOWN_COMMAND,
   COMMAND_PRIORITY_LOW
 } from 'lexical'
-import { $isQuoteNode } from '@lexical/rich-text'
+import { $isQuoteNode, QuoteNode } from '@lexical/rich-text'
 import { $createCalloutNode, $isCalloutNode, type CalloutType } from '../nodes/CalloutNode'
 
 const CALLOUT_RE = /^\[!(note|warning|tip|important)\]\s*/i
@@ -19,39 +18,30 @@ const CALLOUT_RE = /^\[!(note|warning|tip|important)\]\s*/i
 export function CalloutPlugin(): null {
   const [editor] = useLexicalComposerContext()
 
+  // Use registerNodeTransform — only runs when QuoteNodes change, not on every keystroke
   useEffect(() => {
-    return editor.registerUpdateListener(({ editorState, prevEditorState }) => {
-      if (editorState === prevEditorState) return
+    return editor.registerNodeTransform(QuoteNode, (node) => {
+      if (!$isQuoteNode(node)) return
 
-      editor.update(
-        () => {
-          const root = $getRoot()
-          for (const child of root.getChildren()) {
-            if (!$isQuoteNode(child)) continue
+      const firstChild = node.getFirstChild()
+      if (!firstChild || !$isTextNode(firstChild)) return
 
-            const firstChild = child.getFirstChild()
-            if (!firstChild || !$isTextNode(firstChild)) continue
+      const text = firstChild.getTextContent()
+      const match = CALLOUT_RE.exec(text)
+      if (!match) return
 
-            const text = firstChild.getTextContent()
-            const match = CALLOUT_RE.exec(text)
-            if (!match) continue
+      const type = match[1].toLowerCase() as CalloutType
+      const callout = $createCalloutNode(type)
 
-            const type = match[1].toLowerCase() as CalloutType
-            const callout = $createCalloutNode(type)
+      firstChild.setTextContent(text.slice(match[0].length))
+      if (firstChild.getTextContent() === '') {
+        firstChild.remove()
+      }
 
-            firstChild.setTextContent(text.slice(match[0].length))
-            if (firstChild.getTextContent() === '') {
-              firstChild.remove()
-            }
-
-            const children = child.getChildren()
-            children.forEach((c) => callout.append(c))
-            child.replace(callout)
-            callout.selectEnd()
-          }
-        },
-        { tag: 'callout-transform', discrete: true }
-      )
+      const children = node.getChildren()
+      children.forEach((c) => callout.append(c))
+      node.replace(callout)
+      callout.selectEnd()
     })
   }, [editor])
 

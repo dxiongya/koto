@@ -65,6 +65,9 @@ export const IpcChannels = {
 
   // Search
   SEARCH_CONTENT: 'search:content',
+
+  // Shortcuts forwarded from main process
+  SHORTCUT: 'shortcut',
 } as const
 
 // ── File Stat ──

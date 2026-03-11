@@ -6,6 +6,7 @@ import { NotesApp } from './apps/NotesApp'
 import { TerminalApp, getTerminalRefs } from './apps/TerminalApp'
 import { SettingsApp } from './apps/SettingsApp'
 import { ContextMenuProvider } from './components/ContextMenu'
+import { FileSwitcher } from './components/FileSwitcher'
 import { builtinThemes, applyTheme, applyFont } from './themes'
 import type { FontId } from './themes'
 
@@ -18,7 +19,6 @@ const appComponents: Record<string, React.FC> = {
 
 export default function App() {
   const currentApp = useUIStore((s) => s.currentApp)
-  const setShowCommandPalette = useUIStore((s) => s.setShowCommandPalette)
   const [restored, setRestored] = useState(false)
 
   // Restore full persisted state on launch
@@ -29,39 +29,28 @@ export default function App() {
     ]).then(([homeRes, configRes]) => {
       const store = useUIStore.getState()
 
-      // Set Lite Home
-      if (homeRes.ok) {
-        store.setLiteHome(homeRes.data)
-      }
-
-      // Apply default theme immediately (will be overridden if config loads)
+      if (homeRes.ok) store.setLiteHome(homeRes.data)
       applyTheme(builtinThemes.dark)
 
       if (configRes.ok) {
         const c = configRes.data
-        // Theme
         const themeId = c.lastTheme || 'dark'
         const theme = builtinThemes[themeId]
         if (theme) {
           useUIStore.setState({ theme: themeId })
           applyTheme(theme)
         }
-        // Font
         if (c.fontFamily) {
           useUIStore.setState({ fontFamily: c.fontFamily as FontId })
           applyFont(c.fontFamily as FontId)
         }
-        // App state — only restore to known app components
         if (c.lastApp && c.lastApp in appComponents) store.setCurrentApp(c.lastApp)
         if (c.appStates) useUIStore.setState({ appStates: { ...store.appStates, ...c.appStates } })
         if (c.sidebarOpen !== undefined) useUIStore.setState({ sidebarOpen: c.sidebarOpen })
-        // notes.app
         if (c.notesExpandedGroups) useUIStore.setState({ notesExpandedGroups: c.notesExpandedGroups })
         if (c.notesSortBy) useUIStore.setState({ notesSortBy: c.notesSortBy })
-        // code.app
         if (c.codeProjectPath) useUIStore.setState({ codeProjectPath: c.codeProjectPath })
         if (c.recentProjects) useUIStore.setState({ recentProjects: c.recentProjects })
-        // recent files
         if (c.recentFiles) useUIStore.setState({ recentFiles: c.recentFiles })
 
         // terminal.app — recreate PTY sessions with saved cwd + buffer
@@ -72,14 +61,9 @@ export default function App() {
               const cwd = saved.cwd || defaultCwd
               const res = await window.api.terminal.create(cwd)
               if (!res.ok) return null
-
-              // Try to load saved buffer
               let buffer: string | undefined
               const bufferRes = await window.api.terminal.loadBuffer(`session-${idx}`)
-              if (bufferRes.ok) {
-                buffer = bufferRes.data
-              }
-
+              if (bufferRes.ok) buffer = bufferRes.data
               return { id: res.data, title: saved.title, cwd, _restoredBuffer: buffer }
             }),
           ).then((results) => {
@@ -104,12 +88,11 @@ export default function App() {
     })
   }, [])
 
-  // Periodically refresh terminal cwds so we have them ready at quit time
+  // Periodically refresh terminal cwds
   useEffect(() => {
     const interval = setInterval(async () => {
       const { terminalSessions } = useUIStore.getState()
       if (terminalSessions.length === 0) return
-
       const updated = await Promise.all(
         terminalSessions.map(async (s) => {
           try {
@@ -121,7 +104,6 @@ export default function App() {
       )
       useUIStore.setState({ terminalSessions: updated })
     }, 5000)
-
     return () => clearInterval(interval)
   }, [])
 
@@ -130,43 +112,100 @@ export default function App() {
     const handleBeforeUnload = (): void => {
       const { terminalSessions } = useUIStore.getState()
       const refs = getTerminalRefs()
-
       terminalSessions.forEach((session, idx) => {
         const ref = refs.get(session.id)
         const buffer = ref?.current?.serialize() || ''
-        if (buffer) {
-          window.api.terminal.saveBuffer(`session-${idx}`, buffer)
-        }
+        if (buffer) window.api.terminal.saveBuffer(`session-${idx}`, buffer)
       })
-
-      // Persist terminal session metadata (cwd already refreshed by interval)
       window.api.state.update({
         terminalSessions: terminalSessions.map((t) => ({ title: t.title, cwd: t.cwd })),
       })
     }
-
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
   }, [])
 
-  // Cmd+K command palette and Cmd+\ sidebar
+  // ── Global keyboard shortcuts (renderer-side) ──
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'p')) {
+      const store = useUIStore.getState()
+
+      // Cmd+K / Cmd+P — Command Palette (file search)
+      if (e.metaKey && (e.key === 'k' || e.key === 'p') && !e.shiftKey) {
         e.preventDefault()
-        setShowCommandPalette(true)
+        store.setShowCommandPalette(true)
+        return
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+
+      // Cmd+Shift+P — Command Palette (command mode)
+      if (e.metaKey && e.key === 'p' && e.shiftKey) {
         e.preventDefault()
-        useUIStore.getState().toggleSidebar()
+        store.setShowCommandPalette(true)
+        useUIStore.setState({ _commandPaletteInitialQuery: '>' })
+        return
       }
+
+      // Cmd+\ — Toggle sidebar
+      if (e.metaKey && e.key === '\\') {
+        e.preventDefault()
+        store.toggleSidebar()
+        return
+      }
+
+      // Escape — Close overlays
       if (e.key === 'Escape') {
-        setShowCommandPalette(false)
+        store.setShowCommandPalette(false)
+        store.setShowFileSwitcher(false)
       }
     }
+
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [setShowCommandPalette])
+  }, [])
+
+  // ── Shortcuts forwarded from main process (Ctrl+Tab, Ctrl+-, etc.) ──
+  useEffect(() => {
+    // Debounce Ctrl+Tab to prevent double-fire (no preventDefault in main process)
+    let lastTabTime = 0
+    const TAB_DEBOUNCE = 80 // ms
+
+    const unsub = window.api.shortcut.onShortcut((shortcut) => {
+      const store = useUIStore.getState()
+      switch (shortcut) {
+        case 'ctrl+tab': {
+          const now = Date.now()
+          if (now - lastTabTime < TAB_DEBOUNCE) break
+          lastTabTime = now
+          if (!store.showFileSwitcher) {
+            store.setShowFileSwitcher(true)
+          } else {
+            window.dispatchEvent(new CustomEvent('lite:file-switcher-next'))
+          }
+          break
+        }
+        case 'ctrl+shift+tab': {
+          const now = Date.now()
+          if (now - lastTabTime < TAB_DEBOUNCE) break
+          lastTabTime = now
+          if (!store.showFileSwitcher) {
+            store.setShowFileSwitcher(true)
+          }
+          window.dispatchEvent(new CustomEvent('lite:file-switcher-prev'))
+          break
+        }
+        case 'ctrl-release':
+          window.dispatchEvent(new CustomEvent('lite:file-switcher-commit'))
+          break
+        case 'ctrl+-':
+          store.navigateBack()
+          break
+        case 'ctrl+shift+-':
+          store.navigateForward()
+          break
+      }
+    })
+    return unsub
+  }, [])
 
   if (!restored) {
     return <div className="w-screen h-screen bg-bg-app" />
@@ -180,6 +219,7 @@ export default function App() {
         {ActiveApp ? <ActiveApp /> : <PlaceholderApp name={currentApp} />}
       </MainLayout>
       <ContextMenuProvider />
+      <FileSwitcher />
     </>
   )
 }

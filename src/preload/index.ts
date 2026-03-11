@@ -83,6 +83,16 @@ const api = {
     content: (query: string, dirs: string[], maxResults?: number) =>
       ipcRenderer.invoke(IpcChannels.SEARCH_CONTENT, query, dirs, maxResults),
   },
+  shortcut: {
+    onShortcut: (callback: (shortcut: string) => void) => {
+      const handler = (_: unknown, shortcut: string): void => callback(shortcut)
+      ipcRenderer.on(IpcChannels.SHORTCUT, handler)
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.SHORTCUT, handler)
+      }
+    },
+    fileSwitcherState: (open: boolean) => ipcRenderer.send('file-switcher:state', open),
+  },
 }
 
 if (process.contextIsolated) {

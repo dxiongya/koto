@@ -31,7 +31,7 @@ import {
   Copy,
   Search
 } from 'lucide-react'
-import { mergeRegister } from '@lexical/utils'
+// mergeRegister removed — no longer needed
 
 interface ToolbarState {
   bold: boolean
@@ -148,20 +148,13 @@ export function FloatingToolbarPlugin(): JSX.Element | null {
   }, [editor])
 
   useEffect(() => {
-    return mergeRegister(
-      editor.registerCommand(
-        SELECTION_CHANGE_COMMAND,
-        () => {
-          updateToolbar()
-          return false
-        },
-        COMMAND_PRIORITY_LOW
-      ),
-      editor.registerUpdateListener(({ editorState }) => {
-        editorState.read(() => {
-          updateToolbar()
-        })
-      })
+    return editor.registerCommand(
+      SELECTION_CHANGE_COMMAND,
+      () => {
+        updateToolbar()
+        return false
+      },
+      COMMAND_PRIORITY_LOW
     )
   }, [editor, updateToolbar])
 

@@ -663,13 +663,8 @@ const CodeAppSection: React.FC<{
   }, [])
 
   const handleFileClick = useCallback((path: string) => {
-    // Set active file for code.app specifically
-    const store = useUIStore.getState()
-    const updated = {
-      ...store.appStates,
-      'code.app': { ...store.appStates['code.app'], activeFilePath: path },
-    }
-    useUIStore.setState({ appStates: updated, currentApp: 'code.app' })
+    useUIStore.getState().setCurrentApp('code.app')
+    useUIStore.getState().setActiveFilePath(path)
   }, [])
 
   const handleToggleDir = useCallback((path: string) => {
@@ -958,12 +953,8 @@ export const Sidebar: React.FC = () => {
   }
 
   const handleNoteFileClick = useCallback((path: string) => {
-    const store = useUIStore.getState()
-    const updated = {
-      ...store.appStates,
-      'notes.app': { ...store.appStates['notes.app'], activeFilePath: path },
-    }
-    useUIStore.setState({ appStates: updated, currentApp: 'notes.app' })
+    useUIStore.getState().setCurrentApp('notes.app')
+    useUIStore.getState().setActiveFilePath(path)
     setNotesSelectedGroup(null)
     sidebarRef.current?.focus()
   }, [])

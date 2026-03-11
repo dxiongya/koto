@@ -53,12 +53,7 @@ export const NotesApp: React.FC = () => {
     await window.api.fs.createFile(filePath)
     await window.api.fs.writeFile(filePath, `# ${name}\n\n`)
     // Set active file for notes.app
-    const store = useUIStore.getState()
-    const updated = {
-      ...store.appStates,
-      'notes.app': { ...store.appStates['notes.app'], activeFilePath: filePath },
-    }
-    useUIStore.setState({ appStates: updated })
+    useUIStore.getState().setActiveFilePath(filePath)
   }, [liteHome])
 
   const blurClass = showCommandPalette

@@ -58,9 +58,9 @@ export function CodeBlockEnhancementPlugin(): JSX.Element {
         const text = parent.getTextContent()
         const match = text.match(CODE_FENCE_RE)
         if (!match) return false
-        
+
         if (e) e.preventDefault()
-        
+
         const lang = match[1] || 'text'
         const codeNode = $createCodeNode(lang)
         parent.replace(codeNode)
@@ -71,7 +71,7 @@ export function CodeBlockEnhancementPlugin(): JSX.Element {
     )
   }, [editor])
 
-  // Track code blocks
+  // Track code blocks via mutation listener (only fires when nodes are created/destroyed)
   useEffect(() => {
     return editor.registerMutationListener(CodeNode, (mutations) => {
       setCodeBlocks((prev) => {
@@ -81,32 +81,23 @@ export function CodeBlockEnhancementPlugin(): JSX.Element {
             next.delete(key)
           } else {
             const elem = editor.getElementByKey(key)
-            if (elem) next.set(key, { nodeKey: key, element: elem })
+            if (elem) {
+              next.set(key, { nodeKey: key, element: elem })
+              // Set data attribute directly when code block is created/updated
+              editor.getEditorState().read(() => {
+                const node = $getNodeByKey(key)
+                if ($isCodeNode(node)) {
+                  const lang = normalizeCodeLang(node.getLanguage() || 'javascript')
+                  const label = LANGUAGE_OPTIONS.find(([v]) => v === lang)?.[1] ?? lang
+                  elem.dataset.langLabel = label
+                }
+              })
+            }
           }
         }
         return Array.from(next.values())
       })
     })
-  }, [editor])
-
-  // Sync language badge data attributes
-  useEffect(() => {
-    const sync = (): void => {
-      editor.getEditorState().read(() => {
-        const keys = editor._editorState._nodeMap
-        for (const [key, node] of keys) {
-          if ($isCodeNode(node)) {
-            const elem = editor.getElementByKey(key)
-            if (!elem) continue
-            const lang = normalizeCodeLang(node.getLanguage() || 'javascript')
-            const label = LANGUAGE_OPTIONS.find(([v]) => v === lang)?.[1] ?? lang
-            elem.dataset.langLabel = label
-          }
-        }
-      })
-    }
-    sync()
-    return editor.registerUpdateListener(sync)
   }, [editor])
 
   return (
@@ -315,7 +306,7 @@ function CodeFenceLangSuggestion({
   )
 }
 
-// Hover toolbar for code blocks
+// Hover toolbar rendered inside the code block element (position: absolute, not fixed)
 function CodeBlockHoverToolbar({
   nodeKey,
   element,
@@ -333,6 +324,7 @@ function CodeBlockHoverToolbar({
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
+  // Read language once on mount
   useEffect(() => {
     editor.getEditorState().read(() => {
       const node = $getNodeByKey(nodeKey)
@@ -342,14 +334,17 @@ function CodeBlockHoverToolbar({
     })
   }, [editor, nodeKey])
 
+  // Update language only when this specific code node mutates (not on every keystroke)
   useEffect(() => {
-    return editor.registerUpdateListener(({ editorState }) => {
-      editorState.read(() => {
-        const node = $getNodeByKey(nodeKey)
-        if ($isCodeNode(node)) {
-          setLanguage(normalizeCodeLang(node.getLanguage() || 'javascript'))
-        }
-      })
+    return editor.registerMutationListener(CodeNode, (mutations) => {
+      if (mutations.has(nodeKey) && mutations.get(nodeKey) !== 'destroyed') {
+        editor.getEditorState().read(() => {
+          const node = $getNodeByKey(nodeKey)
+          if ($isCodeNode(node)) {
+            setLanguage(normalizeCodeLang(node.getLanguage() || 'javascript'))
+          }
+        })
+      }
     })
   }, [editor, nodeKey])
 
@@ -389,6 +384,31 @@ function CodeBlockHoverToolbar({
     }
   }, [element, scheduleHide, cancelHide])
 
+  // Track position on scroll/resize for fixed positioning
+  const [pos, setPos] = useState({ top: 0, right: 0 })
+  const updatePos = useCallback(() => {
+    const rect = element.getBoundingClientRect()
+    setPos({ top: rect.top + 8, right: window.innerWidth - rect.right + 8 })
+  }, [element])
+
+  useEffect(() => {
+    if (!visible) return
+    updatePos()
+    // Find the scrollable ancestor to listen for scroll events
+    let scrollParent: HTMLElement | null = element.parentElement
+    while (scrollParent && scrollParent.scrollHeight <= scrollParent.clientHeight) {
+      scrollParent = scrollParent.parentElement
+    }
+    const target = scrollParent || window
+    const handler = () => updatePos()
+    target.addEventListener('scroll', handler, { passive: true })
+    window.addEventListener('resize', handler, { passive: true })
+    return () => {
+      target.removeEventListener('scroll', handler)
+      window.removeEventListener('resize', handler)
+    }
+  }, [visible, updatePos])
+
   const handleCopy = useCallback(() => {
     editor.getEditorState().read(() => {
       const node = $getNodeByKey(nodeKey)
@@ -415,10 +435,6 @@ function CodeBlockHoverToolbar({
 
   const friendlyName = LANGUAGE_OPTIONS.find(([v]) => v === language)?.[1] ?? language
 
-  const rect = element.getBoundingClientRect()
-  const posTop = rect.top + 8
-  const posRight = window.innerWidth - rect.right + 8
-
   return createPortal(
     <div
       ref={toolbarRef}
@@ -427,8 +443,8 @@ function CodeBlockHoverToolbar({
       }`}
       style={{
         position: 'fixed',
-        top: posTop,
-        right: posRight,
+        top: pos.top,
+        right: pos.right,
         zIndex: 50,
         backgroundColor: 'var(--color-bg-popover)',
         border: '1px solid var(--color-border-subtle)'
