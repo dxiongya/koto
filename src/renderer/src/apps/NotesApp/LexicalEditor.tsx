@@ -51,6 +51,7 @@ import {
   CollapsibleContentNode
 } from './nodes/CollapsibleNodes'
 import { GhostTextNode } from './nodes/GhostTextNode'
+import { AICommandNode } from './nodes/AICommandNode'
 import { $createHashtagNode, $isHashtagNode } from '@lexical/hashtag'
 
 // Plugins
@@ -75,6 +76,7 @@ import {
   MarkdownTableAutoConvertPlugin,
   TableActionPlugin
 } from './plugins/TablePlugin'
+import { TableAIPlugin } from './plugins/TableAIPlugin'
 import { TableOfContentsPlugin } from './plugins/TableOfContentsPlugin'
 
 const HASHTAG_TRANSFORMER: TextMatchTransformer = {
@@ -160,7 +162,7 @@ const TABLE_TRANSFORMER: ElementTransformer = {
   type: 'element'
 }
 
-const ALL_TRANSFORMERS = [
+export const ALL_TRANSFORMERS = [
   TABLE_TRANSFORMER,
   COLLAPSIBLE_TRANSFORMER,
   HR_TRANSFORMER,
@@ -269,7 +271,8 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
         CollapsibleContainerNode,
         CollapsibleTitleNode,
         CollapsibleContentNode,
-        GhostTextNode
+        GhostTextNode,
+        AICommandNode
       ],
       editorState: () => {
         // 1a. Extract collapsible blocks BEFORE other processing
@@ -366,6 +369,7 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
       <TableExitPlugin />
       <MarkdownTableAutoConvertPlugin />
       <TableActionPlugin />
+      <TableAIPlugin />
 
       {/* Code block */}
       <CodeBlockEnhancementPlugin />

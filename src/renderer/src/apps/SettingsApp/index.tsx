@@ -391,7 +391,6 @@ const AISettingsSection: React.FC = () => {
           <div className="space-y-2">
             {FEATURES.map((feature) => {
               const routed = ai.featureRouting[feature]
-              const routedProvider = routed ? ai.providers.find((p) => p.id === routed) : null
               return (
                 <div key={feature} className="flex items-center gap-3 px-3 py-2 rounded-md border border-border-subtle">
                   <div className="flex-1 min-w-0">

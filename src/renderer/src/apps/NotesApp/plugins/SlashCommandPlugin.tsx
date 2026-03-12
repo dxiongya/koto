@@ -21,8 +21,10 @@ import {
   Lightbulb,
   AlertCircle,
   ImageIcon,
-  ChevronRight
+  ChevronRight,
+  Sparkles
 } from 'lucide-react'
+import { $createAICommandNode } from '../nodes/AICommandNode'
 import { $createHorizontalRuleNode } from '../nodes/HorizontalRuleNode'
 import { $createImageNode } from '../nodes/ImageNode'
 import {
@@ -38,6 +40,13 @@ const BUILTIN_ITEMS: Array<{
   keywords: string[]
   icon: typeof Code
 }> = [
+  {
+    id: 'ai',
+    name: 'AI Generate',
+    description: 'Generate content with AI',
+    keywords: ['ai', 'gen', 'generate', 'gpt', 'claude'],
+    icon: Sparkles
+  },
   {
     id: 'code',
     name: 'Code Block',
@@ -162,6 +171,20 @@ export function SlashCommandPlugin(): JSX.Element | null {
     (id: string) => {
       removeSlashText()
       closePanel()
+
+      if (id === 'ai') {
+        // Delay to ensure removeSlashText's editor.update() has fully reconciled
+        setTimeout(() => {
+          editor.update(() => {
+            const selection = $getSelection()
+            if (!$isRangeSelection(selection)) return
+            const aiNode = $createAICommandNode()
+            const paragraph = $createParagraphNode()
+            $insertNodes([aiNode, paragraph])
+          })
+        }, 0)
+        return
+      }
 
       if (id === 'code') {
         editor.update(() => {

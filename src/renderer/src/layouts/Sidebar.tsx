@@ -78,6 +78,12 @@ const FileTreeNode: React.FC<{
     <>
       <div
         onClick={toggle}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', node.path)
+          e.dataTransfer.setData('application/x-lite-file', node.path)
+          e.dataTransfer.effectAllowed = 'copy'
+        }}
         style={{ paddingLeft: pl }}
         className={`flex items-center gap-1.5 py-[4px] pr-4 cursor-pointer text-[13px] tracking-wide relative group
           ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
@@ -364,6 +370,7 @@ const NotesAppSection: React.FC<{
 
   const handleDragStart = useCallback((e: React.DragEvent, notePath: string) => {
     e.dataTransfer.setData('text/plain', notePath)
+    e.dataTransfer.setData('application/x-lite-file', notePath)
     e.dataTransfer.effectAllowed = 'move'
     setDragNotePath(notePath)
   }, [])

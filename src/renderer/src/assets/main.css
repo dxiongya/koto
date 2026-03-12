@@ -314,6 +314,75 @@ ul.editor-checklist {
   font-style: italic;
 }
 
+/* ─── AI panel selection highlight (marks selected text nodes) ────── */
+.ai-sel-highlight {
+  background-color: rgba(94, 234, 212, 0.15) !important;
+  border-radius: 2px;
+}
+
+/* ─── AI Diff: inline editor markers ─────────────────────────────── */
+
+/* Marks content about to be removed (red pulse) */
+.ai-diff-removing {
+  background-color: rgba(239, 68, 68, 0.12) !important;
+  border-radius: 2px;
+  transition: opacity 0.4s ease, background-color 0.3s ease;
+}
+.ai-diff-removing.ai-fade-out {
+  opacity: 0;
+  background-color: rgba(239, 68, 68, 0) !important;
+}
+
+/* Marks newly inserted content (green glow → fade to normal) */
+.ai-diff-inserted {
+  background-color: rgba(16, 185, 129, 0.18);
+  border-radius: 2px;
+  animation: ai-insert-glow 1.8s ease forwards;
+}
+@keyframes ai-insert-glow {
+  0%   { background-color: rgba(16, 185, 129, 0.22); }
+  50%  { background-color: rgba(16, 185, 129, 0.10); }
+  100% { background-color: transparent; }
+}
+
+/* Diff panel slide-in */
+.ai-diff-panel-enter {
+  animation: ai-diff-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@keyframes ai-diff-slide-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Diff line stagger entrance */
+.ai-diff-line {
+  animation: ai-diff-line-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+@keyframes ai-diff-line-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Diff panel exit */
+.ai-diff-panel-exit {
+  animation: ai-diff-slide-out 0.2s ease forwards;
+}
+@keyframes ai-diff-slide-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(4px) scale(0.98); }
+}
+
+/* Accept button pulse */
+.ai-accept-pulse {
+  animation: ai-accept-pulse 0.5s ease;
+}
+@keyframes ai-accept-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  70%  { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
 /* Code blocks: fixed-position ghost text at cursor */
 .ghost-text-code-overlay {
   color: #888;

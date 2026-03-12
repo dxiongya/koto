@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, protocol, Menu } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, protocol, Menu, session } from 'electron'
 import { join } from 'path'
 import { electronApp, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -109,6 +109,20 @@ app.whenReady().then(() => {
   // NOTE: removed optimizer.watchWindowShortcuts — it can intercept our custom shortcuts
 
   ipcMain.on('ping', () => console.log('pong'))
+
+  // Set CSP for production (dev mode is relaxed for Vite HMR)
+  if (!is.dev) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: lite-asset: https: http:; connect-src 'self' https:;"
+          ],
+        },
+      })
+    })
+  }
 
   registerAssetProtocol()
   setupIpcHandlers()

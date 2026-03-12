@@ -207,18 +207,18 @@ function $collectTableContext(cell: LexicalNode, cursorOffset: number): string {
   if (!row) return cell.getTextContent().substring(0, cursorOffset)
   const table = row.getParent()
   if (!table) return cell.getTextContent().substring(0, cursorOffset)
-  const rows = table.getChildren()
+  const rows = (table as ElementNode).getChildren()
   const parts: string[] = []
   if (rows.length > 0) {
-    const hdr = rows[0].getChildren()
+    const hdr = (rows[0] as ElementNode).getChildren()
     parts.push('| ' + hdr.map((c) => c.getTextContent()).join(' | ') + ' |')
     parts.push('| ' + hdr.map(() => '---').join(' | ') + ' |')
   }
-  const rowCells = row.getChildren()
+  const rowCells = (row as ElementNode).getChildren()
   const ci = rowCells.indexOf(cell)
   parts.push('| ' + rowCells.map((c, i) => i === ci ? c.getTextContent().substring(0, cursorOffset) : i < ci ? c.getTextContent() : '').join(' | ') + ' |')
   if (rows.length > 0 && ci >= 0) {
-    const hdr = rows[0].getChildren()
+    const hdr = (rows[0] as ElementNode).getChildren()
     if (ci < hdr.length) parts.push(`(current column: "${hdr[ci].getTextContent()}")`)
   }
   return parts.join('\n')
@@ -469,7 +469,9 @@ export function GhostTextPlugin(): null {
       return
     }
 
-    const { type, lang, contextBefore } = ctx
+    // TS doesn't know the read() callback runs synchronously, so re-assert
+    const validCtx = ctx as CompletionContext
+    const { type, lang, contextBefore } = validCtx
     if (contextBefore.trim().length < MIN_CONTEXT_LENGTH) {
       dbg('request', `context too short (${contextBefore.trim().length} chars)`)
       requestingRef.current = false
