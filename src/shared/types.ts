@@ -125,16 +125,42 @@ export interface AIFeatureRouting {
   chat: string | null
 }
 
+export interface AIUsageRecord {
+  requests: number
+  promptTokens: number
+  completionTokens: number
+  errors: number
+}
+
+export interface AIUsageStats {
+  total: AIUsageRecord
+  byProvider: Record<string, AIUsageRecord>
+  byFeature: Record<string, AIUsageRecord>
+  lastRequestAt: number | null
+  /** Daily breakdown — key is YYYY-MM-DD */
+  daily: Record<string, AIUsageRecord>
+}
+
+export const DEFAULT_AI_USAGE_STATS: AIUsageStats = {
+  total: { requests: 0, promptTokens: 0, completionTokens: 0, errors: 0 },
+  byProvider: {},
+  byFeature: {},
+  lastRequestAt: null,
+  daily: {},
+}
+
 export interface AISettings {
   providers: AIProviderConfig[]
   activeProviderId: string | null
   featureRouting: AIFeatureRouting
+  usage: AIUsageStats
 }
 
 export const DEFAULT_AI_SETTINGS: AISettings = {
   providers: [],
   activeProviderId: null,
   featureRouting: { completion: null, chat: null },
+  usage: { ...DEFAULT_AI_USAGE_STATS },
 }
 
 /** Known base URLs per provider type */

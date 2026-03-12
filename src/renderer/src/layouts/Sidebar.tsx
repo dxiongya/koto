@@ -968,7 +968,7 @@ export const Sidebar: React.FC = () => {
       ref={sidebarRef}
       tabIndex={-1}
       onKeyDown={handleSidebarKeyDown}
-      className="w-[260px] flex flex-col bg-bg-app text-[14px] overflow-hidden shrink-0 outline-none"
+      className="w-full flex flex-col bg-bg-app text-[14px] overflow-hidden outline-none"
     >
       {/* Top drag area for macOS */}
       <div className="h-8 w-full shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />

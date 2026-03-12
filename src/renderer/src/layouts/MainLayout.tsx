@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
 import { CommandPalette } from '../components/CommandPalette';
+import { ResizeHandle } from '../components/ResizeHandle';
 import { motion, AnimatePresence } from 'motion/react';
 import { useUIStore } from '../store/useUIStore';
 
@@ -11,6 +12,7 @@ interface MainLayoutProps {
 
 export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const sidebarOpen = useUIStore((s) => s.sidebarOpen);
+  const [sidebarWidth, setSidebarWidth] = useState(262);
 
   return (
     <div className="w-screen h-screen flex font-mono overflow-hidden bg-bg-app text-tx-main">
@@ -18,15 +20,23 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         {sidebarOpen && (
           <motion.div
             key="sidebar"
-            initial={{ marginLeft: -262, opacity: 0 }}
+            initial={{ marginLeft: -sidebarWidth, opacity: 0 }}
             animate={{ marginLeft: 0, opacity: 1 }}
-            exit={{ marginLeft: -262, opacity: 0 }}
+            exit={{ marginLeft: -sidebarWidth, opacity: 0 }}
             transition={{ type: 'spring', bounce: 0.25, duration: 0.4 }}
             className="shrink-0 h-full flex relative z-10 shadow-sm"
+            style={{ width: sidebarWidth }}
           >
-            <div className="flex border-r border-border-subtle">
+            <div className="flex flex-1 border-r border-border-subtle overflow-hidden">
               <Sidebar />
             </div>
+            <ResizeHandle
+              side="left"
+              width={sidebarWidth}
+              onResize={setSidebarWidth}
+              minWidth={180}
+              maxWidth={420}
+            />
           </motion.div>
         )}
       </AnimatePresence>

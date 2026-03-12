@@ -498,10 +498,17 @@ export function GhostTextPlugin(): null {
       const ms = Math.round(performance.now() - t0)
 
       if (controller.signal.aborted) { dbg('request', `aborted (${ms}ms)`); return }
-      if (!result.ok) { dbgWarn('request', `error (${ms}ms):`, (result as { error: string }).error); return }
+      if (!result.ok) {
+        dbgWarn('request', `error (${ms}ms):`, (result as { error: string }).error)
+        useUIStore.getState().trackAIUsage(provider.id, 'completion', undefined, true)
+        return
+      }
 
       const completion = result.data.content.trim()
       dbg('request', `[${type}] response (${ms}ms): "${completion.slice(0, 60)}"`)
+
+      // Track usage stats
+      useUIStore.getState().trackAIUsage(provider.id, 'completion', result.data.usage)
 
       if (completion) {
         clearGhost()
@@ -509,6 +516,7 @@ export function GhostTextPlugin(): null {
       }
     } catch (err) {
       dbgWarn('request', 'exception:', err)
+      useUIStore.getState().trackAIUsage(provider.id, 'completion', undefined, true)
     } finally {
       requestingRef.current = false
       if (abortRef.current === controller) abortRef.current = null

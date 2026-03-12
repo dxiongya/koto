@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { AppType, PerAppState, RecentFileEntry, AISettings, AIProviderConfig, AIFeature } from '../../../shared/types'
-import { DEFAULT_PER_APP_STATE, DEFAULT_AI_SETTINGS } from '../../../shared/types'
+import type { AppType, PerAppState, RecentFileEntry, AISettings, AIProviderConfig, AIFeature, AIUsageRecord } from '../../../shared/types'
+import { DEFAULT_PER_APP_STATE, DEFAULT_AI_SETTINGS, DEFAULT_AI_USAGE_STATS } from '../../../shared/types'
 import type { FontId } from '../themes/types'
 import { builtinThemes, applyTheme, applyFont } from '../themes'
 
@@ -113,6 +113,8 @@ interface UIState {
   setActiveAIProvider: (id: string | null) => void
   setAIFeatureProvider: (feature: AIFeature, providerId: string | null) => void
   getAIProviderForFeature: (feature: AIFeature) => AIProviderConfig | null
+  trackAIUsage: (providerId: string, feature: AIFeature, usage: { promptTokens: number; completionTokens: number } | undefined, isError?: boolean) => void
+  resetAIUsage: () => void
 }
 
 // Debounced persist to main process — merges patches within the debounce window
@@ -436,5 +438,38 @@ export const useUIStore = create<UIState>((set, get) => ({
     const targetId = routedId ?? ai.activeProviderId
     if (!targetId) return null
     return ai.providers.find((p) => p.id === targetId && p.enabled) ?? null
+  },
+
+  trackAIUsage: (providerId, feature, usage, isError = false) => {
+    const ai = { ...get().ai }
+    const stats = ai.usage ?? { ...DEFAULT_AI_USAGE_STATS }
+    const pt = usage?.promptTokens ?? 0
+    const ct = usage?.completionTokens ?? 0
+    const day = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+
+    const addTo = (rec: AIUsageRecord): AIUsageRecord => ({
+      requests: rec.requests + 1,
+      promptTokens: rec.promptTokens + pt,
+      completionTokens: rec.completionTokens + ct,
+      errors: rec.errors + (isError ? 1 : 0),
+    })
+
+    const empty: AIUsageRecord = { requests: 0, promptTokens: 0, completionTokens: 0, errors: 0 }
+
+    stats.total = addTo(stats.total)
+    stats.byProvider = { ...stats.byProvider, [providerId]: addTo(stats.byProvider[providerId] ?? empty) }
+    stats.byFeature = { ...stats.byFeature, [feature]: addTo(stats.byFeature[feature] ?? empty) }
+    stats.daily = { ...stats.daily, [day]: addTo(stats.daily[day] ?? empty) }
+    stats.lastRequestAt = Date.now()
+
+    ai.usage = stats
+    set({ ai })
+    persistState({ ai })
+  },
+
+  resetAIUsage: () => {
+    const ai = { ...get().ai, usage: { ...DEFAULT_AI_USAGE_STATS } }
+    set({ ai })
+    persistState({ ai })
   },
 }))

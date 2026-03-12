@@ -268,6 +268,41 @@ ul.editor-checklist {
   text-transform: lowercase;
 }
 
+/* ─── Resize Handle ─────────────────────────────────────────────────── */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 20;
+  transition: background-color 0.15s;
+}
+.resize-handle:hover,
+.resize-handle-active {
+  background-color: var(--accent-main);
+  opacity: 0.3;
+}
+.resize-handle-left {
+  right: -2px;
+}
+.resize-handle-right {
+  left: -2px;
+}
+
+/* ─── Table of Contents ─────────────────────────────────────────────── */
+.toc-floating::-webkit-scrollbar,
+.toc-pinned::-webkit-scrollbar {
+  width: 0;
+}
+.toc-floating {
+  animation: toc-fade-in 0.15s ease;
+}
+@keyframes toc-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* ─── Ghost Text (AI Completion) ────────────────────────────────────── */
 
 /* Non-code: DecoratorNode (inline in the Lexical node tree) */

@@ -6,7 +6,7 @@ import type { AIProviderConfig, AIProviderType, AIFeature } from '../../../../sh
 import { AI_PROVIDER_BASE_URLS, AI_PROVIDER_MODELS } from '../../../../shared/types'
 import {
   Check, Sun, Moon, Plus, Trash2, Pencil, Zap, Eye, EyeOff,
-  Radio, Loader2
+  Radio, Loader2, BarChart3, RotateCcw
 } from 'lucide-react'
 
 /** Mini app preview using a theme's colors */
@@ -418,6 +418,172 @@ const AISettingsSection: React.FC = () => {
   )
 }
 
+// ── AI Usage Stats ──
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
+
+function formatTime(ts: number | null): string {
+  if (!ts) return 'Never'
+  const d = new Date(ts)
+  const now = Date.now()
+  const diff = now - ts
+  if (diff < 60_000) return 'Just now'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  return d.toLocaleDateString()
+}
+
+const StatCard: React.FC<{ label: string; value: string; sub?: string }> = ({ label, value, sub }) => (
+  <div className="bg-bg-hover rounded-lg p-3 border border-border-subtle">
+    <div className="text-[11px] text-tx-faint uppercase tracking-wider mb-1">{label}</div>
+    <div className="text-lg text-tx-main font-semibold">{value}</div>
+    {sub && <div className="text-[11px] text-tx-faint mt-0.5">{sub}</div>}
+  </div>
+)
+
+const AIUsageSection: React.FC = () => {
+  const ai = useUIStore((s) => s.ai)
+  const resetAIUsage = useUIStore((s) => s.resetAIUsage)
+  const [showConfirm, setShowConfirm] = useState(false)
+
+  const stats = ai.usage ?? { total: { requests: 0, promptTokens: 0, completionTokens: 0, errors: 0 }, byProvider: {}, byFeature: {}, daily: {}, lastRequestAt: null }
+  const totalTokens = stats.total.promptTokens + stats.total.completionTokens
+
+  // Recent 7 days
+  const recentDays = useMemo(() => {
+    const days: Array<{ date: string; tokens: number; requests: number }> = []
+    const today = new Date()
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today)
+      d.setDate(d.getDate() - i)
+      const key = d.toISOString().slice(0, 10)
+      const rec = stats.daily[key]
+      days.push({
+        date: d.toLocaleDateString(undefined, { weekday: 'short' }),
+        tokens: rec ? rec.promptTokens + rec.completionTokens : 0,
+        requests: rec?.requests ?? 0,
+      })
+    }
+    return days
+  }, [stats.daily])
+
+  const maxDayTokens = Math.max(...recentDays.map((d) => d.tokens), 1)
+
+  return (
+    <section className="mb-10">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider flex items-center gap-1.5">
+          <BarChart3 size={13} />
+          AI Usage
+        </h2>
+        {stats.total.requests > 0 && (
+          showConfirm ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-tx-faint">Reset all stats?</span>
+              <button
+                onClick={() => { resetAIUsage(); setShowConfirm(false) }}
+                className="text-[11px] text-red-400 hover:text-red-300"
+              >
+                Confirm
+              </button>
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="text-[11px] text-tx-muted hover:text-tx-main"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowConfirm(true)}
+              className="flex items-center gap-1 text-xs text-tx-faint hover:text-tx-muted transition-colors"
+            >
+              <RotateCcw size={11} />
+              Reset
+            </button>
+          )
+        )}
+      </div>
+
+      {stats.total.requests === 0 ? (
+        <div className="text-center py-6 text-tx-faint text-sm border border-dashed border-border-subtle rounded-lg">
+          No AI usage recorded yet.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Overview cards */}
+          <div className="grid grid-cols-4 gap-2">
+            <StatCard label="Requests" value={formatTokens(stats.total.requests)} />
+            <StatCard label="Tokens" value={formatTokens(totalTokens)} sub={`${formatTokens(stats.total.promptTokens)} in / ${formatTokens(stats.total.completionTokens)} out`} />
+            <StatCard label="Errors" value={String(stats.total.errors)} />
+            <StatCard label="Last Used" value={formatTime(stats.lastRequestAt)} />
+          </div>
+
+          {/* 7-day chart */}
+          <div className="bg-bg-hover rounded-lg p-3 border border-border-subtle">
+            <div className="text-[11px] text-tx-faint uppercase tracking-wider mb-3">Last 7 Days</div>
+            <div className="flex items-end gap-1.5 h-[48px]">
+              {recentDays.map((day, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div className="w-full flex items-end justify-center" style={{ height: 36 }}>
+                    <div
+                      className="w-full max-w-[24px] rounded-sm bg-accent-main/30 hover:bg-accent-main/50 transition-colors"
+                      style={{ height: Math.max(2, (day.tokens / maxDayTokens) * 36) }}
+                      title={`${day.requests} requests, ${formatTokens(day.tokens)} tokens`}
+                    />
+                  </div>
+                  <span className="text-[9px] text-tx-faint">{day.date}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* By Provider */}
+          {Object.keys(stats.byProvider).length > 0 && (
+            <div className="bg-bg-hover rounded-lg p-3 border border-border-subtle">
+              <div className="text-[11px] text-tx-faint uppercase tracking-wider mb-2">By Provider</div>
+              <div className="space-y-1.5">
+                {Object.entries(stats.byProvider).map(([pid, rec]) => {
+                  const provider = ai.providers.find((p) => p.id === pid)
+                  return (
+                    <div key={pid} className="flex items-center justify-between text-xs">
+                      <span className="text-tx-main truncate">{provider?.name ?? pid.slice(0, 8)}</span>
+                      <span className="text-tx-faint font-mono">
+                        {rec.requests} req · {formatTokens(rec.promptTokens + rec.completionTokens)} tok
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* By Feature */}
+          {Object.keys(stats.byFeature).length > 0 && (
+            <div className="bg-bg-hover rounded-lg p-3 border border-border-subtle">
+              <div className="text-[11px] text-tx-faint uppercase tracking-wider mb-2">By Feature</div>
+              <div className="space-y-1.5">
+                {Object.entries(stats.byFeature).map(([feat, rec]) => (
+                  <div key={feat} className="flex items-center justify-between text-xs">
+                    <span className="text-tx-main capitalize">{feat}</span>
+                    <span className="text-tx-faint font-mono">
+                      {rec.requests} req · {formatTokens(rec.promptTokens + rec.completionTokens)} tok
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 // ── Main Settings Component ──
 
 const SettingsApp: React.FC = () => {
@@ -461,6 +627,9 @@ const SettingsApp: React.FC = () => {
 
         {/* ── AI Providers ── */}
         <AISettingsSection />
+
+        {/* ── AI Usage Stats ── */}
+        <AIUsageSection />
 
         {/* ── Theme ── */}
         <section className="mb-10">

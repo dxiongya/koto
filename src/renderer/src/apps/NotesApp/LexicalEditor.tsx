@@ -75,6 +75,7 @@ import {
   MarkdownTableAutoConvertPlugin,
   TableActionPlugin
 } from './plugins/TablePlugin'
+import { TableOfContentsPlugin } from './plugins/TableOfContentsPlugin'
 
 const HASHTAG_TRANSFORMER: TextMatchTransformer = {
   dependencies: [HashtagNode],
@@ -328,20 +329,25 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
 
   return (
     <LexicalComposer initialConfig={initialConfig}>
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <div className="flex-1 overflow-y-auto">
-          <RichTextPlugin
-            contentEditable={
-              <ContentEditable className="outline-none px-8 py-2 md:px-12 md:py-4 min-h-full text-[16px] leading-[1.8]" />
-            }
-            placeholder={
-              <div className="absolute top-2 left-8 md:top-4 md:left-12 text-tx-faint text-[16px] pointer-events-none select-none">
-                Type / for commands...
-              </div>
-            }
-            ErrorBoundary={LexicalErrorBoundary}
-          />
+      <div className="flex-1 flex h-full overflow-hidden relative">
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          <div className="flex-1 overflow-y-auto relative">
+            <RichTextPlugin
+              contentEditable={
+                <ContentEditable className="outline-none px-8 py-2 md:px-12 md:py-4 min-h-full text-[16px] leading-[1.8]" />
+              }
+              placeholder={
+                <div className="absolute top-2 left-8 md:top-4 md:left-12 text-tx-faint text-[16px] pointer-events-none select-none">
+                  Type / for commands...
+                </div>
+              }
+              ErrorBoundary={LexicalErrorBoundary}
+            />
+            {/* TOC: floating & collapsed modes render inside scroll area (absolute) */}
+          </div>
         </div>
+        {/* TOC: renders itself — pinned as sibling, floating/collapsed as absolute */}
+        <TableOfContentsPlugin />
       </div>
       {/* Core plugins */}
       <HistoryPlugin />
