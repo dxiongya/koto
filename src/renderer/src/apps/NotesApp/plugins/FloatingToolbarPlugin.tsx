@@ -737,119 +737,88 @@ Rules:
 
   const [isExiting, setIsExiting] = useState(false)
 
-  // ── Accept: animated replace ──
+  // ── Accept: replace in-place, preserve scroll position ──
   const handleAccept = useCallback(() => {
     if (!diffData) return
     const markdown = diffData.generated
 
-    // 1. Mark original content in the editor with red highlight
-    const originalElems: HTMLElement[] = []
-    const sel = savedSelectionRef.current
-    if (sel) {
-      editor.getEditorState().read(() => {
-        const nodes = sel.getNodes()
+    // Find the scroll container and save its scroll position
+    const rootEl = editor.getRootElement()
+    const scroller = rootEl?.closest('.overflow-y-auto') as HTMLElement | null
+    const savedScrollTop = scroller?.scrollTop ?? 0
+
+    // Do the replacement synchronously — no delays
+    const newNodeKeys: string[] = []
+
+    editor.update(
+      () => {
+        const saved = savedSelectionRef.current
+        if (saved) $setSelection(saved.clone())
+
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return
+
+        const nodes = selection.getNodes()
+        const topLevelSet = new Set<LexicalNode>()
         for (const node of nodes) {
-          const elem = editor.getElementByKey(node.getKey())
-          if (!elem) continue
-          const isInline = elem.matches('span, a, code, strong, em, b, i, u, s')
-          if (isInline) {
-            elem.classList.remove('ai-sel-highlight')
-            elem.classList.add('ai-diff-removing')
-            originalElems.push(elem)
-          } else {
-            elem.querySelectorAll<HTMLElement>('span[data-lexical-text]').forEach((span) => {
-              span.classList.remove('ai-sel-highlight')
-              span.classList.add('ai-diff-removing')
-              originalElems.push(span)
-            })
-          }
+          const topLevel = node.getTopLevelElement()
+          if (topLevel) topLevelSet.add(topLevel)
         }
-      })
+        const topLevels = Array.from(topLevelSet)
+        if (topLevels.length === 0) return
+
+        const lastTopLevel = topLevels[topLevels.length - 1]
+
+        // Parse markdown via temporary root trick
+        const root = $getRoot()
+        const existingChildren = root.getChildren()
+
+        root.clear()
+        $convertFromMarkdownString(markdown, ALL_TRANSFORMERS)
+        const newNodes = root.getChildren()
+
+        root.clear()
+        existingChildren.forEach((child) => root.append(child))
+
+        // Insert new nodes after the last selected top-level element
+        let insertAfter: LexicalNode = lastTopLevel
+        for (const node of newNodes) {
+          insertAfter.insertAfter(node)
+          newNodeKeys.push(node.getKey())
+          insertAfter = node
+        }
+
+        // Remove the originals
+        for (const topLevel of topLevels) {
+          topLevel.remove()
+        }
+      },
+      { discrete: true }
+    )
+
+    // Immediately restore scroll position to prevent any jump
+    if (scroller) {
+      scroller.scrollTop = savedScrollTop
     }
 
-    // 2. Animate out the panel
-    setIsExiting(true)
+    // Add a subtle green glow to newly inserted content (non-disruptive)
+    requestAnimationFrame(() => {
+      // Re-pin scroll in case Lexical's DOM update shifted it
+      if (scroller) scroller.scrollTop = savedScrollTop
 
-    // 3. After a brief pause for the red highlight to show, fade out old content + insert new
-    setTimeout(() => {
-      // Fade out the old content markers
-      originalElems.forEach((el) => el.classList.add('ai-fade-out'))
-
-      setTimeout(() => {
-        // 4. Do the actual replacement
-        const newNodeKeys: string[] = []
-
-        editor.update(() => {
-          const saved = savedSelectionRef.current
-          if (saved) $setSelection(saved.clone())
-
-          const selection = $getSelection()
-          if (!$isRangeSelection(selection)) return
-
-          // Collect all top-level elements that the selection spans
-          const nodes = selection.getNodes()
-          const topLevelSet = new Set<LexicalNode>()
-          for (const node of nodes) {
-            const topLevel = node.getTopLevelElement()
-            if (topLevel) topLevelSet.add(topLevel)
-          }
-          const topLevels = Array.from(topLevelSet)
-          if (topLevels.length === 0) return
-
-          const lastTopLevel = topLevels[topLevels.length - 1]
-
-          // Parse markdown via temporary root trick
-          const root = $getRoot()
-          const existingChildren = root.getChildren()
-
-          root.clear()
-          $convertFromMarkdownString(markdown, ALL_TRANSFORMERS)
-          const newNodes = root.getChildren()
-
-          root.clear()
-          existingChildren.forEach((child) => root.append(child))
-
-          // Insert new nodes
-          let insertAfter: LexicalNode = lastTopLevel
-          for (const node of newNodes) {
-            insertAfter.insertAfter(node)
-            newNodeKeys.push(node.getKey())
-            insertAfter = node
-          }
-
-          // Remove originals
-          for (const topLevel of topLevels) {
-            topLevel.remove()
-          }
-
-          if ('selectEnd' in insertAfter) (insertAfter as ElementNode).selectEnd()
+      for (const key of newNodeKeys) {
+        const elem = editor.getElementByKey(key)
+        if (!elem) continue
+        elem.querySelectorAll<HTMLElement>('span[data-lexical-text], p, li, td, th, h1, h2, h3, h4, h5, h6').forEach((child) => {
+          child.classList.add('ai-diff-inserted')
         })
+        if (!elem.querySelector('span[data-lexical-text]')) {
+          elem.classList.add('ai-diff-inserted')
+        }
+      }
+    })
 
-        // 5. Highlight new content with green glow + smooth scroll
-        requestAnimationFrame(() => {
-          let firstElem: HTMLElement | null = null
-          for (const key of newNodeKeys) {
-            const elem = editor.getElementByKey(key)
-            if (!elem) continue
-            if (!firstElem) firstElem = elem
-            // Add glow to all text-bearing children
-            elem.querySelectorAll<HTMLElement>('span[data-lexical-text], p, li, td, th, h1, h2, h3, h4, h5, h6').forEach((child) => {
-              child.classList.add('ai-diff-inserted')
-            })
-            // Also add to the element itself if it's a leaf
-            if (!elem.querySelector('span[data-lexical-text]')) {
-              elem.classList.add('ai-diff-inserted')
-            }
-          }
-          // Smooth scroll to the new content
-          if (firstElem) {
-            firstElem.scrollIntoView({ behavior: 'smooth', block: 'center' })
-          }
-        })
-
-        onClose()
-      }, 350) // wait for fade-out of old content
-    }, 200) // wait for red highlight to be visible
+    onClose()
   }, [diffData, editor, savedSelectionRef, onClose])
 
   // ── Reject: animate out, go back to prompt ──
