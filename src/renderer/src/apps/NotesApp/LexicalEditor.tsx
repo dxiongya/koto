@@ -6,9 +6,10 @@ import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin'
 import { ListPlugin } from '@lexical/react/LexicalListPlugin'
 import { MarkdownShortcutPlugin } from '@lexical/react/LexicalMarkdownShortcutPlugin'
 import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin'
+import { TabIndentationPlugin } from '@lexical/react/LexicalTabIndentationPlugin'
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary'
 import { TablePlugin } from '@lexical/react/LexicalTablePlugin'
-import { HeadingNode, QuoteNode } from '@lexical/rich-text'
+import { HeadingNode, QuoteNode, $createHeadingNode } from '@lexical/rich-text'
 import { ListNode, ListItemNode } from '@lexical/list'
 import { CodeNode, CodeHighlightNode } from '@lexical/code'
 import { LinkNode, AutoLinkNode } from '@lexical/link'
@@ -173,6 +174,34 @@ export const ALL_TRANSFORMERS = [
   ...TRANSFORMERS
 ]
 
+const HEADING_RE = /^(#{1,6})\s/
+
+/** Post-process: convert any ParagraphNode starting with heading markers to HeadingNode.
+ *  Safety net for edge cases where $convertFromMarkdownString misses headings. */
+export function $fixUnconvertedHeadings(): void {
+  const root = $getRoot()
+  for (const node of root.getChildren()) {
+    if (!$isParagraphNode(node)) continue
+    const text = node.getTextContent()
+    const match = text.match(HEADING_RE)
+    if (!match) continue
+    const level = match[1].length as 1 | 2 | 3 | 4 | 5 | 6
+    const tag = `h${level}` as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
+    const heading = $createHeadingNode(tag)
+    // Transfer children, stripping the leading "## " from the first text node
+    const children = node.getChildren()
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i]
+      if (i === 0 && child.getType() === 'text') {
+        const textContent = child.getTextContent()
+        ;(child as TextNode).setTextContent(textContent.slice(match[0].length))
+      }
+      heading.append(child)
+    }
+    node.replace(heading)
+  }
+}
+
 /** Extract markdown table blocks from raw text, replacing them with unique
  *  placeholders. Returns the modified text and an array of parsed table data
  *  so that TableNodes can be created after $convertFromMarkdownString runs. */
@@ -180,13 +209,28 @@ function extractTableBlocks(text: string): {
   text: string
   tables: Array<{ headers: string[]; rows: string[][] }>
 } {
+  const CODE_FENCE_RE = /^[ \t]*`{3,}/
   const lines = text.split('\n')
   const tables: Array<{ headers: string[]; rows: string[][] }> = []
   const result: string[] = []
   let i = 0
+  let inCodeBlock = false
 
   while (i < lines.length) {
     const line = lines[i].trim()
+
+    // Track code fences — don't extract tables inside code blocks
+    if (CODE_FENCE_RE.test(line)) {
+      inCodeBlock = !inCodeBlock
+      result.push(lines[i])
+      i++
+      continue
+    }
+    if (inCodeBlock) {
+      result.push(lines[i])
+      i++
+      continue
+    }
 
     // Check if this line looks like the start of a table
     if (MD_TABLE_ROW_RE.test(line)) {
@@ -306,6 +350,9 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
         if (collapsibleBlocks.length > 0) {
           $replaceCollapsiblePlaceholders(collapsibleBlocks)
         }
+
+        // 6. Safety net: fix any ParagraphNodes that still have heading markers
+        $fixUnconvertedHeadings()
       },
       onError: (error: Error) => {
         console.error('Lexical error:', error)
@@ -355,6 +402,7 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
       {/* Core plugins */}
       <HistoryPlugin />
       <ListPlugin />
+      <TabIndentationPlugin />
       <MarkdownShortcutPlugin transformers={ALL_TRANSFORMERS} />
       <OnChangePlugin onChange={handleChange} ignoreSelectionChange />
       <HashtagPlugin />

@@ -37,6 +37,7 @@ import { parseMarkdownTable, buildTableNodeFromParsed } from '../utils/markdownT
 // Re-use the same transformer list as LexicalEditor.tsx
 // We import the individual transformers here to avoid circular deps
 import { HR_TRANSFORMER } from '../nodes/HorizontalRuleNode'
+import { $fixUnconvertedHeadings } from '../LexicalEditor'
 
 const HTML_IMG_RE = /<img[^>]+src=["']([^"']+)["']/i
 const URL_RE = /^https?:\/\/[^\s]+$/i
@@ -264,6 +265,8 @@ export function PastePlugin(): JSX.Element | null {
                 root.append(node)
               }
             }
+            // Safety net: fix any headings that weren't converted from markdown
+            $fixUnconvertedHeadings()
           }
         })
       })

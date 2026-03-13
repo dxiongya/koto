@@ -153,8 +153,13 @@ ul.editor-checklist {
   list-style: none;
   position: relative;
 }
-.editor-checklist .editor-listitem.has-radix-cb::before,
-.editor-checklist .editor-listitem.has-radix-cb::after {
+/* Hide ALL native checklist indicators — Radix overlay handles rendering */
+.editor-checklist .editor-listitem::before,
+.editor-checklist .editor-listitem::after {
+  display: none !important;
+}
+/* Also hide any native checkbox inputs Lexical may inject */
+.editor-checklist .editor-listitem > input[type="checkbox"] {
   display: none !important;
 }
 .editor-listitem-checked {
@@ -316,8 +321,10 @@ ul.editor-checklist {
 
 /* ─── AI panel selection highlight (marks selected text nodes) ────── */
 .ai-sel-highlight {
-  background-color: rgba(94, 234, 212, 0.15) !important;
+  background-color: rgba(94, 234, 212, 0.22) !important;
   border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.12);
+  transition: background-color 0.2s ease;
 }
 
 /* ─── AI Diff: inline editor markers ─────────────────────────────── */

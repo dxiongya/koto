@@ -5,7 +5,8 @@ import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext
 import { $getNearestNodeFromDOMNode } from 'lexical'
 import { $isListItemNode, ListItemNode } from '@lexical/list'
 
-const ITEM_SELECTOR = '.editor-checklist .editor-listitem'
+// Only select actual checklist items (not the wrapper li for nested lists)
+const ITEM_SELECTOR = '.editor-checklist .editor-listitem-checked, .editor-checklist .editor-listitem-unchecked'
 const CB_SIZE = 18
 
 interface CheckItem {
@@ -94,7 +95,13 @@ export function RadixCheckListPlugin(): JSX.Element | null {
     const next: CheckItem[] = []
     const newMap = new Map<string, HTMLElement>()
 
-    domItems.forEach((li, idx) => {
+    let realIdx = 0
+    domItems.forEach((li) => {
+      // Skip wrapper list items that only contain a nested list (no direct text)
+      const hasDirectText = li.querySelector(':scope > span[data-lexical-text]')
+      const hasNestedList = li.querySelector(':scope > ul, :scope > ol')
+      if (!hasDirectText && hasNestedList) return
+
       li.classList.add('has-radix-cb')
 
       const { top, left } = getOffsetRelativeTo(li, editorContainer)
@@ -104,7 +111,7 @@ export function RadixCheckListPlugin(): JSX.Element | null {
         li.getAttribute('aria-checked') === 'true' ||
         li.classList.contains('editor-listitem-checked')
 
-      const key = String(idx)
+      const key = String(realIdx++)
       newMap.set(key, li)
       next.push({ key, checked, top, height, left })
     })

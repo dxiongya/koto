@@ -10,7 +10,8 @@ import { ptyManager } from './pty-manager'
 import { saveImage, saveImageFromUrl, saveImageFromPath, deleteImage } from './image-storage'
 import { searchFilesContent } from './search'
 import { aiChat, aiTestConnection } from './ai-service'
-import type { AIProviderConfig, AIChatMessage } from '../../shared/types'
+import { appendChangelog, readChangelog } from './changelog'
+import type { AIProviderConfig, AIChatMessage, ChangelogEntry } from '../../shared/types'
 
 export function setupIpcHandlers(): void {
   // ── Lite Home ──
@@ -248,6 +249,16 @@ export function setupIpcHandlers(): void {
       return aiTestConnection(provider)
     }
   )
+
+  // ── AI Changelog ──
+
+  ipcMain.handle(IpcChannels.CHANGELOG_APPEND, (_, entry: ChangelogEntry) => {
+    return appendChangelog(entry)
+  })
+
+  ipcMain.handle(IpcChannels.CHANGELOG_READ, (_, filePath: string) => {
+    return readChangelog(filePath)
+  })
 
   // ── Content Search ──
 

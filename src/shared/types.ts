@@ -70,6 +70,10 @@ export const IpcChannels = {
   AI_CHAT: 'ai:chat',
   AI_TEST_CONNECTION: 'ai:testConnection',
 
+  // AI Changelog
+  CHANGELOG_APPEND: 'changelog:append',
+  CHANGELOG_READ: 'changelog:read',
+
   // Shortcuts forwarded from main process
   SHORTCUT: 'shortcut',
 } as const
@@ -197,6 +201,19 @@ export interface AIChatResponse {
   content: string
   model: string
   usage?: { promptTokens: number; completionTokens: number }
+}
+
+// ── AI Changelog Entry ──
+
+export interface ChangelogEntry {
+  timestamp: number
+  filePath: string
+  prompt: string
+  originalText: string
+  generatedText: string
+  action: 'accepted' | 'rejected'
+  model: string
+  providerId: string
 }
 
 // ── Lite Config (Persistence) ──

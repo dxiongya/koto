@@ -17,6 +17,7 @@ export function initLiteHome(): string {
     path.join(liteHome, 'collected'),
     path.join(liteHome, 'browser'),
     path.join(liteHome, 'terminals'),
+    path.join(liteHome, 'changelogs'),
   ]
 
   for (const dir of dirs) {

@@ -83,6 +83,12 @@ const api = {
     content: (query: string, dirs: string[], maxResults?: number) =>
       ipcRenderer.invoke(IpcChannels.SEARCH_CONTENT, query, dirs, maxResults),
   },
+  changelog: {
+    append: (entry: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.CHANGELOG_APPEND, entry),
+    read: (filePath: string) =>
+      ipcRenderer.invoke(IpcChannels.CHANGELOG_READ, filePath),
+  },
   ai: {
     chat: (
       providerId: string,
