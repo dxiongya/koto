@@ -53,6 +53,7 @@ export default function App() {
         if (c.recentProjects) useUIStore.setState({ recentProjects: c.recentProjects })
         if (c.recentFiles) useUIStore.setState({ recentFiles: c.recentFiles })
         if (c.ai) useUIStore.setState({ ai: { ...useUIStore.getState().ai, ...c.ai } })
+        if (c.mcpServers) useUIStore.setState({ mcpServers: c.mcpServers })
 
         // terminal.app — recreate PTY sessions with saved cwd + buffer
         if (c.terminalSessions?.length > 0) {

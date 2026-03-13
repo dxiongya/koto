@@ -1,12 +1,13 @@
-import React, { useMemo, useState, useCallback } from 'react'
+import React, { useMemo, useState, useCallback, useEffect } from 'react'
 import { useUIStore } from '../../store/useUIStore'
 import { builtinThemes, getThemeGroups, fontList } from '../../themes'
 import type { FontId, ThemeDefinition } from '../../themes'
-import type { AIProviderConfig, AIProviderType, AIFeature } from '../../../../shared/types'
+import type { AIProviderConfig, AIProviderType, AIFeature, MCPServerConfig, Skill, AIToolDefinition } from '../../../../shared/types'
 import { AI_PROVIDER_BASE_URLS, AI_PROVIDER_MODELS } from '../../../../shared/types'
 import {
   Check, Sun, Moon, Plus, Trash2, Pencil, Zap, Eye, EyeOff,
-  Radio, Loader2, BarChart3, RotateCcw
+  Radio, Loader2, BarChart3, RotateCcw, Server, BookOpen,
+  Power, PowerOff, RefreshCw, ChevronDown, ChevronRight, Wrench
 } from 'lucide-react'
 
 /** Mini app preview using a theme's colors */
@@ -583,6 +584,642 @@ const AIUsageSection: React.FC = () => {
   )
 }
 
+// ── MCP Servers Section ──
+
+const MCPServerForm: React.FC<{
+  initial?: MCPServerConfig
+  onSave: (data: Omit<MCPServerConfig, 'id'>) => void
+  onCancel: () => void
+}> = ({ initial, onSave, onCancel }) => {
+  const [mode, setMode] = useState<'stdio' | 'url'>(initial?.url ? 'url' : 'stdio')
+  const [form, setForm] = useState({
+    name: initial?.name ?? '',
+    description: initial?.description ?? '',
+    command: initial?.command ?? '',
+    args: initial?.args?.join(' ') ?? '',
+    env: Object.entries(initial?.env ?? {}).map(([k, v]) => `${k}=${v}`).join('\n'),
+    url: initial?.url ?? '',
+    headers: Object.entries(initial?.headers ?? {}).map(([k, v]) => `${k}: ${v}`).join('\n'),
+    timeout: initial?.timeout ?? 30000,
+    enabled: initial?.enabled ?? true,
+  })
+
+  const canSave = form.name.trim() && (mode === 'stdio' ? form.command.trim() : form.url.trim())
+
+  const handleSave = () => {
+    if (!canSave) return
+    const envObj: Record<string, string> = {}
+    form.env.split('\n').filter(Boolean).forEach((line) => {
+      const eq = line.indexOf('=')
+      if (eq > 0) envObj[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
+    })
+    const headersObj: Record<string, string> = {}
+    form.headers.split('\n').filter(Boolean).forEach((line) => {
+      const sep = line.indexOf(':')
+      if (sep > 0) headersObj[line.slice(0, sep).trim()] = line.slice(sep + 1).trim()
+    })
+    onSave({
+      name: form.name.trim(),
+      description: form.description.trim(),
+      command: mode === 'stdio' ? form.command.trim() : '',
+      args: mode === 'stdio' && form.args.trim() ? form.args.trim().split(/\s+/) : [],
+      env: mode === 'stdio' ? envObj : {},
+      url: mode === 'url' ? form.url.trim() : '',
+      headers: mode === 'url' ? headersObj : {},
+      timeout: form.timeout,
+      enabled: form.enabled,
+    })
+  }
+
+  return (
+    <div className="space-y-3 bg-bg-hover rounded-lg p-4 border border-border-subtle">
+      <div>
+        <label className="block text-xs text-tx-muted mb-1.5">Name</label>
+        <input
+          type="text" value={form.name}
+          onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+          placeholder="e.g. GitHub MCP"
+          className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-tx-muted mb-1.5">Description <span className="text-tx-faint">(tells AI what this server does)</span></label>
+        <input
+          type="text" value={form.description}
+          onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+          placeholder="e.g. X/Twitter API - search tweets, get user info"
+          className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint"
+        />
+      </div>
+      {/* Transport mode toggle */}
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-tx-muted">Transport:</label>
+        <button onClick={() => setMode('stdio')} className={`px-2 py-1 rounded text-[11px] font-mono transition-colors ${mode === 'stdio' ? 'bg-accent-main/15 text-accent-main' : 'text-tx-faint hover:text-tx-muted'}`}>stdio</button>
+        <button onClick={() => setMode('url')} className={`px-2 py-1 rounded text-[11px] font-mono transition-colors ${mode === 'url' ? 'bg-accent-main/15 text-accent-main' : 'text-tx-faint hover:text-tx-muted'}`}>url</button>
+      </div>
+      {mode === 'stdio' ? (
+        <>
+          <div>
+            <label className="block text-xs text-tx-muted mb-1.5">Command</label>
+            <input
+              type="text" value={form.command}
+              onChange={(e) => setForm((p) => ({ ...p, command: e.target.value }))}
+              placeholder="e.g. npx, node, python"
+              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-tx-muted mb-1.5">Arguments (space-separated)</label>
+            <input
+              type="text" value={form.args}
+              onChange={(e) => setForm((p) => ({ ...p, args: e.target.value }))}
+              placeholder="e.g. -y @modelcontextprotocol/server-everything"
+              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-tx-muted mb-1.5">Environment Variables (KEY=VALUE, one per line)</label>
+            <textarea
+              value={form.env}
+              onChange={(e) => setForm((p) => ({ ...p, env: e.target.value }))}
+              placeholder="GITHUB_TOKEN=ghp_..."
+              rows={2}
+              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono resize-none"
+            />
+          </div>
+        </>
+      ) : (
+        <>
+          <div>
+            <label className="block text-xs text-tx-muted mb-1.5">URL</label>
+            <input
+              type="text" value={form.url}
+              onChange={(e) => setForm((p) => ({ ...p, url: e.target.value }))}
+              placeholder="https://mcp.example.com/sse"
+              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-tx-muted mb-1.5">Headers (Key: Value, one per line)</label>
+            <textarea
+              value={form.headers}
+              onChange={(e) => setForm((p) => ({ ...p, headers: e.target.value }))}
+              placeholder="Authorization: Bearer sk-..."
+              rows={2}
+              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono resize-none"
+            />
+          </div>
+        </>
+      )}
+      <div>
+        <label className="block text-xs text-tx-muted mb-1.5">Timeout (ms)</label>
+        <input
+          type="number" value={form.timeout}
+          onChange={(e) => setForm((p) => ({ ...p, timeout: Number(e.target.value) || 30000 }))}
+          className="w-32 bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 font-mono"
+        />
+      </div>
+      <div className="flex items-center gap-2 pt-1">
+        <div className="flex-1" />
+        <button onClick={onCancel} className="px-3 py-1.5 rounded-md text-xs text-tx-muted hover:text-tx-main hover:bg-bg-active transition-colors">Cancel</button>
+        <button onClick={handleSave} disabled={!canSave} className="px-4 py-1.5 rounded-md text-xs bg-accent-main/15 text-accent-main hover:bg-accent-main/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+          {initial ? 'Update' : 'Add'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Convert MCPServerConfig[] to Claude Desktop JSON format */
+function serversToJson(servers: MCPServerConfig[]): string {
+  const obj: Record<string, Record<string, unknown>> = {}
+  for (const s of servers) {
+    const entry: Record<string, unknown> = {}
+    if (s.description) entry.description = s.description
+    if (s.url) {
+      entry.url = s.url
+      if (Object.keys(s.headers || {}).length > 0) entry.headers = s.headers
+    } else {
+      entry.command = s.command
+      entry.args = s.args
+      if (Object.keys(s.env || {}).length > 0) entry.env = s.env
+    }
+    obj[s.name] = entry
+  }
+  return JSON.stringify({ mcpServers: obj }, null, 2)
+}
+
+/** Parse a single server config entry */
+function parseServerEntry(name: string, c: Record<string, unknown>): MCPServerConfig {
+  return {
+    id: String(c.id || crypto.randomUUID().slice(0, 8)),
+    name,
+    description: String(c.description || ''),
+    command: String(c.command || ''),
+    args: Array.isArray(c.args) ? c.args.map(String) : [],
+    env: (c.env && typeof c.env === 'object') ? c.env as Record<string, string> : {},
+    url: String(c.url || ''),
+    headers: (c.headers && typeof c.headers === 'object') ? c.headers as Record<string, string> : {},
+    enabled: c.enabled !== false,
+    timeout: Number(c.timeout) || 30000,
+  }
+}
+
+/** Parse Claude Desktop / array / single-server JSON into MCPServerConfig[] */
+function parseServersJson(text: string): { ok: true; data: MCPServerConfig[] } | { ok: false; error: string } {
+  try {
+    const parsed = JSON.parse(text)
+    const result: MCPServerConfig[] = []
+
+    if (parsed.mcpServers && typeof parsed.mcpServers === 'object' && !Array.isArray(parsed.mcpServers)) {
+      // Claude Desktop format: { "mcpServers": { "name": { command, args, env } | { url, headers } } }
+      for (const [name, cfg] of Object.entries(parsed.mcpServers)) {
+        result.push(parseServerEntry(name, cfg as Record<string, unknown>))
+      }
+    } else if (Array.isArray(parsed)) {
+      for (const c of parsed) {
+        result.push(parseServerEntry(String(c.name || 'unnamed'), c))
+      }
+    } else {
+      return { ok: false, error: 'Use Claude Desktop format {"mcpServers":{...}} or an array.' }
+    }
+
+    // A server must have either command or url
+    const valid = result.filter((s) => s.command || s.url)
+    if (valid.length === 0) return { ok: false, error: 'No valid servers found (need "command" or "url").' }
+    return { ok: true, data: valid }
+  } catch (e) {
+    return { ok: false, error: `Invalid JSON: ${e instanceof Error ? e.message : String(e)}` }
+  }
+}
+
+const MCPServersSection: React.FC = () => {
+  const mcpServers = useUIStore((s) => s.mcpServers)
+  const updateMCPServers = useUIStore((s) => s.updateMCPServers)
+  const [showForm, setShowForm] = useState(false)
+  const [jsonMode, setJsonMode] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [tools, setTools] = useState<AIToolDefinition[]>([])
+  const [expandedServer, setExpandedServer] = useState<string | null>(null)
+  const [jsonText, setJsonText] = useState('')
+  const [jsonError, setJsonError] = useState<string | null>(null)
+  const [jsonDirty, setJsonDirty] = useState(false)
+
+  useEffect(() => {
+    if (!window.api.mcp) return
+    window.api.mcp.listTools().then((res) => {
+      if (res.ok) setTools(res.data)
+    })
+  }, [])
+
+  const handleAdd = useCallback((data: Omit<MCPServerConfig, 'id'>) => {
+    const id = crypto.randomUUID().slice(0, 8)
+    updateMCPServers([...mcpServers, { id, ...data }])
+    setShowForm(false)
+  }, [mcpServers, updateMCPServers])
+
+  const handleUpdate = useCallback((data: Omit<MCPServerConfig, 'id'>) => {
+    if (!editingId) return
+    updateMCPServers(mcpServers.map((s) => s.id === editingId ? { ...s, ...data } : s))
+    setEditingId(null)
+  }, [editingId, mcpServers, updateMCPServers])
+
+  const handleRemove = useCallback((id: string) => {
+    updateMCPServers(mcpServers.filter((s) => s.id !== id))
+  }, [mcpServers, updateMCPServers])
+
+  const handleToggle = useCallback((id: string) => {
+    updateMCPServers(mcpServers.map((s) => s.id === id ? { ...s, enabled: !s.enabled } : s))
+  }, [mcpServers, updateMCPServers])
+
+  const handleRefresh = useCallback(async () => {
+    if (!window.api.mcp) return
+    setRefreshing(true)
+    try {
+      const res = await window.api.mcp.refresh()
+      if (res.ok) {
+        const toolsRes = await window.api.mcp.listTools()
+        if (toolsRes.ok) setTools(toolsRes.data)
+      }
+    } catch { /* ignore */ }
+    setRefreshing(false)
+  }, [])
+
+  // Switch to JSON mode: serialize current config
+  const enterJsonMode = useCallback(() => {
+    setJsonText(serversToJson(mcpServers))
+    setJsonError(null)
+    setJsonDirty(false)
+    setJsonMode(true)
+  }, [mcpServers])
+
+  // Apply JSON changes
+  const applyJson = useCallback(() => {
+    const result = parseServersJson(jsonText)
+    if (!result.ok) { setJsonError(result.error); return }
+    updateMCPServers(result.data)
+    setJsonMode(false)
+    setJsonDirty(false)
+    setJsonError(null)
+  }, [jsonText, updateMCPServers])
+
+  const editingServer = editingId ? mcpServers.find((s) => s.id === editingId) : undefined
+  const mcpToolsForServer = (serverId: string) => tools.filter((t) => t.name.startsWith(`mcp_${serverId}_`))
+  const isIdle = !showForm && !editingId && !jsonMode
+
+  return (
+    <section className="mb-10">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider flex items-center gap-1.5">
+          <Server size={13} />
+          MCP Servers
+        </h2>
+        <div className="flex items-center gap-2">
+          {mcpServers.length > 0 && isIdle && (
+            <button onClick={handleRefresh} disabled={refreshing} className="flex items-center gap-1 text-xs text-tx-faint hover:text-tx-muted transition-colors disabled:opacity-40">
+              <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          )}
+          {/* JSON / Form toggle */}
+          {!showForm && !editingId && (
+            <button
+              onClick={() => jsonMode ? setJsonMode(false) : enterJsonMode()}
+              className={`px-2 py-1 rounded text-[11px] font-mono transition-colors ${jsonMode ? 'bg-accent-main/15 text-accent-main' : 'text-tx-faint hover:text-tx-muted hover:bg-bg-active'}`}
+            >
+              JSON
+            </button>
+          )}
+          {isIdle && (
+            <button onClick={() => setShowForm(true)} className="flex items-center gap-1 text-xs text-tx-muted hover:text-accent-main transition-colors">
+              <Plus size={13} /> Add
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* JSON Editor Mode */}
+      {jsonMode && (
+        <div className="space-y-3 mb-4">
+          <textarea
+            value={jsonText}
+            onChange={(e) => { setJsonText(e.target.value); setJsonError(null); setJsonDirty(true) }}
+            rows={Math.min(20, Math.max(8, jsonText.split('\n').length + 2))}
+            spellCheck={false}
+            className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 font-mono resize-y leading-relaxed"
+          />
+          {jsonError && <div className="text-xs text-red-400 px-1">{jsonError}</div>}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-tx-faint">Claude Desktop / Cursor format supported</span>
+            <div className="flex-1" />
+            <button onClick={() => { setJsonMode(false); setJsonError(null) }} className="px-3 py-1.5 rounded-md text-xs text-tx-muted hover:text-tx-main hover:bg-bg-active transition-colors">Cancel</button>
+            {jsonDirty && (
+              <button onClick={applyJson} className="px-4 py-1.5 rounded-md text-xs bg-accent-main/15 text-accent-main hover:bg-accent-main/25 transition-colors">
+                Apply
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Server List (form mode) */}
+      {mcpServers.length > 0 && isIdle && (
+        <div className="space-y-1.5 mb-4">
+          {mcpServers.map((s) => {
+            const serverTools = mcpToolsForServer(s.id)
+            const isExpanded = expandedServer === s.id
+            return (
+              <div key={s.id} className="border border-border-subtle rounded-md overflow-hidden">
+                <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-bg-hover/50 transition-colors">
+                  <button onClick={() => handleToggle(s.id)} className={`shrink-0 ${s.enabled ? 'text-green-400' : 'text-tx-faint'}`} title={s.enabled ? 'Enabled' : 'Disabled'}>
+                    {s.enabled ? <Power size={14} /> : <PowerOff size={14} />}
+                  </button>
+                  <button onClick={() => setExpandedServer(isExpanded ? null : s.id)} className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-tx-main font-medium truncate">{s.name}</span>
+                      <span className="text-[10px] text-tx-faint px-1.5 py-0.5 bg-bg-active rounded font-mono">{s.url ? 'url' : s.command}</span>
+                      {serverTools.length > 0 && (
+                        <span className="text-[10px] text-accent-main/70">{serverTools.length} tools</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-tx-faint mt-0.5 truncate">{s.description || <span className="font-mono">{s.url || s.args.join(' ')}</span>}</div>
+                  </button>
+                  <button onClick={() => setExpandedServer(isExpanded ? null : s.id)} className="shrink-0 text-tx-faint hover:text-tx-muted">
+                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </button>
+                  <button onClick={() => setEditingId(s.id)} className="shrink-0 text-tx-faint hover:text-tx-muted transition-colors" title="Edit">
+                    <Pencil size={13} />
+                  </button>
+                  <button onClick={() => handleRemove(s.id)} className="shrink-0 text-tx-faint hover:text-red-400 transition-colors" title="Delete">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+                {isExpanded && serverTools.length > 0 && (
+                  <div className="border-t border-border-subtle bg-bg-hover/30 px-3 py-2">
+                    <div className="text-[11px] text-tx-faint uppercase tracking-wider mb-1.5">Available Tools</div>
+                    <div className="space-y-1">
+                      {serverTools.map((t) => (
+                        <div key={t.name} className="flex items-start gap-2 text-xs">
+                          <Wrench size={11} className="text-tx-faint mt-0.5 shrink-0" />
+                          <div>
+                            <span className="text-tx-main font-mono">{t.name.replace(`mcp_${s.id}_`, '')}</span>
+                            {t.description && <span className="text-tx-faint ml-1.5">{t.description}</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {mcpServers.length === 0 && isIdle && (
+        <div onClick={enterJsonMode} className="text-center py-6 text-tx-faint text-sm cursor-pointer hover:text-tx-muted border border-dashed border-border-subtle rounded-lg transition-colors">
+          No MCP servers configured. Click to edit JSON or use + Add.
+        </div>
+      )}
+
+      {showForm && <MCPServerForm onSave={handleAdd} onCancel={() => setShowForm(false)} />}
+      {editingId && editingServer && <MCPServerForm initial={editingServer} onSave={handleUpdate} onCancel={() => setEditingId(null)} />}
+    </section>
+  )
+}
+
+// ── Skills Section ──
+
+type SkillsView = 'list' | 'new' | 'import'
+
+const SkillsSection: React.FC = () => {
+  const [skills, setSkills] = useState<Skill[]>([])
+  const [loading, setLoading] = useState(true)
+  const [expandedSkill, setExpandedSkill] = useState<string | null>(null)
+  const [view, setView] = useState<SkillsView>('list')
+
+  // New skill form
+  const [newName, setNewName] = useState('')
+  const [newDesc, setNewDesc] = useState('')
+  const [newContent, setNewContent] = useState('')
+
+  // Import
+  const [importInput, setImportInput] = useState('')
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+
+  const reloadSkills = useCallback(() => {
+    if (!window.api.skills) return
+    window.api.skills.list().then((res) => {
+      if (res.ok) setSkills(res.data)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!window.api.skills) { setLoading(false); return }
+    window.api.skills.list().then((res) => {
+      if (res.ok) setSkills(res.data)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }, [])
+
+  const handleToggle = useCallback(async (name: string, enabled: boolean) => {
+    await window.api.skills.toggle(name, enabled)
+    setSkills((prev) => prev.map((s) => s.name === name ? { ...s, enabled } : s))
+  }, [])
+
+  const handleDelete = useCallback(async (name: string) => {
+    await window.api.skills.delete(name)
+    setSkills((prev) => prev.filter((s) => s.name !== name))
+  }, [])
+
+  const handleCreate = useCallback(async () => {
+    if (!newName.trim() || !newContent.trim()) return
+    const res = await window.api.skills.create(newName.trim(), newDesc.trim(), newContent.trim())
+    if (res.ok) {
+      setView('list')
+      setNewName(''); setNewDesc(''); setNewContent('')
+      reloadSkills()
+    }
+  }, [newName, newDesc, newContent, reloadSkills])
+
+  /** Resolve import input to a raw URL. Supports:
+   *  - skills.sh URLs: skills.sh/{owner}/{repo}/{skill} → GitHub raw SKILL.md
+   *  - GitHub repo URLs: github.com/{owner}/{repo} with optional path
+   *  - Direct raw URLs: any http(s) URL returning markdown
+   */
+  const resolveImportUrl = (input: string): string => {
+    const trimmed = input.trim()
+
+    // skills.sh/{owner}/{repo}/{skill}
+    const skillsShMatch = trimmed.match(/^(?:https?:\/\/)?skills\.sh\/([^/]+)\/([^/]+)\/([^/]+)\/?$/)
+    if (skillsShMatch) {
+      const [, owner, repo, skill] = skillsShMatch
+      return `https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/main/skills/${skill}/SKILL.md`
+    }
+
+    // GitHub blob/tree URL → raw
+    const ghBlobMatch = trimmed.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/)
+    if (ghBlobMatch) {
+      const [, owner, repo, branch, path] = ghBlobMatch
+      return `https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/${branch}/${path}`
+    }
+
+    // Already a URL
+    if (/^https?:\/\//.test(trimmed)) return trimmed
+
+    // Bare owner/repo/skill pattern (assume skills.sh style)
+    const bareMatch = trimmed.match(/^([^/]+)\/([^/]+)\/([^/]+)$/)
+    if (bareMatch) {
+      const [, owner, repo, skill] = bareMatch
+      return `https://raw.githubusercontent.com/${owner}/${repo}/refs/heads/main/skills/${skill}/SKILL.md`
+    }
+
+    return trimmed
+  }
+
+  const handleImport = useCallback(async () => {
+    if (!importInput.trim()) return
+    setImporting(true)
+    setImportError(null)
+    try {
+      const url = resolveImportUrl(importInput)
+      const res = await window.api.skills.importUrl(url)
+      if (res.ok) {
+        setView('list')
+        setImportInput('')
+        reloadSkills()
+      } else {
+        setImportError(res.error)
+      }
+    } catch (e) {
+      setImportError(String(e))
+    }
+    setImporting(false)
+  }, [importInput, reloadSkills])
+
+  return (
+    <section className="mb-10">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider flex items-center gap-1.5">
+          <BookOpen size={13} />
+          Skills
+        </h2>
+        {view === 'list' && (
+          <div className="flex items-center gap-2">
+            <button onClick={() => setView('import')} className="flex items-center gap-1 text-xs text-tx-muted hover:text-accent-main transition-colors">
+              Import URL
+            </button>
+            <button onClick={() => setView('new')} className="flex items-center gap-1 text-xs text-tx-muted hover:text-accent-main transition-colors">
+              <Plus size={13} /> New
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* New Skill Form */}
+      {view === 'new' && (
+        <div className="space-y-3 bg-bg-hover rounded-lg p-4 border border-border-subtle mb-4">
+          <div>
+            <label className="block text-xs text-tx-muted mb-1.5">Name</label>
+            <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. code-review" className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint" />
+          </div>
+          <div>
+            <label className="block text-xs text-tx-muted mb-1.5">Description</label>
+            <input type="text" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="One-line description" className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint" />
+          </div>
+          <div>
+            <label className="block text-xs text-tx-muted mb-1.5">Skill Content (instructions for AI)</label>
+            <textarea value={newContent} onChange={(e) => setNewContent(e.target.value)} placeholder="When doing X, focus on..." rows={8} className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono resize-none" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex-1" />
+            <button onClick={() => { setView('list'); setNewName(''); setNewDesc(''); setNewContent('') }} className="px-3 py-1.5 rounded-md text-xs text-tx-muted hover:text-tx-main hover:bg-bg-active transition-colors">Cancel</button>
+            <button onClick={handleCreate} disabled={!newName.trim() || !newContent.trim()} className="px-4 py-1.5 rounded-md text-xs bg-accent-main/15 text-accent-main hover:bg-accent-main/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Create</button>
+          </div>
+        </div>
+      )}
+
+      {/* Import Form */}
+      {view === 'import' && (
+        <div className="space-y-3 bg-bg-hover rounded-lg p-4 border border-border-subtle mb-4">
+          <div>
+            <label className="block text-xs text-tx-muted mb-1.5">Import Skill</label>
+            <input type="text" value={importInput} onChange={(e) => { setImportInput(e.target.value); setImportError(null) }} placeholder="skills.sh URL, GitHub URL, or owner/repo/skill" className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono" />
+          </div>
+          <div className="text-[11px] text-tx-faint leading-relaxed space-y-1">
+            <div>Supported formats:</div>
+            <div className="font-mono text-tx-faint/70 pl-2 space-y-0.5">
+              <div>skills.sh/vercel-labs/skills/find-skills</div>
+              <div>vercel-labs/skills/find-skills</div>
+              <div>https://github.com/.../blob/main/SKILL.md</div>
+              <div>https://any-url.com/skill.md</div>
+            </div>
+          </div>
+          {importError && <div className="text-xs text-red-400 px-1">{importError}</div>}
+          <div className="flex items-center gap-2">
+            <div className="flex-1" />
+            <button onClick={() => { setView('list'); setImportInput(''); setImportError(null) }} className="px-3 py-1.5 rounded-md text-xs text-tx-muted hover:text-tx-main hover:bg-bg-active transition-colors">Cancel</button>
+            <button onClick={handleImport} disabled={!importInput.trim() || importing} className="px-4 py-1.5 rounded-md text-xs bg-accent-main/15 text-accent-main hover:bg-accent-main/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
+              {importing && <Loader2 size={12} className="animate-spin" />}
+              Import
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Skills List */}
+      {view === 'list' && (loading ? (
+        <div className="text-center py-6 text-tx-faint text-sm"><Loader2 size={14} className="animate-spin inline mr-1.5" />Loading skills...</div>
+      ) : skills.length === 0 ? (
+        <div className="text-center py-6 text-tx-faint text-sm border border-dashed border-border-subtle rounded-lg space-y-2">
+          <div>No skills yet.</div>
+          <div className="flex items-center justify-center gap-3">
+            <button onClick={() => setView('new')} className="text-accent-main hover:underline">Create one</button>
+            <span className="text-tx-faint">or</span>
+            <button onClick={() => setView('import')} className="text-accent-main hover:underline">Import from URL</button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {skills.map((skill) => {
+            const isExpanded = expandedSkill === skill.name
+            return (
+              <div key={skill.name} className="border border-border-subtle rounded-md overflow-hidden">
+                <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-bg-hover/50 transition-colors">
+                  <button
+                    onClick={() => handleToggle(skill.name, !skill.enabled)}
+                    className={`shrink-0 ${skill.enabled ? 'text-green-400' : 'text-tx-faint'}`}
+                    title={skill.enabled ? 'Enabled' : 'Disabled'}
+                  >
+                    {skill.enabled ? <Power size={14} /> : <PowerOff size={14} />}
+                  </button>
+                  <button onClick={() => setExpandedSkill(isExpanded ? null : skill.name)} className="flex-1 min-w-0 text-left">
+                    <div className="text-sm text-tx-main font-medium">{skill.name}</div>
+                    {skill.description && <div className="text-xs text-tx-faint mt-0.5">{skill.description}</div>}
+                  </button>
+                  <button onClick={() => setExpandedSkill(isExpanded ? null : skill.name)} className="shrink-0 text-tx-faint hover:text-tx-muted">
+                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  </button>
+                  <button onClick={() => handleDelete(skill.name)} className="shrink-0 text-tx-faint hover:text-red-400 transition-colors" title="Delete">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+                {isExpanded && (
+                  <div className="border-t border-border-subtle bg-bg-hover/30 px-3 py-2">
+                    <pre className="text-xs text-tx-muted whitespace-pre-wrap font-mono leading-relaxed max-h-[200px] overflow-y-auto">{skill.content}</pre>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </section>
+  )
+}
+
 // ── Main Settings Component ──
 
 const SettingsApp: React.FC = () => {
@@ -629,6 +1266,12 @@ const SettingsApp: React.FC = () => {
 
         {/* ── AI Usage Stats ── */}
         <AIUsageSection />
+
+        {/* ── MCP Servers ── */}
+        <MCPServersSection />
+
+        {/* ── Skills ── */}
+        <SkillsSection />
 
         {/* ── Theme ── */}
         <section className="mb-10">

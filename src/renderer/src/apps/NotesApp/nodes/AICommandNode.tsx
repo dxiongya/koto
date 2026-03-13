@@ -2,8 +2,8 @@ import { useCallback, useRef, useState, useEffect, type JSX } from 'react'
 import {
   DecoratorNode,
   $getNodeByKey,
+  $getRoot,
   $createParagraphNode,
-  $createTextNode,
   type DOMConversionMap,
   type DOMExportOutput,
   type LexicalEditor,
@@ -11,9 +11,10 @@ import {
   type NodeKey,
   type SerializedLexicalNode,
   type Spread,
-  type ElementNode,
 } from 'lexical'
-import { Loader2, Sparkles, Send, X, FileText, FolderOpen, Terminal, ChevronDown, ChevronUp } from 'lucide-react'
+import { $convertFromMarkdownString } from '@lexical/markdown'
+import { ALL_TRANSFORMERS } from '../LexicalEditor'
+import { Loader2, Sparkles, Send, X, FileText, FolderOpen, Terminal, ChevronDown, ChevronUp, CheckCircle2, ChevronRight } from 'lucide-react'
 import { useUIStore } from '../../../store/useUIStore'
 
 // ── Types ──
@@ -213,6 +214,8 @@ function AICommandComponent({
   const [atQuery, setAtQuery] = useState('')
   const [atMenuIndex, setAtMenuIndex] = useState(0)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [toolEvents, setToolEvents] = useState<Array<{ toolName: string; status: 'running' | 'done'; toolInput?: Record<string, unknown>; result?: string; durationMs?: number }>>([])
+  const [expandedTool, setExpandedTool] = useState<number | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const atMenuRef = useRef<HTMLDivElement>(null)
@@ -266,18 +269,31 @@ function AICommandComponent({
 
       const { prompt: resolvedPrompt } = await resolveReferences(prompt, attachedRefs)
 
-      const systemPrompt = `You are an AI assistant embedded in a markdown notes editor. Generate markdown content based on the user's request.
+      const hasContext = !!selectedText.trim()
+      const systemPrompt = `You are an AI assistant embedded in a markdown notes editor. You have powerful tool capabilities and should actively use them.
 
-Rules:
-- Output ONLY the markdown content, no explanations or wrapping
+## Tools — ALWAYS use when needed
+You have access to these tools and MUST use them proactively:
+- **web_fetch**: Fetch any web page content. Use for URLs, web search, online information.
+- **file_read** / **file_list**: Read files and list directories.
+- **search_content**: Search across files by regex.
+- **terminal_exec**: Execute shell commands (10s timeout).
+- **use_skill**: Load a skill to guide your approach.
+- **MCP tools**: Any connected MCP server tools are also available.
+
+IMPORTANT: When the user asks to search, fetch, look up, or gather ANY information, you MUST use tools. Never say "I can't access the internet" — you CAN via web_fetch and terminal_exec. If one tool fails, try another.
+
+## Output
+${hasContext ? `The user has selected text. Your output will REPLACE it.
+- Output ONLY the modified markdown content
+- Preserve format: checklists, tables, headings` : `Generate markdown content based on the user's request.`}
+- Output ONLY markdown, no explanations or wrapping
 - For tables, use proper markdown table syntax
 - For code, use fenced code blocks with language
-- For lists, use proper markdown list syntax
-- For checklists, use - [ ] syntax
-- Be concise and well-structured
-- If the user provides context data (files, folders, terminal output), use it to generate relevant content`
+- For lists/checklists, use - [ ] syntax
+- Be concise and well-structured`
 
-      const userPrompt = selectedText
+      const userPrompt = hasContext
         ? `Context (selected text in editor):\n${selectedText}\n\nRequest: ${resolvedPrompt}`
         : resolvedPrompt
 
@@ -286,7 +302,27 @@ Rules:
         { role: 'user' as const, content: userPrompt },
       ]
 
-      const result = await window.api.ai.chat(provider.id, messages, 0.7, 2048)
+      // Subscribe to tool events for real-time display
+      setToolEvents([])
+      const unsubToolEvent = window.api.ai.onToolEvent((event) => {
+        if (event.type === 'tool_start') {
+          setToolEvents((prev) => [...prev, { toolName: event.toolName, status: 'running', toolInput: event.toolInput }])
+        } else if (event.type === 'tool_result') {
+          setToolEvents((prev) => {
+            const updated = [...prev]
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].toolName === event.toolName && updated[i].status === 'running') {
+                updated[i] = { ...updated[i], status: 'done', result: event.result, durationMs: event.durationMs }
+                break
+              }
+            }
+            return updated
+          })
+        }
+      })
+
+      const result = await window.api.ai.chat(provider.id, messages, 0.7, 2048, true)
+      unsubToolEvent()
 
       if (result.ok) {
         useUIStore.getState().trackAIUsage(provider.id, 'chat', result.data.usage)
@@ -311,23 +347,37 @@ Rules:
         const node = $getNodeByKey(nodeKey)
         if (!node) return
 
-        const lines = markdown.split('\n')
-        const nodes: LexicalNode[] = []
-        for (const line of lines) {
-          const p = $createParagraphNode()
-          if (line.trim()) p.append($createTextNode(line))
-          nodes.push(p)
-        }
+        // Use a temporary container to convert markdown, then move nodes out
+        const container = $createParagraphNode()
+        node.insertBefore(container)
+        $convertFromMarkdownString(markdown, ALL_TRANSFORMERS, container)
 
-        for (const n of nodes) {
-          node.insertBefore(n)
+        // Move converted children out of container (they are block-level nodes)
+        // $convertFromMarkdownString may replace container's content with block nodes,
+        // or the container itself may have been replaced in the root.
+        // Strategy: get all children from root that were created by conversion
+        const root = $getRoot()
+        const children = root.getChildren()
+        const containerIndex = children.indexOf(container)
+
+        if (containerIndex !== -1) {
+          // Container still exists — extract its children as siblings
+          const convertedChildren = container.getChildren()
+          if (convertedChildren.length > 0) {
+            // Move each child out before the container
+            for (const child of convertedChildren) {
+              container.insertBefore(child)
+            }
+            container.remove()
+          } else {
+            // Container itself has the converted text content
+            // Leave it as is (single paragraph result)
+          }
         }
+        // If container was replaced by conversion (e.g. heading), it's already in place
+
+        // Remove the AI command node
         node.remove()
-
-        if (nodes.length > 0) {
-          const last = nodes[nodes.length - 1]
-          if ('selectEnd' in last) (last as ElementNode).selectEnd()
-        }
       })
     } catch (err) {
       setError(String(err))
@@ -576,6 +626,57 @@ Rules:
         <div className="px-3 pb-2 text-[11px] text-accent-main flex items-center gap-1.5 animate-pulse">
           <FileText size={12} />
           Drop to add as context reference
+        </div>
+      )}
+
+      {/* Tool events chain */}
+      {toolEvents.length > 0 && (
+        <div className="px-3 py-2 space-y-1 border-t border-accent-main/10">
+          <div className="text-[9px] text-tx-faint uppercase tracking-wider mb-1">Thinking</div>
+          {toolEvents.map((te, i) => {
+            const isExp = expandedTool === i
+            return (
+              <div key={i} className="rounded overflow-hidden" style={{ background: 'rgba(94,234,212,0.03)', border: '1px solid rgba(94,234,212,0.06)' }}>
+                <button onClick={() => setExpandedTool(isExp ? null : i)} className="w-full flex items-center gap-2 px-2 py-1 hover:bg-accent-main/5 transition-colors text-left">
+                  {te.status === 'running' ? (
+                    <Loader2 size={9} className="text-accent-main/60 animate-spin shrink-0" />
+                  ) : (
+                    <CheckCircle2 size={9} className="text-emerald-400/60 shrink-0" />
+                  )}
+                  <span className="text-[10px] text-accent-main/70 font-mono shrink-0">{te.toolName}</span>
+                  {!isExp && te.toolInput && (
+                    <span className="text-[9px] text-tx-faint truncate flex-1">
+                      {Object.values(te.toolInput).map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ').slice(0, 80)}
+                    </span>
+                  )}
+                  <span className="ml-auto shrink-0 flex items-center gap-1">
+                    {te.durationMs != null && <span className="text-[9px] text-tx-faint/50">{(te.durationMs / 1000).toFixed(1)}s</span>}
+                    {isExp ? <ChevronDown size={9} className="text-tx-faint/50" /> : <ChevronRight size={9} className="text-tx-faint/50" />}
+                  </span>
+                </button>
+                {isExp && (
+                  <div className="px-2 pb-1.5 space-y-1" style={{ borderTop: '1px solid rgba(94,234,212,0.06)' }}>
+                    {te.toolInput && Object.keys(te.toolInput).length > 0 && (
+                      <div className="pt-1">
+                        <div className="text-[8px] text-tx-faint uppercase tracking-wider mb-0.5">Input</div>
+                        <pre className="text-[9px] text-tx-muted font-mono whitespace-pre-wrap break-all leading-relaxed bg-bg-app/50 rounded px-1.5 py-1 max-h-[80px] overflow-auto">
+                          {JSON.stringify(te.toolInput, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                    {te.status === 'done' && te.result && (
+                      <div>
+                        <div className="text-[8px] text-tx-faint uppercase tracking-wider mb-0.5">Result</div>
+                        <pre className="text-[9px] text-tx-muted font-mono whitespace-pre-wrap break-all leading-relaxed bg-bg-app/50 rounded px-1.5 py-1 max-h-[120px] overflow-auto">
+                          {te.result}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 

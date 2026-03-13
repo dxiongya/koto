@@ -1,5 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
-import type { FileNode, FileStat, FsWatchEvent, IpcResult, LiteConfig, AIChatMessage, AIChatResponse, ChangelogEntry } from '../shared/types'
+import type { FileNode, FileStat, FsWatchEvent, IpcResult, LiteConfig, AIChatMessage, AIChatResponse, AIToolEvent, AIToolDefinition, ChangelogEntry, Skill } from '../shared/types'
 
 export interface LiteAPI {
   getHome: () => Promise<IpcResult<string>>
@@ -46,8 +46,15 @@ export interface ImageAPI {
   delete: (filename: string) => Promise<IpcResult<void>>
 }
 
+export interface VideoAPI {
+  save: (data: ArrayBuffer, mimeType: string) => Promise<IpcResult<string>>
+  saveFromPath: (localPath: string) => Promise<IpcResult<string>>
+  delete: (filename: string) => Promise<IpcResult<void>>
+}
+
 export interface DialogAPI {
   selectImages: () => Promise<IpcResult<string[]>>
+  selectVideos: () => Promise<IpcResult<string[]>>
 }
 
 export interface UrlMeta {
@@ -81,14 +88,29 @@ export interface ChangelogAPI {
   read: (filePath: string) => Promise<IpcResult<ChangelogEntry[]>>
 }
 
+export interface MCPAPI {
+  listTools: () => Promise<IpcResult<AIToolDefinition[]>>
+  refresh: () => Promise<IpcResult<unknown>>
+}
+
+export interface SkillsAPI {
+  list: () => Promise<IpcResult<Skill[]>>
+  toggle: (name: string, enabled: boolean) => Promise<IpcResult<void>>
+  create: (name: string, description: string, content: string) => Promise<IpcResult<void>>
+  delete: (name: string) => Promise<IpcResult<void>>
+  importUrl: (url: string) => Promise<IpcResult<Skill>>
+}
+
 export interface AIAPI {
   chat: (
     providerId: string,
     messages: AIChatMessage[],
     temperature?: number,
-    maxTokens?: number
+    maxTokens?: number,
+    enableTools?: boolean
   ) => Promise<IpcResult<AIChatResponse>>
   testConnection: (provider: Record<string, unknown>) => Promise<IpcResult<string>>
+  onToolEvent: (callback: (event: AIToolEvent) => void) => () => void
 }
 
 declare global {
@@ -100,12 +122,15 @@ declare global {
       state: StateAPI
       fs: FileSystemAPI
       image: ImageAPI
+      video: VideoAPI
       dialog: DialogAPI
       url: UrlAPI
       terminal: TerminalAPI
       search: SearchAPI
       shortcut: ShortcutAPI
       changelog: ChangelogAPI
+      mcp: MCPAPI
+      skills: SkillsAPI
       ai: AIAPI
     }
   }

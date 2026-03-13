@@ -53,6 +53,7 @@ import {
 } from './nodes/CollapsibleNodes'
 import { GhostTextNode } from './nodes/GhostTextNode'
 import { AICommandNode } from './nodes/AICommandNode'
+import { VideoNode } from './nodes/VideoNode'
 import { $createHashtagNode, $isHashtagNode } from '@lexical/hashtag'
 
 // Plugins
@@ -316,7 +317,8 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
         CollapsibleTitleNode,
         CollapsibleContentNode,
         GhostTextNode,
-        AICommandNode
+        AICommandNode,
+        VideoNode
       ],
       editorState: () => {
         // 1a. Extract collapsible blocks BEFORE other processing

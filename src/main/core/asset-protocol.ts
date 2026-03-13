@@ -1,12 +1,14 @@
 /**
  * Custom protocol handler for lite-asset:// URLs.
- * Serves images from the workspace .images/ directory.
+ * Serves images and videos from the workspace directories.
  *
  * URL format: lite-asset://images/{filename}
+ *             lite-asset://videos/{filename}
  */
 import { protocol, net } from 'electron'
 import path from 'path'
 import { resolveImagePath } from './image-storage'
+import { resolveVideoPath } from './video-storage'
 
 const MIME_TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -16,21 +18,31 @@ const MIME_TYPES: Record<string, string> = {
   '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.bmp': 'image/bmp',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.ogg': 'video/ogg',
+  '.mov': 'video/quicktime',
+  '.avi': 'video/x-msvideo',
+  '.mkv': 'video/x-matroska',
 }
 
 export function registerAssetProtocol(): void {
   protocol.handle('lite-asset', (request) => {
     const url = new URL(request.url)
-    // lite-asset://images/{filename}
     const pathname = decodeURIComponent(url.pathname).replace(/^\/+/, '')
-    const host = url.host // "images"
-    const filename = host === 'images' ? pathname : `${host}/${pathname}`
+    const host = url.host // "images" or "videos"
 
-    if (!filename) {
+    if (!pathname) {
       return new Response('Bad Request', { status: 400 })
     }
 
-    const resolved = resolveImagePath(filename)
+    let resolved: string | null = null
+    if (host === 'images') {
+      resolved = resolveImagePath(pathname)
+    } else if (host === 'videos') {
+      resolved = resolveVideoPath(pathname)
+    }
+
     if (!resolved) {
       return new Response('Not Found', { status: 404 })
     }

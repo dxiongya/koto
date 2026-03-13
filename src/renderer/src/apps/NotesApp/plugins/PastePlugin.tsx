@@ -32,6 +32,7 @@ import {
   CHECK_LIST
 } from '@lexical/markdown'
 import { $createImageNode } from '../nodes/ImageNode'
+import { $createVideoNode, isVideoEmbedUrl } from '../nodes/VideoNode'
 import { parseMarkdownTable, buildTableNodeFromParsed } from '../utils/markdownTable'
 
 // Re-use the same transformer list as LexicalEditor.tsx
@@ -116,6 +117,39 @@ export function PastePlugin(): JSX.Element | null {
       p.selectStart()
     }
 
+    const insertVideo = (src: string): void => {
+      const vid = $createVideoNode({ src })
+      const p = $createParagraphNode()
+      $insertNodes([vid, p])
+      p.selectStart()
+    }
+
+    // ── 0. Video file from clipboard ──
+    function handleVideoFile(data: DataTransfer): boolean {
+      let file: File | null = null
+      for (const item of Array.from(data.items)) {
+        if (item.kind === 'file' && item.type.startsWith('video/')) {
+          file = item.getAsFile()
+          break
+        }
+      }
+      if (!file) return false
+
+      const captured = file
+      void captured.arrayBuffer().then(async (buffer) => {
+        try {
+          const result = await window.api.video.save(buffer, captured.type)
+          if (result.ok) {
+            editor.update(() => ensureSelection(() => insertVideo(`lite-asset://videos/${result.data}`)))
+          }
+        } catch (err) {
+          console.error('[PastePlugin] video save failed:', err)
+        }
+      })
+
+      return true
+    }
+
     // ── 1. Image file from clipboard ──
     function handleImageFile(data: DataTransfer): boolean {
       let file: File | null = null
@@ -165,7 +199,24 @@ export function PastePlugin(): JSX.Element | null {
       return true
     }
 
-    // ── 3. Plain URL → LinkNode + async title resolution ──
+    // ── 3a. Video embed URL (YouTube, Bilibili) → VideoNode ──
+    function handleVideoEmbedUrl(data: DataTransfer): boolean {
+      const text = data.getData('text/plain')?.trim()
+      if (!text || !URL_RE.test(text)) return false
+      if (!isVideoEmbedUrl(text)) return false
+
+      editor.update(() => {
+        ensureSelection(() => {
+          const videoNode = $createVideoNode({ src: text })
+          const p = $createParagraphNode()
+          $insertNodes([videoNode, p])
+          p.selectStart()
+        })
+      })
+      return true
+    }
+
+    // ── 3b. Plain URL → LinkNode + async title resolution ──
     function handlePlainUrl(data: DataTransfer): boolean {
       const text = data.getData('text/plain')?.trim()
       if (!text || !URL_RE.test(text)) return false
@@ -281,8 +332,10 @@ export function PastePlugin(): JSX.Element | null {
       if (!data) return
 
       const handled =
+        handleVideoFile(data) ||
         handleImageFile(data) ||
         handleHtmlImage(data) ||
+        handleVideoEmbedUrl(data) ||
         handlePlainUrl(data) ||
         handleMarkdownText(data)
 

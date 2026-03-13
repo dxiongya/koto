@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppType, PerAppState, RecentFileEntry, AISettings, AIProviderConfig, AIFeature, AIUsageRecord } from '../../../shared/types'
+import type { AppType, PerAppState, RecentFileEntry, AISettings, AIProviderConfig, AIFeature, AIUsageRecord, MCPServerConfig } from '../../../shared/types'
 import { DEFAULT_PER_APP_STATE, DEFAULT_AI_SETTINGS, DEFAULT_AI_USAGE_STATS } from '../../../shared/types'
 import type { FontId } from '../themes/types'
 import { builtinThemes, applyTheme, applyFont } from '../themes'
@@ -56,6 +56,9 @@ interface UIState {
 
   // AI
   ai: AISettings
+
+  // MCP Servers
+  mcpServers: MCPServerConfig[]
 
   // file switcher (Ctrl+Tab)
   showFileSwitcher: boolean
@@ -115,6 +118,9 @@ interface UIState {
   getAIProviderForFeature: (feature: AIFeature) => AIProviderConfig | null
   trackAIUsage: (providerId: string, feature: AIFeature, usage: { promptTokens: number; completionTokens: number } | undefined, isError?: boolean) => void
   resetAIUsage: () => void
+
+  // MCP
+  updateMCPServers: (servers: MCPServerConfig[]) => void
 }
 
 // Debounced persist to main process — merges patches within the debounce window
@@ -155,6 +161,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   activeTerminalId: null,
   recentFiles: [],
   ai: { ...DEFAULT_AI_SETTINGS },
+  mcpServers: [],
   navBackStack: [],
   navForwardStack: [],
   showFileSwitcher: false,
@@ -471,5 +478,16 @@ export const useUIStore = create<UIState>((set, get) => ({
     const ai = { ...get().ai, usage: { ...DEFAULT_AI_USAGE_STATS } }
     set({ ai })
     persistState({ ai })
+  },
+
+  // ── MCP ──
+
+  updateMCPServers: (servers) => {
+    set({ mcpServers: servers })
+    persistState({ mcpServers: servers })
+    // Auto-refresh MCP connections after config is persisted
+    if (window.api.mcp) {
+      setTimeout(() => window.api.mcp.refresh().catch(() => {}), 500)
+    }
   },
 }))

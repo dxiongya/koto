@@ -8,9 +8,13 @@ import { getLiteHome, loadConfig, saveConfig, addRecentProject } from './lite-ho
 import { fileWatcher } from './watcher'
 import { ptyManager } from './pty-manager'
 import { saveImage, saveImageFromUrl, saveImageFromPath, deleteImage } from './image-storage'
+import { saveVideo, saveVideoFromPath, deleteVideo } from './video-storage'
 import { searchFilesContent } from './search'
 import { aiChat, aiTestConnection } from './ai-service'
 import { appendChangelog, readChangelog } from './changelog'
+import { mcpManager } from './mcp-manager'
+import { getAllToolDefinitions } from './ai-tools'
+import { loadSkills, toggleSkill, createSkill, deleteSkill, importSkillFromUrl } from './skills-loader'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry } from '../../shared/types'
 
 export function setupIpcHandlers(): void {
@@ -181,6 +185,35 @@ export function setupIpcHandlers(): void {
     }
   })
 
+  // ── Video Storage ──
+
+  ipcMain.handle(IpcChannels.VIDEO_SAVE, async (_, data: ArrayBuffer, mimeType: string) => {
+    try {
+      const filename = await saveVideo(data, mimeType)
+      return { ok: true, data: filename }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.VIDEO_SAVE_FROM_PATH, async (_, localPath: string) => {
+    try {
+      const filename = await saveVideoFromPath(localPath)
+      return { ok: true, data: filename }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.VIDEO_DELETE, async (_, filename: string) => {
+    try {
+      await deleteVideo(filename)
+      return { ok: true, data: undefined }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
   // ── Dialog ──
 
   // ── URL Metadata ──
@@ -228,18 +261,41 @@ export function setupIpcHandlers(): void {
     return { ok: true, data: result.filePaths }
   })
 
+  ipcMain.handle(IpcChannels.DIALOG_SELECT_VIDEOS, async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return { ok: false, error: 'No focused window' }
+
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Videos', extensions: ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv'] },
+      ],
+    })
+
+    if (result.canceled) {
+      return { ok: false, error: 'cancelled' }
+    }
+    return { ok: true, data: result.filePaths }
+  })
+
   // ── AI ──
 
   ipcMain.handle(
     IpcChannels.AI_CHAT,
     async (
-      _,
+      event,
       providerId: string,
       messages: AIChatMessage[],
       temperature?: number,
-      maxTokens?: number
+      maxTokens?: number,
+      enableTools?: boolean
     ) => {
-      return aiChat(providerId, messages, temperature, maxTokens)
+      const onToolEvent = enableTools
+        ? (toolEvent: import('../../shared/types').AIToolEvent) => {
+            event.sender.send(IpcChannels.AI_CHAT_TOOL_EVENT, toolEvent)
+          }
+        : undefined
+      return aiChat(providerId, messages, temperature, maxTokens, enableTools, onToolEvent)
     }
   )
 
@@ -273,4 +329,61 @@ export function setupIpcHandlers(): void {
       }
     },
   )
+
+  // ── MCP ──
+
+  ipcMain.handle(IpcChannels.MCP_LIST_TOOLS, () => {
+    return { ok: true, data: getAllToolDefinitions() }
+  })
+
+  ipcMain.handle(IpcChannels.MCP_REFRESH, async () => {
+    try {
+      const config = loadConfig()
+      await mcpManager.initFromConfig(config.mcpServers ?? [])
+      return { ok: true, data: mcpManager.getAllTools() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // ── Skills ──
+
+  ipcMain.handle(IpcChannels.SKILLS_LIST, () => {
+    try {
+      return { ok: true, data: loadSkills() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.SKILLS_TOGGLE, (_, name: string, enabled: boolean) => {
+    try {
+      const success = toggleSkill(name, enabled)
+      return success ? { ok: true, data: undefined } : { ok: false, error: 'Skill not found' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.SKILLS_CREATE, (_, name: string, description: string, content: string) => {
+    try {
+      const success = createSkill(name, description, content)
+      return success ? { ok: true, data: undefined } : { ok: false, error: 'Failed to create skill' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.SKILLS_DELETE, (_, name: string) => {
+    try {
+      const success = deleteSkill(name)
+      return success ? { ok: true, data: undefined } : { ok: false, error: 'Skill not found' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.SKILLS_IMPORT_URL, async (_, url: string) => {
+    return importSkillFromUrl(url)
+  })
 }

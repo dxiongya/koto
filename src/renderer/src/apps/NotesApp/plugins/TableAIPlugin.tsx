@@ -16,7 +16,7 @@ import {
   $findTableNode,
   type TableNode
 } from '@lexical/table'
-import { Sparkles, Send, Loader2, X } from 'lucide-react'
+import { Sparkles, Send, Loader2, X, ChevronRight, ChevronDown, CheckCircle2 } from 'lucide-react'
 import { useUIStore } from '../../../store/useUIStore'
 import { parseMarkdownTable, buildTableNodeFromParsed, MD_TABLE_ROW_RE, MD_TABLE_SEP_RE } from '../utils/markdownTable'
 
@@ -112,11 +112,13 @@ export function TableAIPlugin(): JSX.Element | null {
   const [tableMarkdown, setTableMarkdown] = useState('')
   const panelRef = useRef<HTMLDivElement>(null)
   const tableKeyRef = useRef<string | null>(null)
+  const draggedRef = useRef(false) // true after user drags — stops auto-positioning
 
   // ── Callbacks (declared before effects that reference them) ──
 
   const handleClose = useCallback(() => {
     if (tableKey) setTableHighlight(editor, tableKey, false)
+    draggedRef.current = false
     setShowPanel(false)
     setTableMarkdown('')
     setTableKey(null)
@@ -181,6 +183,7 @@ export function TableAIPlugin(): JSX.Element | null {
     if (!tableKey) return
 
     const updatePos = (): void => {
+      if (draggedRef.current) return // user dragged — keep their position
       const key = tableKeyRef.current
       if (!key) return
       const tableElem = editor.getElementByKey(key)
@@ -252,6 +255,8 @@ export function TableAIPlugin(): JSX.Element | null {
           tableKey={tableKey}
           tableMarkdown={tableMarkdown}
           onClose={handleClose}
+          position={position}
+          onDrag={(newPos) => { draggedRef.current = true; setPosition(newPos) }}
         />
       ) : (
         <button
@@ -278,28 +283,63 @@ function TableAIPanel({
   editor,
   tableKey,
   tableMarkdown,
-  onClose
+  onClose,
+  position,
+  onDrag
 }: {
   editor: ReturnType<typeof useLexicalComposerContext>[0]
   tableKey: string
   tableMarkdown: string
   onClose: () => void
+  position: { top: number; left: number }
+  onDrag: (pos: { top: number; left: number }) => void
 }): JSX.Element {
   const [prompt, setPrompt] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<string | null>(null)
+  const [toolEvents, setToolEvents] = useState<Array<{
+    toolName: string
+    status: 'running' | 'done'
+    toolInput?: Record<string, unknown>
+    result?: string
+    durationMs?: number
+  }>>([])
+  const [expandedTool, setExpandedTool] = useState<number | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 50)
   }, [])
 
+  // ── Drag header to reposition ──
+  const handleHeaderMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startY = e.clientY
+    const startPos = { ...position }
+
+    const onMove = (ev: MouseEvent): void => {
+      onDrag({
+        top: startPos.top + (ev.clientY - startY),
+        left: startPos.left + (ev.clientX - startX),
+      })
+    }
+    const onUp = (): void => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [position, onDrag])
+
   const handleSubmit = useCallback(async () => {
     if (!prompt.trim() || loading) return
     setLoading(true)
     setError(null)
     setResult(null)
+    setToolEvents([])
+    setExpandedTool(null)
 
     try {
       const provider = useUIStore.getState().getAIProviderForFeature('chat')
@@ -311,7 +351,14 @@ function TableAIPanel({
 
       const systemPrompt = `You are an AI assistant embedded in a markdown notes editor. The user has selected a table and wants you to help with it.
 
-Rules:
+## Tools — use when needed
+You have access to powerful tools: web_fetch, file_read, file_list, search_content, terminal_exec, use_skill, and any connected MCP tools.
+- When the user asks you to search, fetch, look up, or gather ANY information, you MUST use tools. Never say "I can't access the internet".
+- Use web_fetch to get data from URLs/APIs
+- Use MCP tools (prefixed mcp_*) for specialized tasks like Twitter/X API, GitHub, etc.
+- Use use_skill to load skill instructions when a skill matches the task
+
+## Output rules
 - If the user asks you to modify/transform the table, output ONLY a valid markdown table (no explanations)
 - If the user asks a question about the table, answer concisely
 - For analysis requests, be structured and brief
@@ -324,7 +371,30 @@ Rules:
         { role: 'user' as const, content: userPrompt }
       ]
 
-      const res = await window.api.ai.chat(provider.id, messages, 0.7, 2048)
+      // Subscribe to tool events for real-time status
+      const unsubToolEvent = window.api.ai.onToolEvent((event) => {
+        if (event.type === 'tool_start') {
+          setToolEvents((prev) => [...prev, {
+            toolName: event.toolName,
+            status: 'running',
+            toolInput: event.toolInput,
+          }])
+        } else if (event.type === 'tool_result') {
+          setToolEvents((prev) => {
+            const updated = [...prev]
+            for (let i = updated.length - 1; i >= 0; i--) {
+              if (updated[i].toolName === event.toolName && updated[i].status === 'running') {
+                updated[i] = { ...updated[i], status: 'done', result: event.result, durationMs: event.durationMs }
+                break
+              }
+            }
+            return updated
+          })
+        }
+      })
+
+      const res = await window.api.ai.chat(provider.id, messages, 0.7, 2048, true)
+      unsubToolEvent()
 
       if (res.ok) {
         useUIStore.getState().trackAIUsage(provider.id, 'chat', res.data.usage)
@@ -380,14 +450,18 @@ Rules:
 
   return (
     <div className="w-[340px] rounded-lg bg-bg-popover border border-border-subtle shadow-[0_4px_24px_rgba(0,0,0,0.2)] overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle">
+      {/* Header — draggable */}
+      <div
+        onMouseDown={handleHeaderMouseDown}
+        className="flex items-center justify-between px-3 py-2 border-b border-border-subtle cursor-grab active:cursor-grabbing select-none"
+      >
         <div className="flex items-center gap-1.5 text-[12px] font-medium text-accent-main">
           <Sparkles size={13} />
           <span>Table AI</span>
         </div>
         <button
           onClick={onClose}
+          onMouseDown={(e) => e.stopPropagation()}
           className="w-5 h-5 flex items-center justify-center rounded hover:bg-bg-hover text-tx-faint hover:text-tx-muted transition-colors"
         >
           <X size={12} />
@@ -420,6 +494,56 @@ Rules:
       {error && (
         <div className="px-3 pb-2">
           <div className="text-[10px] text-red-400 bg-red-500/10 rounded px-2 py-1">{error}</div>
+        </div>
+      )}
+
+      {/* Tool Events */}
+      {toolEvents.length > 0 && (
+        <div className="px-3 pb-2 border-t border-border-subtle pt-2">
+          <div className="text-[10px] text-tx-faint mb-1">Tool calls:</div>
+          <div className="space-y-1">
+            {toolEvents.map((te, i) => (
+              <div key={i} className="rounded bg-bg-app/50 border border-border-subtle overflow-hidden">
+                <button
+                  onClick={() => setExpandedTool(expandedTool === i ? null : i)}
+                  className="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] hover:bg-bg-hover transition-colors"
+                >
+                  {te.status === 'running' ? (
+                    <Loader2 size={10} className="animate-spin text-accent-main shrink-0" />
+                  ) : (
+                    <CheckCircle2 size={10} className="text-green-400 shrink-0" />
+                  )}
+                  <span className="text-tx-main font-mono truncate">{te.toolName}</span>
+                  {te.durationMs != null && (
+                    <span className="text-tx-faint ml-auto shrink-0">{te.durationMs}ms</span>
+                  )}
+                  {expandedTool === i ? <ChevronDown size={10} className="text-tx-faint shrink-0" /> : <ChevronRight size={10} className="text-tx-faint shrink-0" />}
+                </button>
+                {expandedTool === i && (
+                  <div className="px-2 pb-1.5 border-t border-border-subtle">
+                    {te.toolInput && (
+                      <div className="mt-1">
+                        <div className="text-[9px] text-tx-faint">Input:</div>
+                        <pre className="text-[9px] text-tx-muted font-mono whitespace-pre-wrap break-all max-h-[60px] overflow-y-auto">
+                          {Object.entries(te.toolInput).map(([k, v]) =>
+                            `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`
+                          ).join('\n')}
+                        </pre>
+                      </div>
+                    )}
+                    {te.result && (
+                      <div className="mt-1">
+                        <div className="text-[9px] text-tx-faint">Result:</div>
+                        <pre className="text-[9px] text-tx-muted font-mono whitespace-pre-wrap break-all max-h-[60px] overflow-y-auto">
+                          {te.result.length > 500 ? te.result.slice(0, 500) + '...' : te.result}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

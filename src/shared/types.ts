@@ -57,8 +57,14 @@ export const IpcChannels = {
   IMAGE_SAVE_FROM_PATH: 'image:saveFromPath',
   IMAGE_DELETE: 'image:delete',
 
+  // Video Storage
+  VIDEO_SAVE: 'video:save',
+  VIDEO_SAVE_FROM_PATH: 'video:saveFromPath',
+  VIDEO_DELETE: 'video:delete',
+
   // Dialog
   DIALOG_SELECT_IMAGES: 'dialog:selectImages',
+  DIALOG_SELECT_VIDEOS: 'dialog:selectVideos',
 
   // URL Metadata
   URL_FETCH_META: 'url:fetchMeta',
@@ -73,6 +79,20 @@ export const IpcChannels = {
   // AI Changelog
   CHANGELOG_APPEND: 'changelog:append',
   CHANGELOG_READ: 'changelog:read',
+
+  // AI Tool Events (main → renderer push)
+  AI_CHAT_TOOL_EVENT: 'ai:chatToolEvent',
+
+  // MCP
+  MCP_LIST_TOOLS: 'mcp:listTools',
+  MCP_REFRESH: 'mcp:refresh',
+
+  // Skills
+  SKILLS_LIST: 'skills:list',
+  SKILLS_TOGGLE: 'skills:toggle',
+  SKILLS_CREATE: 'skills:create',
+  SKILLS_DELETE: 'skills:delete',
+  SKILLS_IMPORT_URL: 'skills:importUrl',
 
   // Shortcuts forwarded from main process
   SHORTCUT: 'shortcut',
@@ -203,6 +223,22 @@ export interface AIChatResponse {
   usage?: { promptTokens: number; completionTokens: number }
 }
 
+// ── AI Tool Types ──
+
+export interface AIToolDefinition {
+  name: string
+  description: string
+  parameters: Record<string, unknown>  // JSON Schema
+}
+
+export interface AIToolEvent {
+  type: 'tool_start' | 'tool_result'
+  toolName: string
+  toolInput?: Record<string, unknown>
+  result?: string
+  durationMs?: number
+}
+
 // ── AI Changelog Entry ──
 
 export interface ChangelogEntry {
@@ -214,6 +250,31 @@ export interface ChangelogEntry {
   action: 'accepted' | 'rejected'
   model: string
   providerId: string
+}
+
+// ── MCP Server Types ──
+
+export interface MCPServerConfig {
+  id: string
+  name: string
+  description: string    // User hint for AI: what this server does
+  command: string        // e.g. "npx", "node", "python" (stdio transport)
+  args: string[]         // e.g. ["-y", "@mcp/server-github"]
+  env: Record<string, string>
+  url: string            // e.g. "https://mcp.example.com/sse" (SSE/HTTP transport)
+  headers: Record<string, string>  // HTTP headers for URL-based transport
+  enabled: boolean
+  timeout: number        // ms, default 30000
+}
+
+// ── Skill Types ──
+
+export interface Skill {
+  name: string
+  description: string
+  content: string
+  enabled: boolean
+  filePath: string
 }
 
 // ── Lite Config (Persistence) ──
@@ -248,6 +309,8 @@ export interface LiteConfig {
   recentFiles: RecentFileEntry[]
   // AI
   ai: AISettings
+  // MCP Servers
+  mcpServers: MCPServerConfig[]
 }
 
 // ── Default Per-App State ──
@@ -278,4 +341,5 @@ export const DEFAULT_LITE_CONFIG: LiteConfig = {
   terminalSessions: [],
   recentFiles: [],
   ai: { ...DEFAULT_AI_SETTINGS },
+  mcpServers: [],
 }

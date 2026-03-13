@@ -44,8 +44,17 @@ const api = {
     delete: (filename: string) =>
       ipcRenderer.invoke(IpcChannels.IMAGE_DELETE, filename),
   },
+  video: {
+    save: (data: ArrayBuffer, mimeType: string) =>
+      ipcRenderer.invoke(IpcChannels.VIDEO_SAVE, data, mimeType),
+    saveFromPath: (localPath: string) =>
+      ipcRenderer.invoke(IpcChannels.VIDEO_SAVE_FROM_PATH, localPath),
+    delete: (filename: string) =>
+      ipcRenderer.invoke(IpcChannels.VIDEO_DELETE, filename),
+  },
   dialog: {
     selectImages: () => ipcRenderer.invoke(IpcChannels.DIALOG_SELECT_IMAGES),
+    selectVideos: () => ipcRenderer.invoke(IpcChannels.DIALOG_SELECT_VIDEOS),
   },
   url: {
     fetchMeta: (url: string) =>
@@ -89,15 +98,38 @@ const api = {
     read: (filePath: string) =>
       ipcRenderer.invoke(IpcChannels.CHANGELOG_READ, filePath),
   },
+  mcp: {
+    listTools: () => ipcRenderer.invoke(IpcChannels.MCP_LIST_TOOLS),
+    refresh: () => ipcRenderer.invoke(IpcChannels.MCP_REFRESH),
+  },
+  skills: {
+    list: () => ipcRenderer.invoke(IpcChannels.SKILLS_LIST),
+    toggle: (name: string, enabled: boolean) =>
+      ipcRenderer.invoke(IpcChannels.SKILLS_TOGGLE, name, enabled),
+    create: (name: string, description: string, content: string) =>
+      ipcRenderer.invoke(IpcChannels.SKILLS_CREATE, name, description, content),
+    delete: (name: string) =>
+      ipcRenderer.invoke(IpcChannels.SKILLS_DELETE, name),
+    importUrl: (url: string) =>
+      ipcRenderer.invoke(IpcChannels.SKILLS_IMPORT_URL, url),
+  },
   ai: {
     chat: (
       providerId: string,
       messages: Array<{ role: string; content: string }>,
       temperature?: number,
-      maxTokens?: number
-    ) => ipcRenderer.invoke(IpcChannels.AI_CHAT, providerId, messages, temperature, maxTokens),
+      maxTokens?: number,
+      enableTools?: boolean
+    ) => ipcRenderer.invoke(IpcChannels.AI_CHAT, providerId, messages, temperature, maxTokens, enableTools),
     testConnection: (provider: Record<string, unknown>) =>
       ipcRenderer.invoke(IpcChannels.AI_TEST_CONNECTION, provider),
+    onToolEvent: (callback: (event: { type: string; toolName: string; toolInput?: Record<string, unknown>; result?: string; durationMs?: number }) => void) => {
+      const handler = (_: unknown, event: { type: string; toolName: string; toolInput?: Record<string, unknown>; result?: string; durationMs?: number }): void => callback(event)
+      ipcRenderer.on(IpcChannels.AI_CHAT_TOOL_EVENT, handler)
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.AI_CHAT_TOOL_EVENT, handler)
+      }
+    },
   },
   shortcut: {
     onShortcut: (callback: (shortcut: string) => void) => {

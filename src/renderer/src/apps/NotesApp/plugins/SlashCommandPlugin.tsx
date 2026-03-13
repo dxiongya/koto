@@ -21,12 +21,14 @@ import {
   Lightbulb,
   AlertCircle,
   ImageIcon,
+  Video,
   ChevronRight,
   Sparkles
 } from 'lucide-react'
 import { $createAICommandNode } from '../nodes/AICommandNode'
 import { $createHorizontalRuleNode } from '../nodes/HorizontalRuleNode'
 import { $createImageNode } from '../nodes/ImageNode'
+import { $createVideoNode } from '../nodes/VideoNode'
 import {
   $createCollapsibleContainerNode,
   $createCollapsibleTitleNode,
@@ -109,6 +111,13 @@ const BUILTIN_ITEMS: Array<{
     description: 'Import images',
     keywords: ['image', 'img', 'photo', 'picture'],
     icon: ImageIcon
+  },
+  {
+    id: 'video',
+    name: 'Video',
+    description: 'Import videos',
+    keywords: ['video', 'mp4', 'movie', 'clip'],
+    icon: Video
   },
   {
     id: 'toggle',
@@ -283,6 +292,32 @@ export function SlashCommandPlugin(): JSX.Element | null {
             }
           } catch (err) {
             console.error('[SlashCommand] image import failed:', err)
+          }
+        })()
+        return
+      }
+
+      if (id === 'video') {
+        void (async () => {
+          try {
+            const result = await window.api.dialog.selectVideos()
+            if (!result.ok) return
+            for (const filePath of result.data) {
+              const saveResult = await window.api.video.saveFromPath(filePath)
+              if (saveResult.ok) {
+                const src = `lite-asset://videos/${saveResult.data}`
+                editor.update(() => {
+                  const selection = $getSelection()
+                  if (!$isRangeSelection(selection)) return
+                  const videoNode = $createVideoNode({ src })
+                  const paragraph = $createParagraphNode()
+                  $insertNodes([videoNode, paragraph])
+                  paragraph.selectStart()
+                })
+              }
+            }
+          } catch (err) {
+            console.error('[SlashCommand] video import failed:', err)
           }
         })()
         return

@@ -22,21 +22,25 @@ import {
   CheckCircle2,
   XCircle,
   MessageSquare,
-  RotateCcw
+  RotateCcw,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react'
 import { useUIStore } from '../../../store/useUIStore'
 import { ALL_TRANSFORMERS, $fixUnconvertedHeadings } from '../LexicalEditor'
 
 // ── Types ──
 
+type RefType = 'file' | 'folder' | 'terminal'
+
 interface AttachedRef {
-  type: 'file' | 'folder' | 'terminal'
+  type: RefType
   path: string
   label: string
 }
 
 interface RefMenuItem {
-  type: 'file' | 'folder' | 'terminal'
+  type: RefType
   path: string
   label: string
   icon: typeof FileText
@@ -60,6 +64,7 @@ type ChatEntry =
       providerId: string
     }
   | { role: 'note'; content: string }
+  | { role: 'tool'; toolName: string; status: 'running' | 'done'; toolInput?: Record<string, unknown>; result?: string; durationMs?: number }
 
 // ── Diff ──
 
@@ -99,7 +104,7 @@ export function computeLineDiff(original: string, generated: string): DiffLine[]
 
 // ── Reference resolution ──
 
-async function resolveOneRef(type: 'file' | 'folder' | 'terminal', path: string): Promise<{ type: string; path: string; content: string }> {
+async function resolveOneRef(type: RefType, path: string): Promise<{ type: string; path: string; content: string }> {
   try {
     let content = ''
     if (type === 'file') {
@@ -180,13 +185,13 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
   const [prompt, setPrompt] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
   // ── Attached refs / @ menu ──
   const [attachedRefs, setAttachedRefs] = useState<AttachedRef[]>([])
   const [showAtMenu, setShowAtMenu] = useState(false)
   const [atQuery, setAtQuery] = useState('')
   const [atMenuIndex, setAtMenuIndex] = useState(0)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set())
   const [availableRefs, setAvailableRefs] = useState<RefMenuItem[]>([])
 
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -339,23 +344,34 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
 
   // ── Convert chat history to API messages ──
   const buildAPIMessages = useCallback((userPrompt: string, refs: AttachedRef[]): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> => {
-    const systemPrompt = `You are an AI assistant embedded in a markdown notes editor. The user has selected specific text and will give you an instruction about what to do with it.
+    const hasSelection = !!selectedText.trim()
+    const fullSystemPrompt = `You are an AI assistant embedded in a markdown notes editor. You have powerful tool capabilities and should actively use them.
 
-CRITICAL: The selected text is the CONTENT you must work with. The user's message is the INSTRUCTION for how to transform that content. Your output must be semantically related to the selected text — never generate generic or template content.
+## Tools — ALWAYS use when needed
+You have access to these tools and MUST use them proactively:
+- **web_fetch**: Fetch any web page content. Use this for any request involving URLs, web search, or online information.
+- **file_read** / **file_list**: Read files and list directories.
+- **search_content**: Search across files by regex.
+- **terminal_exec**: Execute shell commands (10s timeout). Use for anything tools can't cover.
+- **use_skill**: Load a skill to guide your approach. Check available skills when the task matches.
+- **MCP tools**: Any connected MCP server tools are also available.
 
-Rules:
-- Output ONLY the modified markdown content that should REPLACE the selected text
-- Your output must directly relate to the MEANING of the selected text, not just the user's instruction abstractly
-- PRESERVE the format: if the input is a checklist, output a checklist; if a table, output a table; if headings, keep headings
-- For lists/checklists, preserve the - [ ] / - [x] syntax. Use 4 spaces for nested indentation
-- For tables, use proper markdown table syntax
-- For code, use fenced code blocks with language
-- If the user rejected a previous suggestion, take their feedback into account and try a different approach
+IMPORTANT: When the user asks you to search, fetch, look up, or gather ANY information, you MUST use tools. Never say "I can't access the internet" — you CAN via web_fetch and terminal_exec. If one tool fails, try another approach.
 
-Example: If selected text is "- [ ] 扫码/输入 Setup Code" and instruction is "拆分子任务", output specific subtasks about scanning/entering setup codes, NOT generic task-breakdown steps.`
+## Output format
+${hasSelection ? `The user has selected text in the editor. Your output will REPLACE the selected text.
+- Output ONLY the modified markdown content
+- Relate your output to the MEANING of the selected text
+- PRESERVE format: checklists stay checklists, tables stay tables, headings stay headings
+- For lists/checklists: use - [ ] / - [x] syntax, 4 spaces for nesting
+- For tables: use proper markdown table syntax
+- For code: use fenced code blocks with language` : `No text is selected. The user is asking you to generate content or perform a task.
+- Output markdown content that can be inserted into the note
+- Use appropriate markdown formatting (headings, lists, tables, code blocks)`}
+- If the user rejected a previous suggestion, adjust your approach based on their feedback`
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      { role: 'system', content: systemPrompt }
+      { role: 'system', content: fullSystemPrompt }
     ]
 
     // Build the current user prompt (may include context prefix for first turn)
@@ -441,7 +457,34 @@ Example: If selected text is "- [ ] 扫码/输入 Setup Code" and instruction is
       }
 
       const messages = buildAPIMessages(resolvedPrompt, currentRefs)
-      const result = await window.api.ai.chat(provider.id, messages, 0.7, 2048)
+
+      // Subscribe to tool events for real-time status
+      const unsubToolEvent = window.api.ai.onToolEvent((event) => {
+        if (event.type === 'tool_start') {
+          setChatHistory((prev) => [...prev, {
+            role: 'tool',
+            toolName: event.toolName,
+            status: 'running',
+            toolInput: event.toolInput,
+          }])
+        } else if (event.type === 'tool_result') {
+          setChatHistory((prev) => {
+            const updated = [...prev]
+            // Find the last running tool entry with this name
+            for (let i = updated.length - 1; i >= 0; i--) {
+              const e = updated[i]
+              if (e.role === 'tool' && e.toolName === event.toolName && e.status === 'running') {
+                updated[i] = { ...e, status: 'done', result: event.result, durationMs: event.durationMs }
+                break
+              }
+            }
+            return updated
+          })
+        }
+      })
+
+      const result = await window.api.ai.chat(provider.id, messages, 0.7, 2048, true)
+      unsubToolEvent()
 
       if (result.ok) {
         useUIStore.getState().trackAIUsage(provider.id, 'chat', result.data.usage)
@@ -846,6 +889,62 @@ Example: If selected text is "- [ ] 扫码/输入 Setup Code" and instruction is
                 <span className="text-[9px] text-tx-faint/70 italic px-3 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.03)' }}>
                   {entry.content}
                 </span>
+              </div>
+            )
+          }
+
+          if (entry.role === 'tool') {
+            const isExpanded = expandedTools.has(idx)
+            const toggleExpand = () => {
+              setExpandedTools((prev) => {
+                const next = new Set(prev)
+                if (next.has(idx)) next.delete(idx); else next.add(idx)
+                return next
+              })
+            }
+            const inputSummary = entry.toolInput
+              ? Object.values(entry.toolInput).map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ').slice(0, 80)
+              : ''
+            return (
+              <div key={idx} className="rounded-lg animate-in fade-in duration-200 overflow-hidden"
+                style={{ background: 'rgba(94,234,212,0.03)', border: '1px solid rgba(94,234,212,0.06)' }}>
+                <button onClick={toggleExpand} className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent-main/5 transition-colors text-left">
+                  {entry.status === 'running' ? (
+                    <Loader2 size={10} className="text-accent-main/60 animate-spin shrink-0" />
+                  ) : (
+                    <CheckCircle2 size={10} className="text-emerald-400/60 shrink-0" />
+                  )}
+                  <span className="text-[10px] text-accent-main/70 font-mono shrink-0">{entry.toolName}</span>
+                  {!isExpanded && inputSummary && (
+                    <span className="text-[9px] text-tx-faint truncate flex-1">{inputSummary}</span>
+                  )}
+                  <span className="ml-auto shrink-0 flex items-center gap-1">
+                    {entry.status === 'done' && entry.durationMs != null && (
+                      <span className="text-[9px] text-tx-faint/50">{(entry.durationMs / 1000).toFixed(1)}s</span>
+                    )}
+                    {isExpanded ? <ChevronDown size={10} className="text-tx-faint/50" /> : <ChevronRight size={10} className="text-tx-faint/50" />}
+                  </span>
+                </button>
+                {isExpanded && (
+                  <div className="px-3 pb-2 space-y-1.5" style={{ borderTop: '1px solid rgba(94,234,212,0.06)' }}>
+                    {entry.toolInput && Object.keys(entry.toolInput).length > 0 && (
+                      <div className="pt-1.5">
+                        <div className="text-[9px] text-tx-faint uppercase tracking-wider mb-1">Input</div>
+                        <pre className="text-[10px] text-tx-muted font-mono whitespace-pre-wrap break-all leading-relaxed bg-bg-app/50 rounded px-2 py-1.5 max-h-[120px] overflow-auto">
+                          {JSON.stringify(entry.toolInput, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                    {entry.status === 'done' && entry.result && (
+                      <div>
+                        <div className="text-[9px] text-tx-faint uppercase tracking-wider mb-1">Result</div>
+                        <pre className="text-[10px] text-tx-muted font-mono whitespace-pre-wrap break-all leading-relaxed bg-bg-app/50 rounded px-2 py-1.5 max-h-[200px] overflow-auto">
+                          {entry.result}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )
           }

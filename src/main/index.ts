@@ -8,6 +8,7 @@ import { setProjectPath } from './core/fs'
 import { fileWatcher } from './core/watcher'
 import { ptyManager } from './core/pty-manager'
 import { registerAssetProtocol } from './core/asset-protocol'
+import { mcpManager } from './core/mcp-manager'
 
 function sendToRenderer(win: BrowserWindow, shortcut: string): void {
   win.webContents.send('shortcut', shortcut)
@@ -128,6 +129,14 @@ app.whenReady().then(() => {
   setupIpcHandlers()
   createWindow()
 
+  // Initialize MCP servers from config
+  const mcpConfig = loadConfig()
+  if (mcpConfig.mcpServers?.length) {
+    mcpManager.initFromConfig(mcpConfig.mcpServers).catch((err) => {
+      console.error('[MCP] Init failed:', err)
+    })
+  }
+
   // ── Application Menu with accelerators as backup ──
   const sendShortcut = (name: string): void => {
     const win = BrowserWindow.getFocusedWindow()
@@ -203,6 +212,7 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   fileWatcher.stopAll()
   ptyManager.closeAll()
+  mcpManager.shutdown().catch(() => {})
 })
 
 app.on('window-all-closed', () => {
