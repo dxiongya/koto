@@ -151,11 +151,13 @@ export function FloatingToolbarPlugin(): JSX.Element | null {
     setIsVisible(true)
   }, [editor])
 
+  const rafRef = useRef(0)
   useEffect(() => {
     return editor.registerCommand(
       SELECTION_CHANGE_COMMAND,
       () => {
-        updateToolbar()
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = requestAnimationFrame(() => updateToolbar())
         return false
       },
       COMMAND_PRIORITY_LOW

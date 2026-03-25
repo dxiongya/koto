@@ -1067,7 +1067,7 @@ function MenuItem({
     <DropdownMenu.Item
       className={`flex items-center px-3 py-1.5 outline-none cursor-pointer transition-colors ${
         danger
-          ? 'text-red-400 hover:bg-red-500/10'
+          ? 'text-status-error hover:bg-status-error/10'
           : 'text-tx-main hover:bg-bg-hover'
       }`}
       onSelect={onSelect}

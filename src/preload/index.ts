@@ -131,6 +131,30 @@ const api = {
       }
     },
   },
+  automation: {
+    list: () => ipcRenderer.invoke(IpcChannels.AUTOMATION_LIST),
+    create: (input: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.AUTOMATION_CREATE, input),
+    update: (id: string, patch: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.AUTOMATION_UPDATE, id, patch),
+    delete: (id: string) =>
+      ipcRenderer.invoke(IpcChannels.AUTOMATION_DELETE, id),
+    runNow: (id: string) =>
+      ipcRenderer.invoke(IpcChannels.AUTOMATION_RUN_NOW, id),
+    getSnapshots: (automationId: string) =>
+      ipcRenderer.invoke(IpcChannels.AUTOMATION_GET_SNAPSHOTS, automationId),
+    restoreSnapshot: (automationId: string, timestamp: number) =>
+      ipcRenderer.invoke(IpcChannels.AUTOMATION_RESTORE_SNAPSHOT, automationId, timestamp),
+    getExperience: (automationId: string) =>
+      ipcRenderer.invoke(IpcChannels.AUTOMATION_GET_EXPERIENCE, automationId),
+    onRunEvent: (callback: (event: { automationId: string; status: string; timestamp: number; message?: string }) => void) => {
+      const handler = (_: unknown, event: { automationId: string; status: string; timestamp: number; message?: string }): void => callback(event)
+      ipcRenderer.on(IpcChannels.AUTOMATION_RUN_EVENT, handler)
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.AUTOMATION_RUN_EVENT, handler)
+      }
+    },
+  },
   shortcut: {
     onShortcut: (callback: (shortcut: string) => void) => {
       const handler = (_: unknown, shortcut: string): void => callback(shortcut)

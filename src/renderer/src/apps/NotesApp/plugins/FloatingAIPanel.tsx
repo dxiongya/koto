@@ -345,29 +345,11 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
   // ── Convert chat history to API messages ──
   const buildAPIMessages = useCallback((userPrompt: string, refs: AttachedRef[]): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> => {
     const hasSelection = !!selectedText.trim()
-    const fullSystemPrompt = `You are an AI assistant embedded in a markdown notes editor. You have powerful tool capabilities and should actively use them.
-
-## Tools — ALWAYS use when needed
-You have access to these tools and MUST use them proactively:
-- **web_fetch**: Fetch any web page content. Use this for any request involving URLs, web search, or online information.
-- **file_read** / **file_list**: Read files and list directories.
-- **search_content**: Search across files by regex.
-- **terminal_exec**: Execute shell commands (10s timeout). Use for anything tools can't cover.
-- **use_skill**: Load a skill to guide your approach. Check available skills when the task matches.
-- **MCP tools**: Any connected MCP server tools are also available.
-
-IMPORTANT: When the user asks you to search, fetch, look up, or gather ANY information, you MUST use tools. Never say "I can't access the internet" — you CAN via web_fetch and terminal_exec. If one tool fails, try another approach.
-
-## Output format
-${hasSelection ? `The user has selected text in the editor. Your output will REPLACE the selected text.
-- Output ONLY the modified markdown content
-- Relate your output to the MEANING of the selected text
-- PRESERVE format: checklists stay checklists, tables stay tables, headings stay headings
-- For lists/checklists: use - [ ] / - [x] syntax, 4 spaces for nesting
-- For tables: use proper markdown table syntax
-- For code: use fenced code blocks with language` : `No text is selected. The user is asking you to generate content or perform a task.
-- Output markdown content that can be inserted into the note
-- Use appropriate markdown formatting (headings, lists, tables, code blocks)`}
+    const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath || ''
+    const fullSystemPrompt = `## Context
+- Active file: ${activeFilePath}
+- Mode: ${hasSelection ? 'REPLACE (your output replaces the selected text)' : 'INSERT (your output is inserted into the document)'}
+- Interface: multi-turn chat panel (Cmd+K)
 - If the user rejected a previous suggestion, adjust your approach based on their feedback`
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
@@ -830,7 +812,7 @@ ${hasSelection ? `The user has selected text in the editor. Your output will REP
           )}
           <button
             onClick={onClose}
-            className="w-6 h-6 flex items-center justify-center rounded-lg text-tx-faint hover:text-red-400/80 hover:bg-red-400/10 transition-all duration-200"
+            className="w-6 h-6 flex items-center justify-center rounded-lg text-tx-faint hover:text-status-error/80 hover:bg-red-400/10 transition-all duration-200"
             title="Close (Esc)"
           >
             <X size={12} />
@@ -912,7 +894,7 @@ ${hasSelection ? `The user has selected text in the editor. Your output will REP
                   {entry.status === 'running' ? (
                     <Loader2 size={10} className="text-accent-main/60 animate-spin shrink-0" />
                   ) : (
-                    <CheckCircle2 size={10} className="text-emerald-400/60 shrink-0" />
+                    <CheckCircle2 size={10} className="text-status-success/60 shrink-0" />
                   )}
                   <span className="text-[10px] text-accent-main/70 font-mono shrink-0">{entry.toolName}</span>
                   {!isExpanded && inputSummary && (
@@ -965,10 +947,10 @@ ${hasSelection ? `The user has selected text in the editor. Your output will REP
               {/* Diff header */}
               <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                 <div className={`w-4 h-4 rounded-md flex items-center justify-center ${
-                  isAccepted ? 'bg-emerald-500/15' : isRejected ? 'bg-red-500/10' : 'bg-accent-main/10'
+                  isAccepted ? 'bg-status-success/15' : isRejected ? 'bg-status-error/10' : 'bg-accent-main/10'
                 }`}>
-                  {isAccepted ? <CheckCircle2 size={9} className="text-emerald-400" /> :
-                   isRejected ? <XCircle size={9} className="text-red-400/60" /> :
+                  {isAccepted ? <CheckCircle2 size={9} className="text-status-success" /> :
+                   isRejected ? <XCircle size={9} className="text-status-error/60" /> :
                    <MessageSquare size={9} className="text-accent-main" />}
                 </div>
                 <span className="text-[10px] text-tx-muted flex-1 font-medium">
@@ -976,10 +958,10 @@ ${hasSelection ? `The user has selected text in the editor. Your output will REP
                 </span>
                 <div className="flex items-center gap-2">
                   {addedCount > 0 && (
-                    <span className="text-[9px] text-emerald-400/80 font-mono">+{addedCount}</span>
+                    <span className="text-[9px] text-status-success/80 font-mono">+{addedCount}</span>
                   )}
                   {removedCount > 0 && (
-                    <span className="text-[9px] text-red-400/80 font-mono">-{removedCount}</span>
+                    <span className="text-[9px] text-status-error/80 font-mono">-{removedCount}</span>
                   )}
                 </div>
               </div>
@@ -992,20 +974,20 @@ ${hasSelection ? `The user has selected text in the editor. Your output will REP
                       key={li}
                       className={`flex items-start ${
                         line.type === 'added'
-                          ? 'bg-emerald-500/[0.07]'
+                          ? 'bg-status-success/[0.07]'
                           : line.type === 'removed'
-                          ? 'bg-red-500/[0.05]'
+                          ? 'bg-status-error/[0.05]'
                           : ''
                       }`}
                       style={{ borderLeft: line.type === 'added' ? '2px solid rgba(16,185,129,0.4)' : line.type === 'removed' ? '2px solid rgba(239,68,68,0.3)' : '2px solid transparent' }}
                     >
                       <span className={`inline-flex items-center justify-center w-6 shrink-0 text-[9px] select-none py-0.5 font-mono ${
-                        line.type === 'added' ? 'text-emerald-500/50' : line.type === 'removed' ? 'text-red-400/50' : 'text-tx-faint/20'
+                        line.type === 'added' ? 'text-status-success/50' : line.type === 'removed' ? 'text-status-error/50' : 'text-tx-faint/20'
                       }`}>
                         {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
                       </span>
                       <span className={`flex-1 px-1.5 py-0.5 whitespace-pre-wrap break-words ${
-                        line.type === 'added' ? 'text-emerald-300/90' : line.type === 'removed' ? 'text-red-400/60 line-through decoration-red-400/30' : 'text-tx-muted/50'
+                        line.type === 'added' ? 'text-status-success/90' : line.type === 'removed' ? 'text-status-error/60 line-through decoration-red-400/30' : 'text-tx-muted/50'
                       }`}>
                         {line.text || '\u00A0'}
                       </span>
@@ -1019,14 +1001,14 @@ ${hasSelection ? `The user has selected text in the editor. Your output will REP
                 <div className="flex items-center gap-2 px-3 py-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
                   <button
                     onClick={() => handleReject(idx)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-medium text-tx-faint transition-all duration-200 hover:text-red-400 hover:bg-red-400/8"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-medium text-tx-faint transition-all duration-200 hover:text-status-error hover:bg-red-400/8"
                     style={{ background: 'rgba(255,255,255,0.03)' }}
                   >
                     <XCircle size={11} /> Reject
                   </button>
                   <button
                     onClick={() => handleAccept(idx)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-medium text-emerald-300 transition-all duration-200 hover:brightness-110"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-medium text-status-success transition-all duration-200 hover:brightness-110"
                     style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(16,185,129,0.1) 100%)' }}
                   >
                     <CheckCircle2 size={11} /> Accept
@@ -1075,7 +1057,7 @@ ${hasSelection ? `The user has selected text in the editor. Your output will REP
       {/* ── Error ── */}
       {error && (
         <div className="px-4 pb-2 shrink-0">
-          <div className="text-[10px] text-red-400 rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.12)' }}>
+          <div className="text-[10px] text-status-error rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.12)' }}>
             {error}
           </div>
         </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useUIStore } from '../../store/useUIStore'
 import { LexicalEditor } from './LexicalEditor'
 import { FileText } from 'lucide-react'
@@ -10,6 +10,7 @@ export const NotesApp: React.FC = () => {
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [editorKey, setEditorKey] = useState(0)
+  const lastEditorWriteRef = useRef(0) // timestamp of last editor save — to ignore own writes
 
   // Load file content
   useEffect(() => {
@@ -29,9 +30,46 @@ export const NotesApp: React.FC = () => {
     })
   }, [activeFilePath])
 
+  // Reload editor when the active file is externally modified (e.g., by manual edit outside app)
+  useEffect(() => {
+    if (!activeFilePath) return
+    const unsub = window.api.fs.onWatchEvent((event) => {
+      if (event.type !== 'update' || event.path !== activeFilePath) return
+      // Ignore if the change was likely caused by our own editor save (within 2 seconds)
+      if (Date.now() - lastEditorWriteRef.current < 2000) return
+
+      window.api.fs.readFile(activeFilePath).then((res) => {
+        if (res.ok) {
+          setContent(res.data)
+          setEditorKey((k) => k + 1)
+        }
+      })
+    })
+    return unsub
+  }, [activeFilePath])
+
+  // Force reload when an automation completes on the active file
+  useEffect(() => {
+    if (!activeFilePath) return
+    const unsub = window.api.automation.onRunEvent((event) => {
+      if (event.status !== 'completed') return
+      // Small delay to let the file write settle
+      setTimeout(() => {
+        window.api.fs.readFile(activeFilePath).then((res) => {
+          if (res.ok) {
+            setContent(res.data)
+            setEditorKey((k) => k + 1)
+          }
+        })
+      }, 300)
+    })
+    return unsub
+  }, [activeFilePath])
+
   const handleSave = useCallback(
     (markdown: string) => {
       if (activeFilePath) {
+        lastEditorWriteRef.current = Date.now()
         window.api.fs.writeFile(activeFilePath, markdown)
       }
     },
@@ -57,8 +95,8 @@ export const NotesApp: React.FC = () => {
   }, [liteHome])
 
   const blurClass = showCommandPalette
-    ? 'filter blur-[3px] opacity-50 transition-all duration-300'
-    : 'transition-all duration-300'
+    ? 'opacity-50 transition-opacity duration-200'
+    : 'transition-opacity duration-200'
 
   if (!activeFilePath) {
     return (

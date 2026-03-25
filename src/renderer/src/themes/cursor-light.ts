@@ -22,5 +22,8 @@ export const cursorLightTheme: ThemeDefinition = {
     'border-strong': 'rgba(20, 20, 20, 0.15)',
     'accent-main': '#3C7CAB',
     'accent-bg': 'rgba(60, 124, 171, 0.1)',
+    'status-success': '#2E8B57',
+    'status-error': '#C0392B',
+    'status-warning': '#D4A017',
   },
 }

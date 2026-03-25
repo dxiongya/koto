@@ -20,5 +20,8 @@ export const lightTheme: ThemeDefinition = {
     'tx-active': '#2b8a73',
     'accent-main': '#2b8a73',
     'accent-bg': '#E8F4F2',
+    'status-success': '#16a34a',
+    'status-error': '#dc2626',
+    'status-warning': '#d97706',
   },
 }

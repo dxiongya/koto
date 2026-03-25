@@ -15,7 +15,11 @@ import { appendChangelog, readChangelog } from './changelog'
 import { mcpManager } from './mcp-manager'
 import { getAllToolDefinitions } from './ai-tools'
 import { loadSkills, toggleSkill, createSkill, deleteSkill, importSkillFromUrl } from './skills-loader'
-import type { AIProviderConfig, AIChatMessage, ChangelogEntry } from '../../shared/types'
+import { listAutomations, createAutomation, updateAutomation, deleteAutomation } from './automation-store'
+import { readSnapshots, restoreSnapshot } from './automation-snapshots'
+import { loadExperience } from './automation-runner'
+import { automationScheduler } from './automation-scheduler'
+import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation } from '../../shared/types'
 
 export function setupIpcHandlers(): void {
   // ── Lite Home ──
@@ -385,5 +389,45 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.SKILLS_IMPORT_URL, async (_, url: string) => {
     return importSkillFromUrl(url)
+  })
+
+  // ── Automation ──
+
+  ipcMain.handle(IpcChannels.AUTOMATION_LIST, () => {
+    return listAutomations()
+  })
+
+  ipcMain.handle(IpcChannels.AUTOMATION_CREATE, (_, input: Omit<Automation, 'id' | 'createdAt' | 'lastRunAt' | 'lastRunStatus' | 'lastRunError' | 'runCount'>) => {
+    return createAutomation(input)
+  })
+
+  ipcMain.handle(IpcChannels.AUTOMATION_UPDATE, (_, id: string, patch: Partial<Automation>) => {
+    return updateAutomation(id, patch)
+  })
+
+  ipcMain.handle(IpcChannels.AUTOMATION_DELETE, (_, id: string) => {
+    return deleteAutomation(id)
+  })
+
+  ipcMain.handle(IpcChannels.AUTOMATION_RUN_NOW, async (_, id: string) => {
+    try {
+      await automationScheduler.runNow(id)
+      return { ok: true, data: undefined }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.AUTOMATION_GET_SNAPSHOTS, (_, automationId: string) => {
+    return readSnapshots(automationId)
+  })
+
+  ipcMain.handle(IpcChannels.AUTOMATION_RESTORE_SNAPSHOT, (_, automationId: string, timestamp: number) => {
+    return restoreSnapshot(automationId, timestamp)
+  })
+
+  ipcMain.handle(IpcChannels.AUTOMATION_GET_EXPERIENCE, (_, automationId: string) => {
+    const exp = loadExperience(automationId)
+    return exp ? { ok: true, data: exp } : { ok: true, data: null }
   })
 }

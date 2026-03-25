@@ -269,29 +269,22 @@ function AICommandComponent({
 
       const { prompt: resolvedPrompt } = await resolveReferences(prompt, attachedRefs)
 
+      const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath || ''
+
       const hasContext = !!selectedText.trim()
-      const systemPrompt = `You are an AI assistant embedded in a markdown notes editor. You have powerful tool capabilities and should actively use them.
+      const systemPrompt = `You are Lite — an AI content writer embedded in a markdown notes editor.
 
-## Tools — ALWAYS use when needed
-You have access to these tools and MUST use them proactively:
-- **web_fetch**: Fetch any web page content. Use for URLs, web search, online information.
-- **file_read** / **file_list**: Read files and list directories.
-- **search_content**: Search across files by regex.
-- **terminal_exec**: Execute shell commands (10s timeout).
-- **use_skill**: Load a skill to guide your approach.
-- **MCP tools**: Any connected MCP server tools are also available.
+## Context
+- Active file: ${activeFilePath}
+- Mode: ${hasContext ? 'REPLACE (your output replaces the selected text)' : 'INSERT (your output is inserted into the document)'}
 
-IMPORTANT: When the user asks to search, fetch, look up, or gather ANY information, you MUST use tools. Never say "I can't access the internet" — you CAN via web_fetch and terminal_exec. If one tool fails, try another.
+## Boot
+Load your core skills BEFORE generating content:
+1. Always load \`soul\` — your identity and behavior rules
+2. Always load \`notes-editor\` — output format and tool usage rules
+3. If the task involves scheduled/recurring/timed updates, also load \`automation\`
 
-## Output
-${hasContext ? `The user has selected text. Your output will REPLACE it.
-- Output ONLY the modified markdown content
-- Preserve format: checklists, tables, headings` : `Generate markdown content based on the user's request.`}
-- Output ONLY markdown, no explanations or wrapping
-- For tables, use proper markdown table syntax
-- For code, use fenced code blocks with language
-- For lists/checklists, use - [ ] syntax
-- Be concise and well-structured`
+Use \`use_skill(name)\` to load each skill. Then follow their instructions precisely.`
 
       const userPrompt = hasContext
         ? `Context (selected text in editor):\n${selectedText}\n\nRequest: ${resolvedPrompt}`
@@ -321,7 +314,7 @@ ${hasContext ? `The user has selected text. Your output will REPLACE it.
         }
       })
 
-      const result = await window.api.ai.chat(provider.id, messages, 0.7, 2048, true)
+      const result = await window.api.ai.chat(provider.id, messages, 0.7, 8192, true)
       unsubToolEvent()
 
       if (result.ok) {
@@ -641,7 +634,7 @@ ${hasContext ? `The user has selected text. Your output will REPLACE it.
                   {te.status === 'running' ? (
                     <Loader2 size={9} className="text-accent-main/60 animate-spin shrink-0" />
                   ) : (
-                    <CheckCircle2 size={9} className="text-emerald-400/60 shrink-0" />
+                    <CheckCircle2 size={9} className="text-status-success/60 shrink-0" />
                   )}
                   <span className="text-[10px] text-accent-main/70 font-mono shrink-0">{te.toolName}</span>
                   {!isExp && te.toolInput && (
@@ -683,7 +676,7 @@ ${hasContext ? `The user has selected text. Your output will REPLACE it.
       {/* Error */}
       {error && (
         <div className="px-3 pb-2">
-          <div className="text-xs text-red-400 bg-red-500/10 rounded px-2 py-1.5">{error}</div>
+          <div className="text-xs text-status-error bg-status-error/10 rounded px-2 py-1.5">{error}</div>
         </div>
       )}
 

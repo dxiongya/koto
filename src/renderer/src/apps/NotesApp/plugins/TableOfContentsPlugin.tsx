@@ -62,28 +62,53 @@ export function TableOfContentsPlugin(): JSX.Element {
 
   const tocScrollRef = useRef<HTMLDivElement>(null)
 
-  // Track active heading on scroll
+  // Track active heading via IntersectionObserver (no layout thrashing)
   useEffect(() => {
     const scroller = scrollContainerRef.current
     if (!scroller || items.length === 0) return
 
-    const handleScroll = (): void => {
-      const scrollerRect = scroller.getBoundingClientRect()
-      const threshold = scrollerRect.top + 80
+    // Map observed elements to their keys for quick lookup
+    const elToKey = new Map<Element, NodeKey>()
+    const visibleKeys = new Set<NodeKey>()
 
-      let current: NodeKey | null = null
-      for (const item of items) {
-        const el = editor.getElementByKey(item.key)
-        if (!el) continue
-        if (el.getBoundingClientRect().top <= threshold) current = item.key
-        else break
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const key = elToKey.get(entry.target)
+          if (!key) continue
+          if (entry.isIntersecting) visibleKeys.add(key)
+          else visibleKeys.delete(key)
+        }
+        // Active = first item in document order that is visible
+        let found: NodeKey | null = null
+        for (const item of items) {
+          if (visibleKeys.has(item.key)) { found = item.key; break }
+        }
+        // If nothing visible, find the last heading above viewport
+        if (!found) {
+          for (const item of items) {
+            const el = editor.getElementByKey(item.key)
+            if (el) {
+              const rect = el.getBoundingClientRect()
+              const scrollerRect = scroller.getBoundingClientRect()
+              if (rect.bottom < scrollerRect.top + 80) found = item.key
+            }
+          }
+        }
+        setActiveKey(found)
+      },
+      { root: scroller, rootMargin: '-60px 0px 0px 0px', threshold: 0 },
+    )
+
+    for (const item of items) {
+      const el = editor.getElementByKey(item.key)
+      if (el) {
+        elToKey.set(el, item.key)
+        observer.observe(el)
       }
-      setActiveKey(current)
     }
 
-    handleScroll()
-    scroller.addEventListener('scroll', handleScroll, { passive: true })
-    return () => scroller.removeEventListener('scroll', handleScroll)
+    return () => observer.disconnect()
   }, [editor, items])
 
   // Auto-scroll the TOC list to keep active item visible

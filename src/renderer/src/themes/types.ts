@@ -15,6 +15,10 @@ export interface ThemeColors {
   'tx-active': string
   'accent-main': string
   'accent-bg': string
+  // Status colors
+  'status-success': string
+  'status-error': string
+  'status-warning': string
 }
 
 export interface ThemeDefinition {

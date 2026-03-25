@@ -79,6 +79,7 @@ import {
   TableActionPlugin
 } from './plugins/TablePlugin'
 import { TableAIPlugin } from './plugins/TableAIPlugin'
+import { AutomationPlugin } from './plugins/AutomationPlugin'
 import { TableOfContentsPlugin } from './plugins/TableOfContentsPlugin'
 
 const HASHTAG_TRANSFORMER: TextMatchTransformer = {
@@ -420,6 +421,7 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
       <MarkdownTableAutoConvertPlugin />
       <TableActionPlugin />
       <TableAIPlugin />
+      <AutomationPlugin />
 
       {/* Code block */}
       <CodeBlockEnhancementPlugin />

@@ -20,5 +20,8 @@ export const darkTheme: ThemeDefinition = {
     'tx-active': '#5eead4',
     'accent-main': '#5eead4',
     'accent-bg': '#2d3748',
+    'status-success': '#4ade80',
+    'status-error': '#f87171',
+    'status-warning': '#fbbf24',
   },
 }

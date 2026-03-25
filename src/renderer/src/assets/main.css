@@ -43,6 +43,10 @@
 
   --color-accent-main: var(--accent-main);
   --color-accent-bg: var(--accent-bg);
+
+  --color-status-success: var(--status-success);
+  --color-status-error: var(--status-error);
+  --color-status-warning: var(--status-warning);
 }
 
 /* Default: Dark theme (applied by JS via applyTheme, these are fallbacks) */
@@ -64,6 +68,10 @@
 
   --accent-main: #5eead4;
   --accent-bg: #2d3748;
+
+  --status-success: #4ade80;
+  --status-error: #f87171;
+  --status-warning: #fbbf24;
 }
 
 body {
@@ -72,7 +80,7 @@ body {
   padding: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #000;
+  background-color: var(--bg-app);
   overflow: hidden;
 }
 
@@ -95,40 +103,40 @@ body {
   margin-bottom: 4px;
 }
 .editor-callout-note {
-  border-color: #5BA4A4;
-  background: rgba(91, 164, 164, 0.08);
-  color: #ccc;
+  border-color: var(--accent-main);
+  background: color-mix(in srgb, var(--accent-main) 8%, transparent);
+  color: var(--tx-main);
 }
 .editor-callout-note::before {
   content: "NOTE";
-  color: #5BA4A4;
+  color: var(--accent-main);
 }
 .editor-callout-warning {
-  border-color: #D4A959;
-  background: rgba(212, 169, 89, 0.08);
-  color: #ccc;
+  border-color: var(--status-warning);
+  background: color-mix(in srgb, var(--status-warning) 8%, transparent);
+  color: var(--tx-main);
 }
 .editor-callout-warning::before {
   content: "WARNING";
-  color: #D4A959;
+  color: var(--status-warning);
 }
 .editor-callout-tip {
-  border-color: #5eead4;
-  background: rgba(94, 234, 212, 0.06);
-  color: #ccc;
+  border-color: var(--accent-main);
+  background: color-mix(in srgb, var(--accent-main) 6%, transparent);
+  color: var(--tx-main);
 }
 .editor-callout-tip::before {
   content: "TIP";
-  color: #5eead4;
+  color: var(--accent-main);
 }
 .editor-callout-important {
-  border-color: #ff6b6b;
-  background: rgba(255, 107, 107, 0.06);
-  color: #ccc;
+  border-color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 6%, transparent);
+  color: var(--tx-main);
 }
 .editor-callout-important::before {
   content: "IMPORTANT";
-  color: #ff6b6b;
+  color: var(--status-error);
 }
 
 /* ─── Ordered & unordered lists ──────────────────────────────────────── */
@@ -169,15 +177,15 @@ ul.editor-checklist {
 
 /* ─── Table ──────────────────────────────────────────────────────────── */
 .editor-table {
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle);
   border-radius: 6px;
   overflow: hidden;
 }
 .editor-table-row {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border-subtle);
 }
 .editor-table-cell-header {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-hover);
 }
 .editor-table-cell p,
 .editor-table-cell-header p {
@@ -188,21 +196,21 @@ ul.editor-checklist {
 
 /* ─── Table row/col hover & drag highlights ─────────────────────────── */
 .tbl-row-hover {
-  background-color: rgba(94, 234, 212, 0.06) !important;
+  background-color: color-mix(in srgb, var(--accent-main) 6%, transparent) !important;
 }
 .tbl-row-select {
-  background-color: rgba(94, 234, 212, 0.12) !important;
+  background-color: color-mix(in srgb, var(--accent-main) 12%, transparent) !important;
 }
 .tbl-col-hover {
-  background-color: rgba(94, 234, 212, 0.06) !important;
+  background-color: color-mix(in srgb, var(--accent-main) 6%, transparent) !important;
 }
 .tbl-col-select {
-  background-color: rgba(94, 234, 212, 0.12) !important;
+  background-color: color-mix(in srgb, var(--accent-main) 12%, transparent) !important;
 }
 /* Drag source: dim the row/col being dragged */
 .tbl-drag-source {
   opacity: 0.3 !important;
-  background-color: rgba(94, 234, 212, 0.04) !important;
+  background-color: color-mix(in srgb, var(--accent-main) 4%, transparent) !important;
 }
 
 /* ─── Collapsible / Toggle blocks ────────────────────────────────────── */
@@ -210,11 +218,11 @@ ul.editor-checklist {
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   margin: 8px 0 12px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-hover);
   overflow: hidden;
 }
 .collapsible-container[open] {
-  background: rgba(255, 255, 255, 0.015);
+  background: var(--bg-hover);
 }
 .collapsible-title {
   padding: 10px 16px;
@@ -230,7 +238,7 @@ ul.editor-checklist {
   transition: background-color 0.12s;
 }
 .collapsible-title:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-active);
 }
 .collapsible-title::before {
   content: "";
@@ -312,8 +320,8 @@ ul.editor-checklist {
 
 /* Non-code: DecoratorNode (inline in the Lexical node tree) */
 .ghost-text-inline {
-  color: #888;
-  opacity: 0.6;
+  color: var(--tx-muted);
+  opacity: 0.7;
   pointer-events: none;
   user-select: none;
   font-style: italic;
@@ -321,9 +329,9 @@ ul.editor-checklist {
 
 /* ─── AI panel selection highlight (marks selected text nodes) ────── */
 .ai-sel-highlight {
-  background-color: rgba(94, 234, 212, 0.22) !important;
+  background-color: color-mix(in srgb, var(--accent-main) 22%, transparent) !important;
   border-radius: 2px;
-  box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.12);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-main) 12%, transparent);
   transition: background-color 0.2s ease;
 }
 
@@ -331,24 +339,24 @@ ul.editor-checklist {
 
 /* Marks content about to be removed (red pulse) */
 .ai-diff-removing {
-  background-color: rgba(239, 68, 68, 0.12) !important;
+  background-color: color-mix(in srgb, var(--status-error) 12%, transparent) !important;
   border-radius: 2px;
   transition: opacity 0.4s ease, background-color 0.3s ease;
 }
 .ai-diff-removing.ai-fade-out {
   opacity: 0;
-  background-color: rgba(239, 68, 68, 0) !important;
+  background-color: transparent !important;
 }
 
 /* Marks newly inserted content (green glow → fade to normal) */
 .ai-diff-inserted {
-  background-color: rgba(16, 185, 129, 0.18);
+  background-color: color-mix(in srgb, var(--status-success) 18%, transparent);
   border-radius: 2px;
   animation: ai-insert-glow 1.8s ease forwards;
 }
 @keyframes ai-insert-glow {
-  0%   { background-color: rgba(16, 185, 129, 0.22); }
-  50%  { background-color: rgba(16, 185, 129, 0.10); }
+  0%   { background-color: color-mix(in srgb, var(--status-success) 22%, transparent); }
+  50%  { background-color: color-mix(in srgb, var(--status-success) 10%, transparent); }
   100% { background-color: transparent; }
 }
 
@@ -385,15 +393,15 @@ ul.editor-checklist {
   animation: ai-accept-pulse 0.5s ease;
 }
 @keyframes ai-accept-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
-  70%  { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-success) 40%, transparent); }
+  70%  { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
 
 /* Code blocks: fixed-position ghost text at cursor */
 .ghost-text-code-overlay {
-  color: #888;
-  opacity: 0.6;
+  color: var(--tx-muted);
+  opacity: 0.7;
   pointer-events: none;
   user-select: none;
   font-family: var(--font-mono);

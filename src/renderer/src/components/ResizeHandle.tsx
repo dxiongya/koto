@@ -30,18 +30,34 @@ export function ResizeHandle({
   const startX = useRef(0)
   const startWidth = useRef(0)
   const handleRef = useRef<HTMLDivElement>(null)
+  const widthRef = useRef(width)
+  widthRef.current = width
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault()
       dragging.current = true
       startX.current = e.clientX
-      startWidth.current = width
+      startWidth.current = widthRef.current
       document.body.style.cursor = 'col-resize'
       document.body.style.userSelect = 'none'
       handleRef.current?.classList.add('resize-handle-active')
     },
-    [width],
+    [],
+  )
+
+  const onKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const step = e.shiftKey ? 20 : 4
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        onResize(Math.max(minWidth, Math.min(maxWidth, width - step)))
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        onResize(Math.max(minWidth, Math.min(maxWidth, width + step)))
+      }
+    },
+    [width, minWidth, maxWidth, onResize],
   )
 
   useEffect(() => {
@@ -74,8 +90,16 @@ export function ResizeHandle({
   return (
     <div
       ref={handleRef}
+      role="separator"
+      aria-orientation="vertical"
+      aria-valuenow={width}
+      aria-valuemin={minWidth}
+      aria-valuemax={maxWidth}
+      aria-label="Resize panel"
+      tabIndex={0}
       onMouseDown={onMouseDown}
-      className={`resize-handle ${side === 'left' ? 'resize-handle-left' : 'resize-handle-right'}`}
+      onKeyDown={onKeyDown}
+      className={`resize-handle ${side === 'left' ? 'resize-handle-left' : 'resize-handle-right'} focus-visible:bg-accent-main/30`}
     />
   )
 }

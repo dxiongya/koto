@@ -7,7 +7,8 @@ import { FileSystemCore, getProjectPath } from './fs'
 import { getLiteHome } from './lite-home'
 import { searchFilesContent } from './search'
 import { loadSkills } from './skills-loader'
-import type { AIToolDefinition } from '../../shared/types'
+import { createAutomation, listAutomations } from './automation-store'
+import type { AIToolDefinition, AutomationInterval } from '../../shared/types'
 import { mcpManager } from './mcp-manager'
 
 const MAX_RESULT_LENGTH = 8000
@@ -196,6 +197,100 @@ export const BUILTIN_TOOLS: Record<string, ToolHandler> = {
       const skill = skills.find((s) => s.name === name)
       if (!skill) return `Skill "${name}" not found. Available: ${skills.map((s) => s.name).join(', ')}`
       return `<skill name="${skill.name}">\n${skill.content}\n</skill>`
+    },
+  },
+
+  create_automation: {
+    definition: {
+      name: 'create_automation',
+      description:
+        'Create a scheduled automation that periodically updates content in a markdown file using AI. ' +
+        'Use this when the user wants to set up recurring tasks like: updating a table with latest data, ' +
+        'refreshing content periodically, syncing information from external sources, etc. ' +
+        'The automation runs on a schedule and can use all available tools (web_fetch, MCP tools, etc.). ' +
+        'IMPORTANT: After calling this tool, do NOT mention the automation in your final output — just output the content (table/text). ' +
+        'For table targets, set table_identifier to the pipe-separated header cells (e.g. "序号|发布时间|推文内容").',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Short name for this automation' },
+          file_path: { type: 'string', description: 'Absolute path to the target .md file' },
+          target_type: { type: 'string', enum: ['file', 'section', 'table'], description: 'What to update: entire file, a heading section, or a specific table' },
+          section_heading: { type: 'string', description: 'For section target: the heading text including # marks, e.g. "## Market Data"' },
+          table_identifier: { type: 'string', description: 'For table target: pipe-separated header cells, e.g. "Name|Price|Change"' },
+          prompt: { type: 'string', description: 'Instructions for the AI on what to do each time the automation runs' },
+          interval_minutes: { type: 'number', enum: [5, 15, 30, 60, 360, 720, 1440], description: 'How often to run (in minutes). 60 = 1 hour' },
+          provider_id: { type: 'string', description: 'AI provider ID to use. If unsure, leave empty to use the first available.' },
+        },
+        required: ['name', 'file_path', 'target_type', 'prompt', 'interval_minutes'],
+      },
+    },
+    execute: async (input) => {
+      const { loadConfig } = await import('./lite-home')
+
+      // Validate file path exists
+      const filePath = String(input.file_path)
+      if (!filePath || !filePath.startsWith('/')) {
+        return `Error: file_path must be an absolute path (starting with /). Got: "${filePath}". Use the active file path from the system context.`
+      }
+      try {
+        const fsStat = await import('fs')
+        if (!fsStat.default.existsSync(filePath)) {
+          return `Error: File not found: ${filePath}. Make sure to use the active file path from the current editor context.`
+        }
+      } catch { /* skip stat check */ }
+
+      // Resolve provider — use 'default' to let runner pick from featureRouting.chat
+      const providerId = input.provider_id ? String(input.provider_id) : 'default'
+
+      const intervalMinutes = Number(input.interval_minutes) as AutomationInterval
+      const targetType = String(input.target_type) as 'file' | 'section' | 'table'
+
+      const result = createAutomation({
+        name: String(input.name),
+        target: {
+          type: targetType,
+          filePath: String(input.file_path),
+          sectionHeading: targetType === 'section' ? String(input.section_heading || '') : undefined,
+          tableIdentifier: targetType === 'table' ? String(input.table_identifier || '') : undefined,
+        },
+        promptTemplate: String(input.prompt),
+        interval: intervalMinutes,
+        providerId,
+        enableTools: true,
+        enabled: true,
+      })
+
+      if (!result.ok) return `Error creating automation: ${result.error}`
+      return `✅ Automation "${result.data.name}" created successfully!\n` +
+        `- ID: ${result.data.id}\n` +
+        `- Target: ${targetType} in ${result.data.target.filePath}\n` +
+        `- Runs every ${intervalMinutes} minutes\n` +
+        `- Status: enabled (will start on next scheduler tick)\n` +
+        `- Manage in Settings → Automations`
+    },
+  },
+
+  list_automations: {
+    definition: {
+      name: 'list_automations',
+      description: 'List all configured automations with their status, schedule, and last run info.',
+      parameters: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    execute: async () => {
+      const result = listAutomations()
+      if (!result.ok) return `Error: ${result.error}`
+      if (result.data.length === 0) return 'No automations configured yet.'
+
+      return result.data.map(a =>
+        `- **${a.name}** (${a.id})\n` +
+        `  Target: ${a.target.type} → ${a.target.filePath.split('/').pop()}\n` +
+        `  Schedule: every ${a.interval} min | ${a.enabled ? '🟢 enabled' : '⏸ paused'}\n` +
+        `  Runs: ${a.runCount} | Last: ${a.lastRunAt ? new Date(a.lastRunAt).toLocaleString() : 'never'} ${a.lastRunStatus === 'error' ? '❌' : a.lastRunStatus === 'success' ? '✅' : ''}`
+      ).join('\n\n')
     },
   },
 }

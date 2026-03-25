@@ -9,6 +9,7 @@ import { fileWatcher } from './core/watcher'
 import { ptyManager } from './core/pty-manager'
 import { registerAssetProtocol } from './core/asset-protocol'
 import { mcpManager } from './core/mcp-manager'
+import { automationScheduler } from './core/automation-scheduler'
 
 function sendToRenderer(win: BrowserWindow, shortcut: string): void {
   win.webContents.send('shortcut', shortcut)
@@ -137,6 +138,9 @@ app.whenReady().then(() => {
     })
   }
 
+  // Start automation scheduler
+  automationScheduler.start()
+
   // ── Application Menu with accelerators as backup ──
   const sendShortcut = (name: string): void => {
     const win = BrowserWindow.getFocusedWindow()
@@ -213,6 +217,7 @@ app.on('before-quit', () => {
   fileWatcher.stopAll()
   ptyManager.closeAll()
   mcpManager.shutdown().catch(() => {})
+  automationScheduler.stop()
 })
 
 app.on('window-all-closed', () => {

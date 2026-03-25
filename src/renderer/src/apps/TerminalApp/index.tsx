@@ -16,8 +16,8 @@ export const TerminalApp: React.FC = () => {
   const terminalSessions = useUIStore((s) => s.terminalSessions)
 
   const blurClass = showCommandPalette
-    ? 'filter blur-[3px] opacity-50 transition-all duration-300'
-    : 'transition-all duration-300'
+    ? 'opacity-50 transition-opacity duration-200'
+    : 'transition-opacity duration-200'
 
   return (
     <div className={`flex-1 flex flex-col overflow-hidden ${blurClass}`}>

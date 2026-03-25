@@ -30,7 +30,7 @@ const MAX_CONTEXT_CHARS = 2000
 const GHOST_TAG = 'ghost-text'
 
 // ── Debug ──
-const DEBUG = true
+const DEBUG = false
 const dbg = (label: string, ...args: unknown[]) =>
   DEBUG && console.log(`%c[GhostText] ${label}`, 'color:#5eead4;font-weight:bold', ...args)
 const dbgWarn = (label: string, ...args: unknown[]) =>

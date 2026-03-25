@@ -83,25 +83,28 @@ export const ContextMenuProvider: React.FC = () => {
   return createPortal(
     <div
       ref={menuRef}
+      role="menu"
       className="fixed z-[9999] min-w-[160px] py-1 bg-bg-sidebar border border-border-subtle rounded-lg shadow-xl"
       style={{ left: state.x, top: state.y }}
       onMouseDown={(e) => e.stopPropagation()}
     >
       {state.items.map((item, i) => {
         if (item.separator) {
-          return <div key={i} className="my-1 border-t border-border-subtle" />
+          return <div key={i} role="separator" className="my-1 border-t border-border-subtle" />
         }
         return (
           <button
             key={i}
+            role="menuitem"
             disabled={item.disabled}
             onClick={() => {
               setState(null)
               item.onClick()
             }}
             className={`w-full px-3 py-[5px] text-[13px] text-left flex items-center gap-2 transition-colors
+              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
               ${item.disabled ? 'text-tx-faint cursor-default' : ''}
-              ${item.danger && !item.disabled ? 'text-red-400 hover:bg-red-500/10' : ''}
+              ${item.danger && !item.disabled ? 'text-status-error hover:bg-status-error/10' : ''}
               ${!item.danger && !item.disabled ? 'text-tx-main hover:bg-bg-hover' : ''}`}
           >
             {item.icon && <span className="w-4 h-4 flex items-center justify-center shrink-0">{item.icon}</span>}

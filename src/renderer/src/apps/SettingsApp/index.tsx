@@ -9,6 +9,7 @@ import {
   Radio, Loader2, BarChart3, RotateCcw, Server, BookOpen,
   Power, PowerOff, RefreshCw, ChevronDown, ChevronRight, Wrench
 } from 'lucide-react'
+import { AutomationSection } from '../../components/AutomationSection'
 
 /** Mini app preview using a theme's colors */
 const ThemePreview: React.FC<{ t: ThemeDefinition }> = ({ t }) => (
@@ -209,8 +210,8 @@ const AIProviderForm: React.FC<{
       {testResult && (
         <div className={`text-xs px-3 py-2 rounded-md ${
           testResult.ok
-            ? 'bg-green-500/10 text-green-400'
-            : 'bg-red-500/10 text-red-400'
+            ? 'bg-status-success/10 text-status-success'
+            : 'bg-status-error/10 text-status-error'
         }`}>
           {testResult.msg}
         </div>
@@ -350,7 +351,7 @@ const AISettingsSection: React.FC = () => {
                 </button>
                 <button
                   onClick={() => removeAIProvider(p.id)}
-                  className="shrink-0 text-tx-faint hover:text-red-400 transition-colors"
+                  className="shrink-0 text-tx-faint hover:text-status-error transition-colors"
                   title="Delete"
                 >
                   <Trash2 size={13} />
@@ -486,7 +487,7 @@ const AIUsageSection: React.FC = () => {
               <span className="text-[11px] text-tx-faint">Reset all stats?</span>
               <button
                 onClick={() => { resetAIUsage(); setShowConfirm(false) }}
-                className="text-[11px] text-red-400 hover:text-red-300"
+                className="text-[11px] text-status-error hover:text-red-300"
               >
                 Confirm
               </button>
@@ -909,7 +910,7 @@ const MCPServersSection: React.FC = () => {
             spellCheck={false}
             className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 font-mono resize-y leading-relaxed"
           />
-          {jsonError && <div className="text-xs text-red-400 px-1">{jsonError}</div>}
+          {jsonError && <div className="text-xs text-status-error px-1">{jsonError}</div>}
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-tx-faint">Claude Desktop / Cursor format supported</span>
             <div className="flex-1" />
@@ -932,7 +933,7 @@ const MCPServersSection: React.FC = () => {
             return (
               <div key={s.id} className="border border-border-subtle rounded-md overflow-hidden">
                 <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-bg-hover/50 transition-colors">
-                  <button onClick={() => handleToggle(s.id)} className={`shrink-0 ${s.enabled ? 'text-green-400' : 'text-tx-faint'}`} title={s.enabled ? 'Enabled' : 'Disabled'}>
+                  <button onClick={() => handleToggle(s.id)} className={`shrink-0 ${s.enabled ? 'text-status-success' : 'text-tx-faint'}`} title={s.enabled ? 'Enabled' : 'Disabled'}>
                     {s.enabled ? <Power size={14} /> : <PowerOff size={14} />}
                   </button>
                   <button onClick={() => setExpandedServer(isExpanded ? null : s.id)} className="flex-1 min-w-0 text-left">
@@ -951,7 +952,7 @@ const MCPServersSection: React.FC = () => {
                   <button onClick={() => setEditingId(s.id)} className="shrink-0 text-tx-faint hover:text-tx-muted transition-colors" title="Edit">
                     <Pencil size={13} />
                   </button>
-                  <button onClick={() => handleRemove(s.id)} className="shrink-0 text-tx-faint hover:text-red-400 transition-colors" title="Delete">
+                  <button onClick={() => handleRemove(s.id)} className="shrink-0 text-tx-faint hover:text-status-error transition-colors" title="Delete">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -1157,7 +1158,7 @@ const SkillsSection: React.FC = () => {
               <div>https://any-url.com/skill.md</div>
             </div>
           </div>
-          {importError && <div className="text-xs text-red-400 px-1">{importError}</div>}
+          {importError && <div className="text-xs text-status-error px-1">{importError}</div>}
           <div className="flex items-center gap-2">
             <div className="flex-1" />
             <button onClick={() => { setView('list'); setImportInput(''); setImportError(null) }} className="px-3 py-1.5 rounded-md text-xs text-tx-muted hover:text-tx-main hover:bg-bg-active transition-colors">Cancel</button>
@@ -1190,7 +1191,7 @@ const SkillsSection: React.FC = () => {
                 <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-bg-hover/50 transition-colors">
                   <button
                     onClick={() => handleToggle(skill.name, !skill.enabled)}
-                    className={`shrink-0 ${skill.enabled ? 'text-green-400' : 'text-tx-faint'}`}
+                    className={`shrink-0 ${skill.enabled ? 'text-status-success' : 'text-tx-faint'}`}
                     title={skill.enabled ? 'Enabled' : 'Disabled'}
                   >
                     {skill.enabled ? <Power size={14} /> : <PowerOff size={14} />}
@@ -1202,7 +1203,7 @@ const SkillsSection: React.FC = () => {
                   <button onClick={() => setExpandedSkill(isExpanded ? null : skill.name)} className="shrink-0 text-tx-faint hover:text-tx-muted">
                     {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </button>
-                  <button onClick={() => handleDelete(skill.name)} className="shrink-0 text-tx-faint hover:text-red-400 transition-colors" title="Delete">
+                  <button onClick={() => handleDelete(skill.name)} className="shrink-0 text-tx-faint hover:text-status-error transition-colors" title="Delete">
                     <Trash2 size={13} />
                   </button>
                 </div>
@@ -1230,8 +1231,8 @@ const SettingsApp: React.FC = () => {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
 
   const blurClass = showCommandPalette
-    ? 'filter blur-[3px] opacity-50 transition-all duration-300'
-    : 'transition-all duration-300'
+    ? 'opacity-50 transition-opacity duration-200'
+    : 'transition-opacity duration-200'
 
   const themeGroups = useMemo(() => getThemeGroups(), [])
 
@@ -1272,6 +1273,9 @@ const SettingsApp: React.FC = () => {
 
         {/* ── Skills ── */}
         <SkillsSection />
+
+        {/* ── Automations ── */}
+        <AutomationSection />
 
         {/* ── Theme ── */}
         <section className="mb-10">

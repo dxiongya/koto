@@ -16,9 +16,10 @@ import {
   $findTableNode,
   type TableNode
 } from '@lexical/table'
-import { Sparkles, Send, Loader2, X, ChevronRight, ChevronDown, CheckCircle2 } from 'lucide-react'
+import { Sparkles, Send, Loader2, X, ChevronRight, ChevronDown, CheckCircle2, Timer } from 'lucide-react'
 import { useUIStore } from '../../../store/useUIStore'
 import { parseMarkdownTable, buildTableNodeFromParsed, MD_TABLE_ROW_RE, MD_TABLE_SEP_RE } from '../utils/markdownTable'
+import type { AutomationInterval } from '../../../../../shared/types'
 
 // ── Helpers ──
 
@@ -109,7 +110,9 @@ export function TableAIPlugin(): JSX.Element | null {
   const [tableKey, setTableKey] = useState<string | null>(null)
   const [position, setPosition] = useState({ top: 0, left: 0 })
   const [showPanel, setShowPanel] = useState(false)
+  const [showAutomation, setShowAutomation] = useState(false)
   const [tableMarkdown, setTableMarkdown] = useState('')
+  const [tableHeaders, setTableHeaders] = useState('') // pipe-separated header text
   const panelRef = useRef<HTMLDivElement>(null)
   const tableKeyRef = useRef<string | null>(null)
   const draggedRef = useRef(false) // true after user drags — stops auto-positioning
@@ -120,20 +123,51 @@ export function TableAIPlugin(): JSX.Element | null {
     if (tableKey) setTableHighlight(editor, tableKey, false)
     draggedRef.current = false
     setShowPanel(false)
+    setShowAutomation(false)
     setTableMarkdown('')
+    setTableHeaders('')
     setTableKey(null)
   }, [editor, tableKey])
 
-  const handleOpenAI = useCallback(() => {
-    if (!tableKey) return
+  // Extract table markdown + headers from the current table node
+  const readTableData = useCallback(() => {
+    if (!tableKey) return { md: '', headers: '' }
+    let md = ''
+    let headers = ''
     editor.getEditorState().read(() => {
       const table = $getNodeByKey(tableKey)
       if (!table || !$isTableNode(table)) return
-      const md = $tableToMarkdown(table)
-      setTableMarkdown(md)
-      setShowPanel(true)
+      md = $tableToMarkdown(table)
+      // Extract header row cells
+      const rows = table.getChildren()
+      if (rows.length > 0) {
+        const firstRow = rows[0]
+        if ($isTableRowNode(firstRow)) {
+          headers = firstRow.getChildren()
+            .filter($isTableCellNode)
+            .map((cell) => cell.getTextContent().trim())
+            .join('|')
+        }
+      }
     })
+    return { md, headers }
   }, [editor, tableKey])
+
+  const handleOpenAI = useCallback(() => {
+    const { md, headers } = readTableData()
+    if (!md) return
+    setTableMarkdown(md)
+    setTableHeaders(headers)
+    setShowPanel(true)
+  }, [readTableData])
+
+  const handleOpenAutomation = useCallback(() => {
+    const { md, headers } = readTableData()
+    if (!md) return
+    setTableMarkdown(md)
+    setTableHeaders(headers)
+    setShowAutomation(true)
+  }, [readTableData])
 
   // ── Effects ──
 
@@ -217,7 +251,7 @@ export function TableAIPlugin(): JSX.Element | null {
   // Maintain table highlight while panel is open
   useEffect(() => {
     if (!tableKey) return
-    if (showPanel) {
+    if (showPanel || showAutomation) {
       setTableHighlight(editor, tableKey, true)
     }
     return () => {
@@ -227,7 +261,7 @@ export function TableAIPlugin(): JSX.Element | null {
 
   // Close panel on outside click
   useEffect(() => {
-    if (!showPanel) return
+    if (!showPanel && !showAutomation) return
     const handler = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         handleClose()
@@ -235,7 +269,7 @@ export function TableAIPlugin(): JSX.Element | null {
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [showPanel, handleClose])
+  }, [showPanel, showAutomation, handleClose])
 
   if (!tableKey) return null
 
@@ -258,19 +292,39 @@ export function TableAIPlugin(): JSX.Element | null {
           position={position}
           onDrag={(newPos) => { draggedRef.current = true; setPosition(newPos) }}
         />
+      ) : showAutomation ? (
+        <TableAutomationPanel
+          tableHeaders={tableHeaders}
+          onClose={handleClose}
+          position={position}
+          onDrag={(newPos) => { draggedRef.current = true; setPosition(newPos) }}
+        />
       ) : (
-        <button
-          onClick={handleOpenAI}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
-                     bg-bg-popover border border-border-subtle
-                     shadow-[0_2px_12px_rgba(0,0,0,0.15)]
-                     text-tx-muted hover:text-accent-main hover:border-accent-main/30
-                     transition-all duration-150 text-[11px] group"
-          title="AI: Analyze table"
-        >
-          <Sparkles size={13} className="group-hover:text-accent-main transition-colors" />
-          <span className="font-medium">AI</span>
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleOpenAI}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
+                       bg-bg-popover border border-border-subtle
+                       shadow-[0_2px_12px_rgba(0,0,0,0.15)]
+                       text-tx-muted hover:text-accent-main hover:border-accent-main/30
+                       transition-all duration-150 text-[11px] group"
+            title="AI: Analyze table"
+          >
+            <Sparkles size={13} className="group-hover:text-accent-main transition-colors" />
+            <span className="font-medium">AI</span>
+          </button>
+          <button
+            onClick={handleOpenAutomation}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg
+                       bg-bg-popover border border-border-subtle
+                       shadow-[0_2px_12px_rgba(0,0,0,0.15)]
+                       text-tx-muted hover:text-status-warning hover:border-orange-400/30
+                       transition-all duration-150 text-[11px] group"
+            title="Set up scheduled automation"
+          >
+            <Timer size={13} className="group-hover:text-status-warning transition-colors" />
+          </button>
+        </div>
       )}
     </div>,
     document.body
@@ -349,20 +403,15 @@ function TableAIPanel({
         return
       }
 
-      const systemPrompt = `You are an AI assistant embedded in a markdown notes editor. The user has selected a table and wants you to help with it.
+      const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath || ''
+      const systemPrompt = `## Context
+- Active file: ${activeFilePath}
+- Mode: TABLE (your output modifies or analyzes the selected table)
 
-## Tools — use when needed
-You have access to powerful tools: web_fetch, file_read, file_list, search_content, terminal_exec, use_skill, and any connected MCP tools.
-- When the user asks you to search, fetch, look up, or gather ANY information, you MUST use tools. Never say "I can't access the internet".
-- Use web_fetch to get data from URLs/APIs
-- Use MCP tools (prefixed mcp_*) for specialized tasks like Twitter/X API, GitHub, etc.
-- Use use_skill to load skill instructions when a skill matches the task
-
-## Output rules
-- If the user asks you to modify/transform the table, output ONLY a valid markdown table (no explanations)
-- If the user asks a question about the table, answer concisely
-- For analysis requests, be structured and brief
-- Always use proper markdown table syntax when outputting tables`
+## Table-specific rules
+- If modifying the table, output ONLY a valid markdown table (no explanations)
+- If answering a question, be concise
+- Always use proper markdown table syntax`
 
       const userPrompt = `Here is the table:\n\n${tableMarkdown}\n\nRequest: ${prompt}`
 
@@ -493,7 +542,7 @@ You have access to powerful tools: web_fetch, file_read, file_list, search_conte
       {/* Error */}
       {error && (
         <div className="px-3 pb-2">
-          <div className="text-[10px] text-red-400 bg-red-500/10 rounded px-2 py-1">{error}</div>
+          <div className="text-[10px] text-status-error bg-status-error/10 rounded px-2 py-1">{error}</div>
         </div>
       )}
 
@@ -511,7 +560,7 @@ You have access to powerful tools: web_fetch, file_read, file_list, search_conte
                   {te.status === 'running' ? (
                     <Loader2 size={10} className="animate-spin text-accent-main shrink-0" />
                   ) : (
-                    <CheckCircle2 size={10} className="text-green-400 shrink-0" />
+                    <CheckCircle2 size={10} className="text-status-success shrink-0" />
                   )}
                   <span className="text-tx-main font-mono truncate">{te.toolName}</span>
                   {te.durationMs != null && (
@@ -718,4 +767,182 @@ function renderInline(text: string): (string | JSX.Element)[] {
 
   if (last < text.length) parts.push(text.slice(last))
   return parts.length > 0 ? parts : [text]
+}
+
+// ── Table Automation Panel ──
+
+const AUTOMATION_INTERVALS: Array<{ value: AutomationInterval; label: string }> = [
+  { value: 5, label: '5m' },
+  { value: 15, label: '15m' },
+  { value: 30, label: '30m' },
+  { value: 60, label: '1h' },
+  { value: 360, label: '6h' },
+  { value: 720, label: '12h' },
+  { value: 1440, label: '24h' },
+]
+
+function TableAutomationPanel({
+  tableHeaders,
+  onClose,
+  position,
+  onDrag,
+}: {
+  tableHeaders: string
+  onClose: () => void
+  position: { top: number; left: number }
+  onDrag: (pos: { top: number; left: number }) => void
+}): JSX.Element {
+  const [prompt, setPrompt] = useState('')
+  const [interval, setInterval] = useState<AutomationInterval>(60)
+  const [creating, setCreating] = useState(false)
+  const [done, setDone] = useState(false)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }, [])
+
+  const handleHeaderMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startY = e.clientY
+    const startPos = { ...position }
+    const onMove = (ev: MouseEvent): void => {
+      onDrag({ top: startPos.top + (ev.clientY - startY), left: startPos.left + (ev.clientX - startX) })
+    }
+    const onUp = (): void => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [position, onDrag])
+
+  const handleCreate = useCallback(async () => {
+    if (!prompt.trim() || !activeFilePath || creating) return
+    setCreating(true)
+
+    // Use 'default' — runner will resolve from featureRouting.chat
+    const providerId = 'default'
+
+    // Auto-generate a name from prompt
+    const name = prompt.trim().slice(0, 40) + (prompt.length > 40 ? '...' : '')
+
+    await window.api.automation.create({
+      name,
+      target: {
+        type: 'table' as const,
+        filePath: activeFilePath,
+        tableIdentifier: tableHeaders,
+      },
+      promptTemplate: prompt,
+      interval,
+      providerId,
+      enableTools: true,
+      enabled: true,
+    })
+
+    setCreating(false)
+    setDone(true)
+    setTimeout(onClose, 1500)
+  }, [prompt, interval, activeFilePath, tableHeaders, creating, onClose])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      handleCreate()
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      onClose()
+    }
+  }, [handleCreate, onClose])
+
+  return (
+    <div className="w-[320px] rounded-lg bg-bg-popover border border-border-subtle shadow-[0_4px_24px_rgba(0,0,0,0.2)] overflow-hidden">
+      {/* Header — draggable */}
+      <div
+        onMouseDown={handleHeaderMouseDown}
+        className="flex items-center justify-between px-3 py-2 border-b border-border-subtle cursor-grab active:cursor-grabbing select-none"
+      >
+        <div className="flex items-center gap-1.5 text-[12px] font-medium text-status-warning">
+          <Timer size={13} />
+          <span>Schedule Update</span>
+        </div>
+        <button
+          onClick={onClose}
+          onMouseDown={(e) => e.stopPropagation()}
+          className="w-5 h-5 flex items-center justify-center rounded hover:bg-bg-hover text-tx-faint hover:text-tx-muted transition-colors"
+        >
+          <X size={12} />
+        </button>
+      </div>
+
+      {done ? (
+        <div className="px-3 py-6 text-center">
+          <CheckCircle2 size={20} className="text-status-success mx-auto mb-2" />
+          <div className="text-xs text-tx-main">Automation created!</div>
+          <div className="text-[10px] text-tx-faint mt-1">Manage in Settings → Automations</div>
+        </div>
+      ) : (
+        <>
+          {/* Table identifier (auto-detected, read-only) */}
+          <div className="px-3 pt-2">
+            <div className="px-2 py-1 rounded bg-bg-active text-[10px] text-tx-faint font-mono truncate">
+              Table: {tableHeaders.split('|').join(' | ')}
+            </div>
+          </div>
+
+          {/* Prompt */}
+          <div className="px-3 pt-2">
+            <textarea
+              ref={inputRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Tell AI what to update, e.g., 'Fetch latest crypto prices using xapi and update this table'"
+              className="w-full bg-transparent text-tx-main text-xs resize-none outline-none placeholder-tx-faint min-h-[50px] max-h-[100px]"
+              rows={3}
+              disabled={creating}
+            />
+          </div>
+
+          {/* Interval selector */}
+          <div className="px-3 pb-2">
+            <div className="text-[10px] text-tx-faint mb-1">Run every:</div>
+            <div className="flex flex-wrap gap-1">
+              {AUTOMATION_INTERVALS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setInterval(opt.value)}
+                  className={`px-2 py-0.5 rounded text-[10px] transition-colors ${
+                    interval === opt.value
+                      ? 'bg-orange-400/15 text-status-warning'
+                      : 'bg-bg-hover text-tx-faint hover:text-tx-muted'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-between px-3 py-2 border-t border-border-subtle">
+            <span className="text-[9px] text-tx-faint">⌘↵ create</span>
+            <button
+              onClick={handleCreate}
+              disabled={!prompt.trim() || creating}
+              className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] bg-orange-400/15 text-status-warning hover:bg-orange-400/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {creating ? <Loader2 size={10} className="animate-spin" /> : <Timer size={10} />}
+              {creating ? 'Creating...' : 'Start'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
 }

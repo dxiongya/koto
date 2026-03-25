@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal,
   FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Plus, Moon, Sun, FolderOpen, FolderPlus, X,
-  Pencil, Trash2, FilePlus, FolderInput, Settings
+  Pencil, Trash2, FilePlus, FolderInput, Settings, Zap
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import { useContextMenu, type ContextMenuItem } from '../components/ContextMenu'
@@ -77,7 +77,12 @@ const FileTreeNode: React.FC<{
   return (
     <>
       <div
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={isActive}
+        aria-expanded={node.isDirectory ? expanded : undefined}
         onClick={toggle}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() } }}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData('text/plain', node.path)
@@ -86,6 +91,7 @@ const FileTreeNode: React.FC<{
         }}
         style={{ paddingLeft: pl }}
         className={`flex items-center gap-1.5 py-[4px] pr-4 cursor-pointer text-[13px] tracking-wide relative group
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
           ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
       >
         {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
@@ -128,9 +134,12 @@ const AppSectionHeader: React.FC<{
   onClick: () => void
   actions?: React.ReactNode
 }> = ({ appId, icon, currentApp, expanded, onClick, actions }) => (
-  <div
+  <button
+    type="button"
     onClick={onClick}
-    className={`px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
+    aria-expanded={expanded}
+    className={`w-full px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
       ${currentApp === appId ? 'bg-bg-active text-tx-active' : 'hover:bg-bg-hover text-tx-main'}`}
   >
     {currentApp === appId && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
@@ -140,7 +149,7 @@ const AppSectionHeader: React.FC<{
       {actions}
       {expanded ? <ChevronDown size={14} className="text-tx-faint" /> : <ChevronRight size={14} className="text-tx-faint" />}
     </div>
-  </div>
+  </button>
 )
 
 // ── Notes App Section ──
@@ -177,6 +186,9 @@ const NotesAppSection: React.FC<{
   // Drag state
   const [dragNotePath, setDragNotePath] = useState<string | null>(null)
   const [dropTargetPath, setDropTargetPath] = useState<string | null>(null)
+
+  // Automation: track which files have automations
+  const [automationFiles, setAutomationFiles] = useState<Set<string>>(new Set())
 
   const notesDir = liteHome ? liteHome + '/notes' : null
 
@@ -227,6 +239,21 @@ const NotesAppSection: React.FC<{
     })
     return unsub
   }, [notesDir])
+
+  // Load automation file paths
+  useEffect(() => {
+    if (!expanded) return
+    const loadAutomations = (): void => {
+      window.api.automation.list().then(res => {
+        if (res.ok) {
+          setAutomationFiles(new Set(res.data.filter(a => a.enabled).map(a => a.target.filePath)))
+        }
+      })
+    }
+    loadAutomations()
+    const unsub = window.api.automation.onRunEvent(() => loadAutomations())
+    return unsub
+  }, [expanded])
 
   // ── Inline input helpers ──
 
@@ -472,20 +499,24 @@ const NotesAppSection: React.FC<{
         actions={
           liteHome ? (
             <>
-              <div
+              <button
+                type="button"
                 onClick={(e) => { e.stopPropagation(); startCreatingGroup() }}
-                className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors"
+                className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50"
+                aria-label="New group"
                 title="New group"
               >
                 <FolderPlus size={14} />
-              </div>
-              <div
+              </button>
+              <button
+                type="button"
                 onClick={(e) => { e.stopPropagation(); startCreating() }}
-                className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors"
+                className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50"
+                aria-label="New note"
                 title="New note"
               >
                 <Plus size={14} />
-              </div>
+              </button>
             </>
           ) : undefined
         }
@@ -518,12 +549,18 @@ const NotesAppSection: React.FC<{
                 return (
                   <React.Fragment key={group.path}>
                     <div
+                      role="treeitem"
+                      tabIndex={0}
+                      aria-selected={isSelected}
+                      aria-expanded={isExpanded}
                       onClick={() => { toggleNotesGroup(group.path); onGroupSelect(group.path) }}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleNotesGroup(group.path); onGroupSelect(group.path) } }}
                       onContextMenu={(e) => openContextMenu(e, groupContextItems(group))}
                       onDragOver={(e) => handleDragOver(e, group.path)}
                       onDragLeave={handleDragLeave}
                       onDrop={(e) => handleDrop(e, group.path)}
                       className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative
+                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
                         ${isDropTarget ? 'bg-accent-main/10 outline outline-1 outline-accent-main/30' : isSelected ? 'bg-bg-hover' : 'hover:bg-bg-hover'}`}
                     >
                       {isSelected && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-tx-faint" />}
@@ -550,18 +587,26 @@ const NotesAppSection: React.FC<{
                           return (
                             <div
                               key={note.path}
+                              role="treeitem"
+                              tabIndex={0}
+                              aria-selected={isActive}
                               onClick={() => onFileClick(note.path)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onFileClick(note.path) } }}
                               onContextMenu={(e) => openContextMenu(e, noteContextItems(note))}
                               draggable
                               onDragStart={(e) => handleDragStart(e, note.path)}
                               onDragEnd={handleDragEnd}
                               className={`pl-[36px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative
+                                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
                                 ${isDragging ? 'opacity-40' : ''}
                                 ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
                             >
                               {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
                               <FileText size={13} className={`${isActive ? 'text-tx-active' : 'text-tx-muted'} shrink-0`} />
                               <SplitName name={note.name} isActive={isActive} />
+                              {automationFiles.has(note.path) && (
+                                <span className="ml-auto shrink-0 text-status-warning/70" title="Has automation"><Zap size={10} /></span>
+                              )}
                             </div>
                           )
                         })}
@@ -592,18 +637,26 @@ const NotesAppSection: React.FC<{
                   return (
                     <div
                       key={note.path}
+                      role="treeitem"
+                      tabIndex={0}
+                      aria-selected={isActive}
                       onClick={() => onFileClick(note.path)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onFileClick(note.path) } }}
                       onContextMenu={(e) => openContextMenu(e, noteContextItems(note))}
                       draggable
                       onDragStart={(e) => handleDragStart(e, note.path)}
                       onDragEnd={handleDragEnd}
                       className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative
+                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
                         ${isDragging ? 'opacity-40' : ''}
                         ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
                     >
                       {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
                       <FileText size={13} className={`${isActive ? 'text-tx-active' : 'text-tx-muted'} shrink-0`} />
                       <SplitName name={note.name} isActive={isActive} />
+                      {automationFiles.has(note.path) && (
+                        <span className="ml-auto shrink-0 text-status-warning/70" title="Has automation"><Zap size={10} /></span>
+                      )}
                     </div>
                   )
                 })}
@@ -611,9 +664,9 @@ const NotesAppSection: React.FC<{
 
               {/* Empty state */}
               {groups.length === 0 && rootNotes.length === 0 && !inlineInput && (
-                <div onClick={startCreating} className="pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer">
+                <button type="button" onClick={startCreating} className="w-full text-left pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset">
                   New note...
-                </div>
+                </button>
               )}
             </>
           )}
@@ -702,9 +755,9 @@ const CodeAppSection: React.FC<{
       {expanded && (
         <div className="mb-3 mt-1">
           {!codeProjectPath ? (
-            <div onClick={handleOpenFolder} className="pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer">
+            <button type="button" onClick={handleOpenFolder} className="w-full text-left pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset">
               Open a folder...
-            </div>
+            </button>
           ) : (
             rootNodes.map((node) => (
               <FileTreeNode
@@ -798,21 +851,23 @@ const TerminalAppSection: React.FC<{
         expanded={expanded}
         onClick={onHeaderClick}
         actions={
-          <div
+          <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); if (!expanded) onHeaderClick(); handleCreate() }}
-            className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors"
+            className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50"
+            aria-label="New terminal"
             title="New terminal"
           >
             <Plus size={14} />
-          </div>
+          </button>
         }
       />
       {expanded && (
         <div className="mb-3 mt-1">
           {sessions.length === 0 ? (
-            <div onClick={handleCreate} className="pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer">
+            <button type="button" onClick={handleCreate} className="w-full text-left pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset">
               New terminal...
-            </div>
+            </button>
           ) : (
             sessions.map((session) => {
               const isActive = session.id === activeTerminalId && currentApp === 'terminal.app'
@@ -820,8 +875,13 @@ const TerminalAppSection: React.FC<{
               return (
                 <div
                   key={session.id}
+                  role="treeitem"
+                  tabIndex={0}
+                  aria-selected={isActive}
                   onClick={() => handleSelect(session.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelect(session.id) } }}
                   className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
+                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
                     ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
                 >
                   {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
@@ -1025,16 +1085,18 @@ export const Sidebar: React.FC = () => {
       <div className="shrink-0 p-3 flex justify-between items-center border-t border-border-subtle">
         <button
           onClick={toggleTheme}
-          className="p-1.5 rounded-md hover:bg-bg-hover text-tx-faint hover:text-tx-main transition-colors"
+          className="p-1.5 rounded-md hover:bg-bg-hover text-tx-faint hover:text-tx-main transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50"
+          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
           title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
         >
           {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
         </button>
         <button
           onClick={() => setCurrentApp('settings.app')}
-          className={`p-1.5 rounded-md hover:bg-bg-hover transition-colors ${
+          className={`p-1.5 rounded-md hover:bg-bg-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 ${
             currentApp === 'settings.app' ? 'text-tx-active' : 'text-tx-faint hover:text-tx-main'
           }`}
+          aria-label="Settings"
           title="Settings"
         >
           <Settings size={15} />
@@ -1058,7 +1120,7 @@ export const Sidebar: React.FC = () => {
               </button>
               <button
                 onClick={handleConfirmDelete}
-                className="px-4 py-1.5 text-[13px] text-red-400 bg-red-500/10 rounded-md hover:bg-red-500/20 transition-colors font-medium"
+                className="px-4 py-1.5 text-[13px] text-status-error bg-status-error/10 rounded-md hover:bg-status-error/20 transition-colors font-medium"
               >
                 Delete
               </button>

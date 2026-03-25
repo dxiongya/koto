@@ -94,6 +94,17 @@ export const IpcChannels = {
   SKILLS_DELETE: 'skills:delete',
   SKILLS_IMPORT_URL: 'skills:importUrl',
 
+  // Automation
+  AUTOMATION_LIST: 'automation:list',
+  AUTOMATION_CREATE: 'automation:create',
+  AUTOMATION_UPDATE: 'automation:update',
+  AUTOMATION_DELETE: 'automation:delete',
+  AUTOMATION_RUN_NOW: 'automation:runNow',
+  AUTOMATION_GET_SNAPSHOTS: 'automation:getSnapshots',
+  AUTOMATION_RESTORE_SNAPSHOT: 'automation:restoreSnapshot',
+  AUTOMATION_RUN_EVENT: 'automation:runEvent',
+  AUTOMATION_GET_EXPERIENCE: 'automation:getExperience',
+
   // Shortcuts forwarded from main process
   SHORTCUT: 'shortcut',
 } as const
@@ -275,6 +286,56 @@ export interface Skill {
   content: string
   enabled: boolean
   filePath: string
+}
+
+// ── Automation Types ──
+
+export type AutomationTargetType = 'file' | 'section' | 'table'
+
+export interface AutomationTarget {
+  type: AutomationTargetType
+  filePath: string
+  sectionHeading?: string
+  tableIdentifier?: string
+}
+
+export type AutomationInterval = 5 | 15 | 30 | 60 | 360 | 720 | 1440
+
+export interface Automation {
+  id: string
+  name: string
+  target: AutomationTarget
+  promptTemplate: string
+  interval: AutomationInterval
+  providerId: string
+  enableTools: boolean
+  enabled: boolean
+  createdAt: number
+  lastRunAt: number | null
+  lastRunStatus: 'success' | 'error' | null
+  lastRunError: string | null
+  runCount: number
+}
+
+export interface AutomationSnapshot {
+  automationId: string
+  timestamp: number
+  filePath: string
+  targetType: AutomationTargetType
+  contentBefore: string
+  contentAfter: string
+  prompt: string
+  aiResponse: string
+  model: string
+  status: 'success' | 'error'
+  error?: string
+}
+
+export interface AutomationRunEvent {
+  automationId: string
+  status: 'started' | 'snapshot_taken' | 'ai_running' | 'writing' | 'completed' | 'error'
+  timestamp: number
+  message?: string
 }
 
 // ── Lite Config (Persistence) ──

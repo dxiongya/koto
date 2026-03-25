@@ -7,7 +7,7 @@ import type {
   AIToolEvent,
   IpcResult
 } from '../../shared/types'
-import { loadConfig } from './lite-home'
+import { loadConfig, loadIdentityFiles } from './lite-home'
 import { getAnthropicTools, getOpenAITools, executeTool } from './ai-tools'
 import { loadSkills } from './skills-loader'
 import { mcpManager } from './mcp-manager'
@@ -48,13 +48,14 @@ These are external MCP (Model Context Protocol) tools connected by the user. Use
   }
 
   // ── Skills ──
-  const skills = loadSkills()
-  if (skills.length > 0) {
-    const entries = skills
-      .map((s) => `  <skill name="${s.name}" enabled="${s.enabled}">${s.description || 'No description'}</skill>`)
-      .join('\n')
+  {
+    const skills = loadSkills()
+    if (skills.length > 0) {
+      const entries = skills
+        .map((s) => `  <skill name="${s.name}" enabled="${s.enabled}">${s.description || 'No description'}</skill>`)
+        .join('\n')
 
-    parts.push(`<available_skills>
+      parts.push(`<available_skills>
 ${entries}
 </available_skills>
 
@@ -62,10 +63,18 @@ You have access to the \`use_skill\` tool. When a user's request aligns with one
 - If exactly one skill clearly applies: load and use it.
 - If multiple could apply: choose the most specific one.
 - If none apply: proceed without loading any skill.`)
+    }
   }
 
   if (parts.length === 0) return ''
   return '\n\n' + parts.join('\n\n')
+}
+
+/** Build identity context from SOUL.md, IDENTITY.md, USER.md, TOOLS.md */
+function buildIdentityContext(): string {
+  const identity = loadIdentityFiles()
+  if (!identity) return ''
+  return '\n\n' + identity
 }
 
 function getProvider(providerId: string): AIProviderConfig | null {
@@ -150,9 +159,9 @@ async function callOpenAICompatible(
 
   const tools = enableTools ? getOpenAITools() : undefined
 
-  // Inject skill catalog into system messages when tools are enabled
+  // Inject identity context + capabilities catalog into system messages when tools are enabled
   const enrichedMessages = enableTools
-    ? messages.map((m) => m.role === 'system' ? { ...m, content: m.content + buildCapabilitiesCatalog() } : m)
+    ? messages.map((m) => m.role === 'system' ? { ...m, content: m.content + buildIdentityContext() + buildCapabilitiesCatalog() } : m)
     : messages
 
   // Build initial OpenAI messages
@@ -233,9 +242,10 @@ async function callAnthropic(
 ): Promise<IpcResult<AIChatResponse>> {
   const client = new Anthropic({ apiKey: provider.apiKey })
 
-  // Extract system message and inject skill catalog when tools are enabled
+  // Extract system message and inject capabilities catalog when tools are enabled
   const systemMsgs = messages.filter((m) => m.role === 'system')
   const nonSystemMsgs = messages.filter((m) => m.role !== 'system')
+  const identityContext = enableTools ? buildIdentityContext() : ''
   const capabilitiesCatalog = enableTools ? buildCapabilitiesCatalog() : ''
 
   const tools = enableTools ? getAnthropicTools() : undefined
@@ -255,7 +265,7 @@ async function callAnthropic(
       model: provider.model,
       max_tokens: maxTokens,
       temperature,
-      system: (systemMsgs.map((m) => m.content).join('\n') + capabilitiesCatalog) || undefined,
+      system: (systemMsgs.map((m) => m.content).join('\n') + identityContext + capabilitiesCatalog) || undefined,
       messages: anthropicMessages,
       tools,
     })

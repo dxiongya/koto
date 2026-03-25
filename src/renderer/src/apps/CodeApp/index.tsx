@@ -38,8 +38,8 @@ export const CodeApp: React.FC = () => {
   )
 
   const blurClass = showCommandPalette
-    ? 'filter blur-[3px] opacity-50 transition-all duration-300'
-    : 'transition-all duration-300'
+    ? 'opacity-50 transition-opacity duration-200'
+    : 'transition-opacity duration-200'
 
   if (!activeFilePath) {
     return (
@@ -59,7 +59,7 @@ export const CodeApp: React.FC = () => {
 
   if (error) {
     return (
-      <div className={`flex-1 flex items-center justify-center text-red-400/70 text-sm ${blurClass}`}>
+      <div className={`flex-1 flex items-center justify-center text-status-error/70 text-sm ${blurClass}`}>
         {error}
       </div>
     )
