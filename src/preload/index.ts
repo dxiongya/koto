@@ -159,6 +159,7 @@ const api = {
     list: () => ipcRenderer.invoke(IpcChannels.COLLECTOR_LIST),
     getEmbeddingKey: () => ipcRenderer.invoke(IpcChannels.EMBEDDING_GET_API_KEY),
     setEmbeddingKey: (key: string) => ipcRenderer.invoke(IpcChannels.EMBEDDING_SET_API_KEY, key),
+    testEmbedding: (apiKey: string) => ipcRenderer.invoke(IpcChannels.EMBEDDING_TEST, apiKey),
     add: (input: Record<string, unknown>) =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_ADD, input),
     update: (id: string, patch: Record<string, unknown>) =>

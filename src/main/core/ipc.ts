@@ -497,6 +497,24 @@ export function setupIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle(IpcChannels.EMBEDDING_TEST, async (_, apiKey: string) => {
+    try {
+      const { GoogleGenAI } = await import('@google/genai')
+      const client = new GoogleGenAI({ apiKey })
+      const result = await client.models.embedContent({
+        model: 'gemini-embedding-exp-03-07',
+        contents: 'test',
+        config: { outputDimensionality: 768 },
+      })
+      if (result.embeddings?.[0]?.values?.length) {
+        return { ok: true, data: `Connected · ${result.embeddings[0].values.length}-dim vector` }
+      }
+      return { ok: false, error: 'No embedding returned' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
   ipcMain.handle(IpcChannels.COLLECTOR_SEARCH, async (_, query: string) => {
     try {
       const items = listCollectedItems()

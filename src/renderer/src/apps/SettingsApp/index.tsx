@@ -258,74 +258,158 @@ const FEATURES: AIFeature[] = ['completion', 'chat']
 // ── Embedding Section ──
 
 const EmbeddingSection: React.FC = () => {
-  const [apiKey, setApiKey] = useState('')
   const [savedKey, setSavedKey] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [formKey, setFormKey] = useState('')
   const [showKey, setShowKey] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     window.api.collector.getEmbeddingKey().then((res) => {
-      if (res.ok && res.data) {
-        setSavedKey(res.data)
-        setApiKey(res.data)
-      }
+      if (res.ok && res.data) setSavedKey(res.data)
     })
   }, [])
 
+  const maskedKey = savedKey ? `${savedKey.slice(0, 6)}${'•'.repeat(16)}${savedKey.slice(-4)}` : ''
+
+  const handleTest = useCallback(async () => {
+    const key = formKey.trim() || savedKey
+    if (!key) return
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const res = await window.api.collector.testEmbedding(key)
+      setTestResult(res.ok ? { ok: true, msg: res.data } : { ok: false, msg: res.error })
+    } catch (e) {
+      setTestResult({ ok: false, msg: String(e) })
+    }
+    setTesting(false)
+  }, [formKey, savedKey])
+
   const handleSave = useCallback(async () => {
-    const key = apiKey.trim()
+    const key = formKey.trim()
     if (!key) return
     setSaving(true)
     await window.api.collector.setEmbeddingKey(key)
     setSavedKey(key)
+    setFormKey('')
+    setEditing(false)
     setSaving(false)
-    // Trigger embedding of all collected items
+    setTestResult(null)
     window.api.collector.embedAll().catch(() => {})
-  }, [apiKey])
+  }, [formKey])
 
-  const maskedKey = savedKey ? `${savedKey.slice(0, 8)}${'•'.repeat(20)}${savedKey.slice(-4)}` : ''
+  const handleStartEdit = useCallback(() => {
+    setEditing(true)
+    setFormKey(savedKey)
+    setTestResult(null)
+  }, [savedKey])
 
   return (
     <section className="mb-10">
-      <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Embedding</h2>
-      <div className="space-y-3">
-        <p className="text-[12px] text-tx-faint leading-relaxed">
-          Semantic search uses <span className="text-tx-muted">Google Gemini Embedding 2</span> to understand the meaning of your collected items.
-          Get an API key from <a href="#" onClick={(e) => { e.preventDefault(); window.open('https://aistudio.google.com/apikey') }} className="text-accent-main hover:underline">Google AI Studio</a>.
-        </p>
-        <div className="flex items-center gap-2">
-          <div className="flex-1 relative">
-            <input
-              type={showKey ? 'text' : 'password'}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
-              placeholder="Gemini API key"
-              className="w-full px-3 py-2 text-[12px] bg-bg-input border border-border-subtle rounded-md text-tx-main placeholder-tx-faint outline-none focus:border-accent-main/50 transition-colors"
-            />
-          </div>
-          <button
-            onClick={() => setShowKey(!showKey)}
-            className="p-2 text-tx-faint hover:text-tx-muted transition-colors"
-            title={showKey ? 'Hide key' : 'Show key'}
-          >
-            {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider">Embedding</h2>
+        {!editing && savedKey && (
+          <button onClick={handleStartEdit} className="flex items-center gap-1 text-xs text-tx-muted hover:text-accent-main transition-colors">
+            <Pencil size={12} /> Edit
           </button>
-          <button
-            onClick={handleSave}
-            disabled={!apiKey.trim() || apiKey === savedKey || saving}
-            className="px-3 py-2 text-[11px] text-[#111] font-medium bg-accent-main rounded-md hover:opacity-90 disabled:opacity-30 transition-opacity"
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
-        {savedKey && (
-          <div className="flex items-center gap-2 text-[11px] text-status-success">
-            <Check size={12} />
-            <span>API key configured — semantic search enabled</span>
-          </div>
         )}
       </div>
+
+      {/* Card view — when configured and not editing */}
+      {savedKey && !editing && (
+        <div className="bg-bg-hover rounded-lg p-4 border border-border-subtle space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Zap size={14} className="text-accent-main" />
+              <span className="text-[13px] text-tx-main font-medium">Gemini Embedding 2</span>
+            </div>
+            <span className="text-[10px] text-status-success flex items-center gap-1"><Check size={10} /> Active</span>
+          </div>
+          <div className="text-[11px] text-tx-faint font-mono">{maskedKey}</div>
+          <div className="text-[11px] text-tx-faint">Model: gemini-embedding-exp-03-07 · 768 dimensions</div>
+        </div>
+      )}
+
+      {/* Empty state — no key configured */}
+      {!savedKey && !editing && (
+        <div className="bg-bg-hover rounded-lg p-4 border border-border-subtle space-y-3">
+          <p className="text-[12px] text-tx-faint leading-relaxed">
+            Semantic search uses <span className="text-tx-muted">Google Gemini Embedding 2</span> to understand text, images, and video.
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setEditing(true); setFormKey('') }}
+              className="px-3 py-1.5 text-[11px] text-[#111] font-medium bg-accent-main rounded-md hover:opacity-90"
+            >
+              Configure
+            </button>
+            <a href="#" onClick={(e) => { e.preventDefault(); window.open('https://aistudio.google.com/apikey') }} className="text-[11px] text-accent-main hover:underline">
+              Get API key →
+            </a>
+          </div>
+        </div>
+      )}
+
+      {/* Edit form */}
+      {editing && (
+        <div className="bg-bg-hover rounded-lg p-4 border border-border-subtle space-y-4">
+          <div>
+            <label className="block text-xs text-tx-muted mb-1.5">Gemini API Key</label>
+            <div className="flex items-center gap-2">
+              <input
+                type={showKey ? 'text' : 'password'}
+                value={formKey}
+                onChange={(e) => { setFormKey(e.target.value); setTestResult(null) }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleTest() }}
+                placeholder="AIza..."
+                autoFocus
+                className="flex-1 bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint"
+              />
+              <button onClick={() => setShowKey(!showKey)} className="p-2 text-tx-faint hover:text-tx-muted" title={showKey ? 'Hide' : 'Show'}>
+                {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+            <p className="text-[10px] text-tx-faint mt-1.5">
+              Get a free key from <a href="#" onClick={(e) => { e.preventDefault(); window.open('https://aistudio.google.com/apikey') }} className="text-accent-main hover:underline">Google AI Studio</a>
+            </p>
+          </div>
+
+          {/* Test result */}
+          {testResult && (
+            <div className={`text-[11px] px-3 py-2 rounded-md ${testResult.ok ? 'bg-status-success/10 text-status-success' : 'bg-status-error/10 text-status-error'}`}>
+              {testResult.msg}
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex items-center gap-2 justify-end">
+            <button
+              onClick={handleTest}
+              disabled={!formKey.trim() || testing}
+              className="px-3 py-1.5 text-[11px] text-tx-muted border border-border-strong rounded-md hover:bg-bg-active disabled:opacity-30 flex items-center gap-1.5"
+            >
+              {testing ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+              {testing ? 'Testing...' : 'Test'}
+            </button>
+            <button
+              onClick={() => { setEditing(false); setFormKey(''); setTestResult(null) }}
+              className="px-3 py-1.5 text-[11px] text-tx-muted border border-border-strong rounded-md hover:bg-bg-active"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={!formKey.trim() || saving}
+              className="px-3 py-1.5 text-[11px] text-[#111] font-medium bg-accent-main rounded-md hover:opacity-90 disabled:opacity-30"
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </div>
+      )}
     </section>
   )
 }

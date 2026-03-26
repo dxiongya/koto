@@ -112,6 +112,7 @@ export const IpcChannels = {
   COLLECTOR_DELETE: 'collector:delete',
   EMBEDDING_GET_API_KEY: 'embedding:getApiKey',
   EMBEDDING_SET_API_KEY: 'embedding:setApiKey',
+  EMBEDDING_TEST: 'embedding:test',
   COLLECTOR_SEARCH: 'collector:search',
   COLLECTOR_FETCH_MARKDOWN: 'collector:fetchMarkdown',
   COLLECTOR_EMBED_ITEM: 'collector:embedItem',
