@@ -502,7 +502,7 @@ export function setupIpcHandlers(): void {
       const { GoogleGenAI } = await import('@google/genai')
       const client = new GoogleGenAI({ apiKey })
       const result = await client.models.embedContent({
-        model: 'gemini-embedding-exp-03-07',
+        model: 'gemini-embedding-2-preview',
         contents: 'test',
         config: { outputDimensionality: 768 },
       })

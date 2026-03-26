@@ -11,7 +11,7 @@ import { loadConfig } from './lite-home'
 import { readItemMarkdown, saveVector, getAllVectors } from './collector-store'
 import type { CollectedItem } from '../../shared/types'
 
-const EMBEDDING_MODEL = 'gemini-embedding-exp-03-07'
+const EMBEDDING_MODEL = 'gemini-embedding-2-preview'
 const VECTOR_DIM = 768
 
 /** Get a configured Gemini client using collector's dedicated API key */
@@ -109,8 +109,13 @@ export async function embedItem(item: CollectedItem): Promise<number[] | null> {
 
 /** Embed a single item and save to SQLite */
 export async function embedAndSave(item: CollectedItem): Promise<boolean> {
+  console.log(`[Embedding] Processing: ${item.type} "${item.title.slice(0, 40)}" (${item.id})`)
   const vector = await embedItem(item)
-  if (!vector) return false
+  if (!vector) {
+    console.warn(`[Embedding] Failed for ${item.id} — no vector returned`)
+    return false
+  }
+  console.log(`[Embedding] Success: ${item.id} → ${vector.length}-dim vector`)
   saveVector(item.id, vector)
   return true
 }

@@ -329,7 +329,7 @@ const EmbeddingSection: React.FC = () => {
             <span className="text-[10px] text-status-success flex items-center gap-1"><Check size={10} /> Active</span>
           </div>
           <div className="text-[11px] text-tx-faint font-mono">{maskedKey}</div>
-          <div className="text-[11px] text-tx-faint">Model: gemini-embedding-exp-03-07 · 768 dimensions</div>
+          <div className="text-[11px] text-tx-faint">Model: gemini-embedding-2-preview · 768 dimensions</div>
         </div>
       )}
 
