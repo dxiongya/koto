@@ -381,6 +381,8 @@ const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => voi
 export const CollectorApp: React.FC = () => {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
   const activeFilter = useUIStore((s) => s.appStates['collector.app'].activeFilePath) || 'all'
+  const collectorVersion = useUIStore((s) => s.collectorVersion)
+  const bumpVersion = useUIStore((s) => s.bumpCollectorVersion)
   const [items, setItems] = useState<CollectedItem[]>([])
   const [groups, setGroups] = useState<string[]>([])
   const [showCollectPanel, setShowCollectPanel] = useState(false)
@@ -404,7 +406,7 @@ export const CollectorApp: React.FC = () => {
 
   const [isDragOver, setIsDragOver] = useState(false)
 
-  useEffect(() => { loadItems() }, [loadItems, activeFilter])
+  useEffect(() => { loadItems() }, [loadItems, activeFilter, collectorVersion])
 
   // Check embedding key status
   useEffect(() => {
@@ -415,8 +417,8 @@ export const CollectorApp: React.FC = () => {
 
   const handleDelete = useCallback(async (id: string) => {
     await window.api.collector.delete(id)
-    loadItems()
-  }, [loadItems])
+    bumpVersion()
+  }, [bumpVersion])
 
   // Quick collect: auto-detect type and collect immediately
   const quickCollect = useCallback(async (input: string) => {
@@ -467,7 +469,7 @@ export const CollectorApp: React.FC = () => {
       group: activeFilter !== 'all' && !(activeFilter in TYPE_LABELS) ? activeFilter : 'all',
       source: 'paste', meta,
     })
-    loadItems()
+    bumpVersion()
 
     if (addRes.ok) {
       setToast({ message: `Collected · ${title.slice(0, 40)}${title.length > 40 ? '...' : ''}`, status: 'success' })
@@ -509,7 +511,7 @@ export const CollectorApp: React.FC = () => {
         assetData: buffer,
         assetMimeType: mime,
       })
-      loadItems()
+      bumpVersion()
 
       if (addRes.ok) {
         setToast({ message: `Collected · ${title.slice(0, 40)}`, status: 'success' })
@@ -722,7 +724,7 @@ export const CollectorApp: React.FC = () => {
       {showCollectPanel && createPortal(
         <CollectPanel
           onClose={() => setShowCollectPanel(false)}
-          onCollected={loadItems}
+          onCollected={bumpVersion}
           groups={groups}
         />,
         document.body,

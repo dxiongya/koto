@@ -60,6 +60,10 @@ interface UIState {
   // MCP Servers
   mcpServers: MCPServerConfig[]
 
+  // collector.app data version (bump to trigger sidebar + main refresh)
+  collectorVersion: number
+  bumpCollectorVersion: () => void
+
   // file switcher (Ctrl+Tab)
   showFileSwitcher: boolean
 
@@ -164,6 +168,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   mcpServers: [],
   navBackStack: [],
   navForwardStack: [],
+  collectorVersion: 0,
+  bumpCollectorVersion: () => set((s) => ({ collectorVersion: s.collectorVersion + 1 })),
   showFileSwitcher: false,
   _commandPaletteInitialQuery: null,
 

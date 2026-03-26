@@ -934,6 +934,8 @@ const CollectorAppSection: React.FC<{
   onHeaderClick: () => void
 }> = ({ currentApp, expanded, onHeaderClick }) => {
   const activeFilter = useUIStore((s) => s.appStates['collector.app'].activeFilePath) || 'all'
+  const collectorVersion = useUIStore((s) => s.collectorVersion)
+  const bumpVersion = useUIStore((s) => s.bumpCollectorVersion)
   const [items, setItems] = useState<CollectedItem[]>([])
   const [groups, setGroups] = useState<string[]>([])
   const [expandedGroups, setExpandedGroups] = useState<string[]>([])
@@ -960,7 +962,7 @@ const CollectorAppSection: React.FC<{
   useEffect(() => {
     if (!expanded) return
     loadData()
-  }, [expanded, loadData])
+  }, [expanded, loadData, collectorVersion])
 
   // Items by group
   const ungroupedItems = items.filter((i) => !i.group || i.group === 'all')
@@ -1017,8 +1019,8 @@ const CollectorAppSection: React.FC<{
     const itemId = e.dataTransfer.getData('application/x-collector-item')
     if (!itemId) return
     await window.api.collector.update(itemId, { group })
-    loadData()
-  }, [loadData])
+    bumpVersion()
+  }, [bumpVersion])
 
   // Context menu for groups
   const startRenameGroup = useCallback((group: string) => {
@@ -1035,10 +1037,10 @@ const CollectorAppSection: React.FC<{
     if (res.ok) {
       setGroups(res.data)
       if (activeFilter === renamingGroup) setActiveItem(newName)
-      loadData()
+      bumpVersion()
     }
     setRenamingGroup(null)
-  }, [renamingGroup, renameValue, activeFilter, setActiveItem, loadData])
+  }, [renamingGroup, renameValue, activeFilter, setActiveItem, bumpVersion])
 
   const groupContextItems = useCallback((group: string): ContextMenuItem[] => [
     { label: 'Rename', icon: <Pencil size={14} />, onClick: () => startRenameGroup(group) },
@@ -1048,10 +1050,10 @@ const CollectorAppSection: React.FC<{
       if (res.ok) {
         setGroups(res.data)
         if (activeFilter === group) setActiveItem('all')
-        loadData()
+        bumpVersion()
       }
     } },
-  ], [activeFilter, setActiveItem, loadData, startRenameGroup])
+  ], [activeFilter, setActiveItem, bumpVersion, startRenameGroup])
 
   const isActive = (filter: string) => currentApp === 'collector.app' && activeFilter === filter
 
