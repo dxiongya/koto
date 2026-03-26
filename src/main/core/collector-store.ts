@@ -174,41 +174,67 @@ function markdownDir(): string {
   return path.join(getLiteHome(), 'collected', 'markdown')
 }
 
-/** Fetch page markdown via Jina Reader and save to file */
+/**
+ * Fetch page as markdown and save to file.
+ * Strategy: 1) Cloudflare Markdown for Agents (Accept: text/markdown)
+ *           2) Fallback to Jina Reader (r.jina.ai)
+ */
 export async function fetchAndSaveMarkdown(itemId: string, url: string): Promise<string | null> {
   const dir = markdownDir()
   fs.mkdirSync(dir, { recursive: true })
 
+  let markdown: string | null = null
+
+  // 1) Try Cloudflare Markdown for Agents — just add Accept: text/markdown
   try {
-    const response = await fetch(`https://r.jina.ai/${url}`, {
+    const cfRes = await fetch(url, {
       headers: {
-        'Accept': 'text/markdown',
-        'X-No-Cache': 'true',
+        'Accept': 'text/markdown, text/html;q=0.9',
+        'User-Agent': 'Mozilla/5.0 (compatible; LiteCollector/1.0)',
       },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(10000),
+      redirect: 'follow',
     })
-    if (!response.ok) return null
-
-    const markdown = await response.text()
-    if (!markdown || markdown.length < 50) return null
-
-    // Save markdown file
-    const filePath = path.join(dir, `${itemId}.md`)
-    fs.writeFileSync(filePath, markdown, 'utf-8')
-
-    // Update item meta
-    const items = readItems()
-    const item = items.find((i) => i.id === itemId)
-    if (item) {
-      item.meta = { ...item.meta, hasMarkdown: true, markdownLength: markdown.length }
-      item.updatedAt = Date.now()
-      writeItems(items)
+    if (cfRes.ok) {
+      const contentType = cfRes.headers.get('content-type') || ''
+      const body = await cfRes.text()
+      // CF returns content-type: text/markdown when supported
+      if (contentType.includes('text/markdown') && body.length > 50) {
+        markdown = body
+      }
     }
+  } catch { /* fall through to Jina */ }
 
-    return filePath
-  } catch {
-    return null
+  // 2) Fallback: Jina Reader
+  if (!markdown) {
+    try {
+      const jinaRes = await fetch(`https://r.jina.ai/${url}`, {
+        headers: { 'Accept': 'text/markdown' },
+        signal: AbortSignal.timeout(15000),
+      })
+      if (jinaRes.ok) {
+        const body = await jinaRes.text()
+        if (body.length > 50) markdown = body
+      }
+    } catch { /* give up */ }
   }
+
+  if (!markdown) return null
+
+  // Save markdown file
+  const filePath = path.join(dir, `${itemId}.md`)
+  fs.writeFileSync(filePath, markdown, 'utf-8')
+
+  // Update item meta
+  const items = readItems()
+  const item = items.find((i) => i.id === itemId)
+  if (item) {
+    item.meta = { ...item.meta, hasMarkdown: true, markdownLength: markdown.length }
+    item.updatedAt = Date.now()
+    writeItems(items)
+  }
+
+  return filePath
 }
 
 /** Read stored markdown for an item */
