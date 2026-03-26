@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Search, FileText, FileCode, Terminal, Settings, Globe, Archive,
   Plus, PanelLeft, Moon, Sun, ArrowRight, Hash, Clock, HelpCircle,
-  Link, Image, Video, Twitter, Monitor, Type, Sparkles, AtSign,
+  Link, Image, Video, Twitter, Monitor, Type,
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import type { AppType } from '../../../shared/types'
@@ -153,7 +153,7 @@ const HELP_ITEMS: PaletteItem[] = [
   { id: 'help:files', label: 'Type to search files by name', icon: Search, category: 'Help', action: () => {} },
   { id: 'help:cmd', label: '> Commands and actions', icon: Settings, category: 'Help', action: () => {} },
   { id: 'help:search', label: '# Search file contents', icon: Hash, category: 'Help', action: () => {} },
-  { id: 'help:collector', label: '@ Search collected items', icon: Sparkles, category: 'Help', action: () => {} },
+  { id: 'help:collector', label: 'collector: Search collected items', icon: Archive, category: 'Help', action: () => {} },
   { id: 'help:line', label: ': Go to line number', icon: ArrowRight, category: 'Help', action: () => {} },
   { id: 'help:camel', label: 'ABC CamelCase abbreviation (e.g. CP → CommandPalette)', icon: FileCode, category: 'Help', action: () => {} },
 ]
@@ -195,6 +195,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
   // Loaded file lists
   const [noteFiles, setNoteFiles] = useState<{ name: string; path: string }[]>([])
   const [codeFiles, setCodeFiles] = useState<{ name: string; path: string }[]>([])
+  const [collectorItems, setCollectorItems] = useState<{ id: string; title: string; type: string; url?: string }[]>([])
 
   // Content search results
   const [searchResults, setSearchResults] = useState<PaletteItem[]>([])
@@ -209,17 +210,26 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     if (codeProjectPath) flattenFileTree(codeProjectPath).then((f) => setCodeFiles(f.slice(0, 200)))
   }, [codeProjectPath])
 
+  // Load collector items for global search
+  useEffect(() => {
+    window.api.collector.list().then((res) => {
+      if (res.ok) setCollectorItems(res.data.map((i: { id: string; title: string; type: string; url?: string }) => ({ id: i.id, title: i.title, type: i.type, url: i.url })))
+    })
+  }, [])
+
   useEffect(() => { inputRef.current?.focus() }, [])
 
   // ── Mode detection ──
   const isCommandMode = query.startsWith('>')
   const isSearchMode = query.startsWith('#')
-  const isCollectorSearch = query.startsWith('@')
+  const isCollectorSearch = query.startsWith('collector:')
   const isLineMode = query.startsWith(':')
   const isHelpMode = query.startsWith('?')
-  const searchQuery = isCommandMode || isSearchMode || isCollectorSearch || isLineMode || isHelpMode
-    ? query.slice(1).trim()
-    : query.trim()
+  const searchQuery = isCollectorSearch
+    ? query.slice('collector:'.length).trim()
+    : isCommandMode || isSearchMode || isLineMode || isHelpMode
+      ? query.slice(1).trim()
+      : query.trim()
 
   // ── Content search with debounce ──
   useEffect(() => {
@@ -394,6 +404,10 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
           action: () => store.setCurrentApp('settings.app'),
         },
         {
+          id: 'cmd:search-collector', label: 'Search Collector', icon: Archive, category: 'Actions',
+          action: () => { setQuery('collector:') },
+        },
+        {
           id: 'cmd:go-back', label: 'Go Back', shortcut: '⌃-', icon: ArrowRight, category: 'Navigation',
           action: () => store.navigateBack(),
         },
@@ -486,6 +500,27 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       })
     }
 
+    // Collector items (in global search)
+    if (collectorItems.length > 0) {
+      const CTYPE_ICONS: Record<string, typeof Link> = { link: Link, image: Image, video: Video, tweet: Twitter, screenshot: Monitor, text: Type }
+      for (const ci of collectorItems) {
+        all.push({
+          id: `collector:${ci.id}`,
+          label: ci.title,
+          hint: 'collector',
+          icon: CTYPE_ICONS[ci.type] || Archive,
+          category: 'Collector',
+          boost: currentApp === 'collector.app' ? 5 : 0,
+          action: () => {
+            store.setCurrentApp('collector.app')
+            useUIStore.setState({
+              appStates: { ...store.appStates, 'collector.app': { ...store.appStates['collector.app'], activeFilePath: 'all' } },
+            })
+          },
+        })
+      }
+    }
+
     // Quick actions
     all.push(
       { id: 'action:new-note', label: 'New Note', icon: Plus, category: 'Actions', action: () => store.setCurrentApp('notes.app') },
@@ -503,7 +538,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     )
 
     return all
-  }, [isCommandMode, isSearchMode, isCollectorSearch, isLineMode, isHelpMode, searchResults, collectorResults, noteFiles, codeFiles, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
+  }, [isCommandMode, isSearchMode, isCollectorSearch, isLineMode, isHelpMode, searchResults, collectorResults, noteFiles, codeFiles, collectorItems, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
 
   // ── Filter + sort ──
   const filtered = useMemo(() => {
@@ -529,7 +564,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
           ? ['Help']
           : isLineMode
             ? ['Navigation']
-            : ['Recent', 'Actions', 'Apps', 'Notes', 'Code', 'Terminals', 'Navigation']
+            : ['Recent', 'Actions', 'Apps', 'Notes', 'Code', 'Collector', 'Terminals', 'Navigation']
     const map = new Map<string, PaletteItem[]>()
     for (const item of filtered) {
       const arr = map.get(item.category) || []
@@ -590,7 +625,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     : 'Search files, apps, actions...'
 
   const modeIcon = isSearchMode ? Hash
-    : isCollectorSearch ? Sparkles
+    : isCollectorSearch ? Archive
     : isLineMode ? ArrowRight
     : isHelpMode ? HelpCircle
     : Search
