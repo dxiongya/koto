@@ -155,6 +155,22 @@ const api = {
       }
     },
   },
+  collector: {
+    list: () => ipcRenderer.invoke(IpcChannels.COLLECTOR_LIST),
+    add: (input: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.COLLECTOR_ADD, input),
+    update: (id: string, patch: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.COLLECTOR_UPDATE, id, patch),
+    delete: (id: string) =>
+      ipcRenderer.invoke(IpcChannels.COLLECTOR_DELETE, id),
+    fetchMarkdown: (itemId: string, url: string) =>
+      ipcRenderer.invoke(IpcChannels.COLLECTOR_FETCH_MARKDOWN, itemId, url),
+    groups: () => ipcRenderer.invoke(IpcChannels.COLLECTOR_GROUPS),
+    addGroup: (name: string) =>
+      ipcRenderer.invoke(IpcChannels.COLLECTOR_ADD_GROUP, name),
+    deleteGroup: (name: string) =>
+      ipcRenderer.invoke(IpcChannels.COLLECTOR_DELETE_GROUP, name),
+  },
   shortcut: {
     onShortcut: (callback: (shortcut: string) => void) => {
       const handler = (_: unknown, shortcut: string): void => callback(shortcut)

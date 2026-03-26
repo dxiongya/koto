@@ -5,6 +5,7 @@ import { CodeApp } from './apps/CodeApp'
 import { NotesApp } from './apps/NotesApp'
 import { TerminalApp, getTerminalRefs } from './apps/TerminalApp'
 import { SettingsApp } from './apps/SettingsApp'
+import { CollectorApp } from './apps/CollectorApp'
 import { ContextMenuProvider } from './components/ContextMenu'
 import { FileSwitcher } from './components/FileSwitcher'
 import { builtinThemes, applyTheme, applyFont } from './themes'
@@ -14,6 +15,7 @@ const appComponents: Record<string, React.FC> = {
   'code.app': CodeApp,
   'notes.app': NotesApp,
   'terminal.app': TerminalApp,
+  'collector.app': CollectorApp,
   'settings.app': SettingsApp,
 }
 

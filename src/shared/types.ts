@@ -105,6 +105,16 @@ export const IpcChannels = {
   AUTOMATION_RUN_EVENT: 'automation:runEvent',
   AUTOMATION_GET_EXPERIENCE: 'automation:getExperience',
 
+  // Collector
+  COLLECTOR_LIST: 'collector:list',
+  COLLECTOR_ADD: 'collector:add',
+  COLLECTOR_UPDATE: 'collector:update',
+  COLLECTOR_DELETE: 'collector:delete',
+  COLLECTOR_FETCH_MARKDOWN: 'collector:fetchMarkdown',
+  COLLECTOR_GROUPS: 'collector:groups',
+  COLLECTOR_ADD_GROUP: 'collector:addGroup',
+  COLLECTOR_DELETE_GROUP: 'collector:deleteGroup',
+
   // Shortcuts forwarded from main process
   SHORTCUT: 'shortcut',
 } as const
@@ -403,4 +413,35 @@ export const DEFAULT_LITE_CONFIG: LiteConfig = {
   recentFiles: [],
   ai: { ...DEFAULT_AI_SETTINGS },
   mcpServers: [],
+}
+
+// ── Collector Types ──
+
+export type CollectedItemType = 'link' | 'image' | 'video' | 'tweet' | 'text' | 'screenshot'
+
+export interface CollectedItem {
+  id: string
+  type: CollectedItemType
+  title: string
+  note: string
+  url?: string
+  assetPath?: string
+  thumbnailPath?: string
+  group: string           // 'all' or custom group name
+  source: string          // e.g. 'paste', 'drag', 'command-palette', 'context-menu'
+  meta: Record<string, unknown>
+  createdAt: number
+  updatedAt: number
+}
+
+export interface CollectorAddInput {
+  type: CollectedItemType
+  title: string
+  note?: string
+  url?: string
+  assetData?: ArrayBuffer  // raw image/file data
+  assetMimeType?: string
+  group?: string
+  source?: string
+  meta?: Record<string, unknown>
 }

@@ -3,11 +3,12 @@ import { createPortal } from 'react-dom'
 import {
   ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal,
   FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Plus, Moon, Sun, FolderOpen, FolderPlus, X,
-  Pencil, Trash2, FilePlus, FolderInput, Settings, Zap
+  Pencil, Trash2, FilePlus, FolderInput, Settings, Zap, Archive, Layers, Folder,
+  Link, Image, Video, Twitter, Monitor, Type
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import { useContextMenu, type ContextMenuItem } from '../components/ContextMenu'
-import type { AppType, FileNode } from '../../../shared/types'
+import type { AppType, FileNode, CollectedItem } from '../../../shared/types'
 
 // ── Helpers ──
 
@@ -921,6 +922,248 @@ const TerminalAppSection: React.FC<{
   )
 }
 
+// ── Collector App Section ──
+
+const COLLECTOR_ITEM_ICONS: Record<string, React.FC<{ size?: number; className?: string }>> = {
+  link: Link, image: Image, video: Video, tweet: Twitter, screenshot: Monitor, text: Type,
+}
+
+const CollectorAppSection: React.FC<{
+  currentApp: AppType
+  expanded: boolean
+  onHeaderClick: () => void
+}> = ({ currentApp, expanded, onHeaderClick }) => {
+  const activeFilter = useUIStore((s) => s.appStates['collector.app'].activeFilePath) || 'all'
+  const [items, setItems] = useState<CollectedItem[]>([])
+  const [groups, setGroups] = useState<string[]>([])
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([])
+  const [creatingGroup, setCreatingGroup] = useState(false)
+  const [groupName, setGroupName] = useState('')
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const groupInputRef = useRef<HTMLInputElement>(null)
+  const openContextMenu = useContextMenu()
+
+  const loadData = useCallback(() => {
+    Promise.all([
+      window.api.collector.list(),
+      window.api.collector.groups(),
+    ]).then(([itemsRes, groupsRes]) => {
+      if (itemsRes.ok) setItems(itemsRes.data)
+      if (groupsRes.ok) setGroups(groupsRes.data)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!expanded) return
+    loadData()
+  }, [expanded, loadData])
+
+  // Items by group
+  const ungroupedItems = items.filter((i) => !i.group || i.group === 'all')
+  const itemsByGroup: Record<string, CollectedItem[]> = {}
+  for (const g of groups) itemsByGroup[g] = []
+  for (const item of items) {
+    if (item.group && item.group !== 'all' && itemsByGroup[item.group]) {
+      itemsByGroup[item.group].push(item)
+    }
+  }
+
+  const setActiveItem = useCallback((filter: string) => {
+    useUIStore.getState().setCurrentApp('collector.app')
+    const store = useUIStore.getState()
+    useUIStore.setState({
+      appStates: { ...store.appStates, 'collector.app': { ...store.appStates['collector.app'], activeFilePath: filter } },
+    })
+  }, [])
+
+  const toggleGroup = useCallback((group: string) => {
+    setExpandedGroups((prev) => prev.includes(group) ? prev.filter((g) => g !== group) : [...prev, group])
+  }, [])
+
+  const startCreatingGroup = useCallback(() => {
+    setCreatingGroup(true)
+    setGroupName('')
+    setTimeout(() => groupInputRef.current?.focus(), 50)
+  }, [])
+
+  const handleGroupSubmit = useCallback(async () => {
+    const name = groupName.trim()
+    if (!name) { setCreatingGroup(false); return }
+    setCreatingGroup(false)
+    setGroupName('')
+    const res = await window.api.collector.addGroup(name)
+    if (res.ok) setGroups(res.data)
+    setExpandedGroups((prev) => [...prev, name])
+    setActiveItem(name)
+  }, [groupName, setActiveItem])
+
+  // Drag & drop: move item to group (works from sidebar items AND main grid cards)
+  const handleDragOver = useCallback((e: React.DragEvent, group: string) => {
+    if (!e.dataTransfer.types.includes('application/x-collector-item')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDropTarget(group)
+  }, [])
+
+  const handleDragLeave = useCallback(() => setDropTarget(null), [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent, group: string) => {
+    e.preventDefault()
+    setDropTarget(null)
+    const itemId = e.dataTransfer.getData('application/x-collector-item')
+    if (!itemId) return
+    await window.api.collector.update(itemId, { group })
+    loadData()
+  }, [loadData])
+
+  // Context menu for groups
+  const groupContextItems = useCallback((group: string): ContextMenuItem[] => [
+    { label: 'Delete Group', icon: <Trash2 size={14} />, danger: true, onClick: async () => {
+      const res = await window.api.collector.deleteGroup(group)
+      if (res.ok) {
+        setGroups(res.data)
+        if (activeFilter === group) setActiveItem('all')
+        loadData()
+      }
+    } },
+  ], [activeFilter, setActiveItem, loadData])
+
+  const isActive = (filter: string) => currentApp === 'collector.app' && activeFilter === filter
+
+  // Render a single collected item row in sidebar
+  const renderItem = (item: CollectedItem) => {
+    const selected = selectedItemId === item.id
+    const ItemIcon = COLLECTOR_ITEM_ICONS[item.type] || Link
+    return (
+      <div
+        key={item.id}
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={selected}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('application/x-collector-item', item.id)
+          e.dataTransfer.effectAllowed = 'move'
+        }}
+        onClick={(e) => { e.stopPropagation(); setSelectedItemId(selected ? null : item.id) }}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedItemId(selected ? null : item.id) } }}
+        className={`pl-[40px] py-[3px] pr-4 flex items-center gap-2 text-[12px] cursor-grab active:cursor-grabbing
+          hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
+          ${selected ? 'bg-bg-active' : ''}`}
+      >
+        <ItemIcon size={12} className={`shrink-0 ${selected ? 'text-tx-active' : 'text-tx-faint'}`} />
+        <span className={`truncate ${selected ? 'text-tx-active font-medium' : 'text-tx-muted'}`}>
+          {item.title}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <AppSectionHeader
+        appId="collector.app"
+        icon={<Archive size={14} strokeWidth={2.5} />}
+        currentApp={currentApp}
+        expanded={expanded}
+        onClick={onHeaderClick}
+        actions={
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); if (!expanded) onHeaderClick(); startCreatingGroup() }}
+            className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50"
+            aria-label="New group"
+            title="New group"
+          >
+            <FolderPlus size={14} />
+          </button>
+        }
+      />
+      {expanded && (
+        <div className="mb-3 mt-1">
+          {/* All */}
+          <button
+            type="button"
+            onClick={() => setActiveItem('all')}
+            onDragOver={(e) => handleDragOver(e, 'all')}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, 'all')}
+            className={`w-full text-left pl-[28px] py-[3px] pr-4 flex items-center gap-2 text-[12px] hover:bg-bg-hover
+              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
+              ${isActive('all') ? 'bg-bg-active' : ''} ${dropTarget === 'all' ? 'bg-accent-main/10' : ''}`}
+          >
+            <Layers size={12} className={isActive('all') ? 'text-tx-active' : 'text-tx-faint'} />
+            <span className={isActive('all') ? 'text-tx-active font-medium' : 'text-tx-muted'}>All</span>
+            <span className="text-tx-faint text-[10px] ml-auto">{items.length}</span>
+          </button>
+
+          {/* Groups with expandable items */}
+          {groups.map((group) => {
+            const active = isActive(group)
+            const isDrop = dropTarget === group
+            const isExpanded = expandedGroups.includes(group)
+            const groupItems = itemsByGroup[group] || []
+
+            return (
+              <React.Fragment key={group}>
+                <div
+                  role="treeitem"
+                  tabIndex={0}
+                  aria-selected={active}
+                  aria-expanded={isExpanded}
+                  onClick={() => { toggleGroup(group); setActiveItem(group) }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleGroup(group); setActiveItem(group) } }}
+                  onContextMenu={(e) => openContextMenu(e, groupContextItems(group))}
+                  onDragOver={(e) => handleDragOver(e, group)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, group)}
+                  className={`w-full text-left pl-[28px] py-[3px] pr-4 flex items-center gap-1.5 text-[12px] cursor-pointer
+                    hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
+                    ${active ? 'bg-bg-active' : ''} ${isDrop ? 'bg-accent-main/10 outline outline-1 outline-accent-main/30' : ''}`}
+                >
+                  {isExpanded
+                    ? <ChevronDown size={12} className="shrink-0 text-tx-faint" />
+                    : <ChevronRight size={12} className="shrink-0 text-tx-faint" />
+                  }
+                  <FolderOpen size={12} className={`shrink-0 ${active ? 'text-tx-active' : isDrop ? 'text-accent-main' : 'text-tx-faint'}`} />
+                  <span className={`truncate ${active ? 'text-tx-active font-medium' : isDrop ? 'text-accent-main' : 'text-tx-muted'}`}>{group}</span>
+                  {groupItems.length > 0 && <span className="text-tx-faint text-[10px] ml-auto">{groupItems.length}</span>}
+                </div>
+                {/* Expanded: show items under group */}
+                {isExpanded && groupItems.map(renderItem)}
+              </React.Fragment>
+            )
+          })}
+
+          {/* Ungrouped items under All */}
+          {ungroupedItems.map(renderItem)}
+
+          {/* Create group inline input */}
+          {creatingGroup && (
+            <div className="pl-[28px] pr-3 py-1 flex items-center gap-2">
+              <FolderPlus size={12} className="text-tx-muted shrink-0" />
+              <input
+                ref={groupInputRef}
+                type="text"
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); handleGroupSubmit() }
+                  if (e.key === 'Escape') { setCreatingGroup(false); setGroupName('') }
+                }}
+                onBlur={() => { if (groupName.trim()) handleGroupSubmit(); else { setCreatingGroup(false); setGroupName('') } }}
+                placeholder="group name..."
+                className="flex-1 bg-transparent text-[12px] text-tx-main outline-none border-b border-border-strong placeholder-tx-faint py-0.5"
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
 // ── Sidebar ──
 
 export const Sidebar: React.FC = () => {
@@ -1060,6 +1303,13 @@ export const Sidebar: React.FC = () => {
           expanded={expandedSections.includes('code.app')}
           onHeaderClick={() => handleAppClick('code.app')}
           codeProjectPath={codeProjectPath}
+        />
+
+        {/* collector.app */}
+        <CollectorAppSection
+          currentApp={currentApp}
+          expanded={expandedSections.includes('collector.app')}
+          onHeaderClick={() => handleAppClick('collector.app')}
         />
 
         {/* browser.app */}

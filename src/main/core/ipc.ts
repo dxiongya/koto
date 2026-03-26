@@ -19,7 +19,8 @@ import { listAutomations, createAutomation, updateAutomation, deleteAutomation }
 import { readSnapshots, restoreSnapshot } from './automation-snapshots'
 import { loadExperience } from './automation-runner'
 import { automationScheduler } from './automation-scheduler'
-import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation } from '../../shared/types'
+import { listCollectedItems, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown } from './collector-store'
+import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
 
 export function setupIpcHandlers(): void {
   // ── Lite Home ──
@@ -429,5 +430,75 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.AUTOMATION_GET_EXPERIENCE, (_, automationId: string) => {
     const exp = loadExperience(automationId)
     return exp ? { ok: true, data: exp } : { ok: true, data: null }
+  })
+
+  // ── Collector ──
+
+  ipcMain.handle(IpcChannels.COLLECTOR_LIST, () => {
+    try {
+      return { ok: true, data: listCollectedItems() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_ADD, (_, input: CollectorAddInput) => {
+    try {
+      const item = addCollectedItem(input)
+      return { ok: true, data: item }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_UPDATE, (_, id: string, patch: Partial<CollectedItem>) => {
+    try {
+      const item = updateCollectedItem(id, patch)
+      return item ? { ok: true, data: item } : { ok: false, error: 'Item not found' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_DELETE, (_, id: string) => {
+    try {
+      const ok = deleteCollectedItem(id)
+      return ok ? { ok: true, data: undefined } : { ok: false, error: 'Item not found' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_FETCH_MARKDOWN, async (_, itemId: string, url: string) => {
+    try {
+      const filePath = await fetchAndSaveMarkdown(itemId, url)
+      return filePath ? { ok: true, data: filePath } : { ok: false, error: 'Failed to fetch markdown' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_GROUPS, () => {
+    try {
+      return { ok: true, data: getCollectorGroups() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_ADD_GROUP, (_, name: string) => {
+    try {
+      return { ok: true, data: addCollectorGroup(name) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_DELETE_GROUP, (_, name: string) => {
+    try {
+      return { ok: true, data: deleteCollectorGroup(name) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
   })
 }
