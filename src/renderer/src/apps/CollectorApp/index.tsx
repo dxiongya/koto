@@ -304,12 +304,98 @@ export const CollectorApp: React.FC = () => {
     if (groupsRes.ok) setGroups(groupsRes.data)
   }, [])
 
+  const [isDragOver, setIsDragOver] = useState(false)
+
   useEffect(() => { loadItems() }, [loadItems])
 
   const handleDelete = useCallback(async (id: string) => {
     await window.api.collector.delete(id)
     loadItems()
   }, [loadItems])
+
+  // Quick collect: auto-detect type and collect immediately
+  const quickCollect = useCallback(async (input: string) => {
+    const val = input.trim()
+    if (!val) return
+
+    let type: CollectedItemType = 'text'
+    let url: string | undefined
+    let domain = ''
+
+    try {
+      const parsed = new URL(val)
+      domain = parsed.hostname.replace('www.', '')
+      url = val
+      if (domain === 'twitter.com' || domain === 'x.com') type = 'tweet'
+      else if (domain === 'youtube.com' || domain === 'youtu.be' || domain === 'bilibili.com') type = 'video'
+      else type = 'link'
+    } catch { /* plain text */ }
+
+    // Fetch meta for URLs
+    let title = type === 'text' ? val.slice(0, 80) : domain
+    let description = ''
+    const meta: Record<string, unknown> = domain ? { domain } : {}
+
+    if (url) {
+      try {
+        const metaRes = await window.api.url.fetchMeta(url)
+        if (metaRes.ok && metaRes.data) {
+          if (metaRes.data.title) title = metaRes.data.title
+          if (metaRes.data.description) { description = metaRes.data.description; meta.description = description }
+          if (metaRes.data.image) meta.ogImage = metaRes.data.image
+        }
+      } catch {}
+    }
+
+    const addRes = await window.api.collector.add({
+      type, title, note: description, url,
+      group: activeFilter !== 'all' && !(activeFilter in TYPE_LABELS) ? activeFilter : 'all',
+      source: 'paste', meta,
+    })
+    loadItems()
+
+    // Fire-and-forget markdown
+    if (addRes.ok && url && (type === 'link' || type === 'tweet')) {
+      window.api.collector.fetchMarkdown(addRes.data.id, url).catch(() => {})
+    }
+  }, [activeFilter, loadItems])
+
+  // Paste handler: Cmd+V in collector area
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent): void => {
+      // Don't intercept if focus is in an input/textarea
+      const tag = (document.activeElement as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+      const text = e.clipboardData?.getData('text/plain')?.trim()
+      if (text) {
+        e.preventDefault()
+        quickCollect(text)
+      }
+    }
+    window.addEventListener('paste', handlePaste)
+    return () => window.removeEventListener('paste', handlePaste)
+  }, [quickCollect])
+
+  // Drop handler
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    // Text/URL from drag
+    const text = e.dataTransfer.getData('text/plain')?.trim() || e.dataTransfer.getData('text/uri-list')?.trim()
+    if (text && !e.dataTransfer.types.includes('application/x-collector-item')) {
+      quickCollect(text)
+    }
+  }, [quickCollect])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    // Ignore internal collector drags
+    if (e.dataTransfer.types.includes('application/x-collector-item')) return
+    e.preventDefault()
+    setIsDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback(() => setIsDragOver(false), [])
 
   // Determine if activeFilter is a type or group
   const isTypeFilter = activeFilter in TYPE_LABELS
@@ -327,7 +413,21 @@ export const CollectorApp: React.FC = () => {
       : activeFilter
 
   return (
-    <div className={`flex-1 flex flex-col p-8 pt-6 gap-5 overflow-hidden ${blurClass}`}>
+    <div
+      className={`flex-1 flex flex-col p-8 pt-6 gap-5 overflow-hidden relative ${blurClass}`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
+      {/* Drag overlay */}
+      {isDragOver && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-app/80 border-2 border-dashed border-accent-main/40 rounded-lg pointer-events-none">
+          <div className="flex flex-col items-center gap-2 text-accent-main">
+            <Plus size={24} />
+            <span className="text-[13px] font-medium">Drop to collect</span>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
