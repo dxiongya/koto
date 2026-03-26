@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Link, Image, Video, Twitter, Monitor, Type, Globe, Play, X, ChevronDown, Layers, Folder } from 'lucide-react'
+import { Plus, Link, Image, Video, Twitter, Monitor, Type, Globe, Play, X, ChevronDown, Layers, Folder, Check, Loader2 } from 'lucide-react'
 import { useUIStore } from '../../store/useUIStore'
 import type { CollectedItem, CollectedItemType } from '../../../../shared/types'
 
@@ -282,6 +282,34 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void }
   )
 }
 
+// ── Collect Toast ──
+
+interface ToastState {
+  message: string
+  status: 'loading' | 'success' | 'error'
+}
+
+const CollectToast: React.FC<{ toast: ToastState; onDone: () => void }> = ({ toast, onDone }) => {
+  useEffect(() => {
+    if (toast.status !== 'loading') {
+      const t = setTimeout(onDone, 2000)
+      return () => clearTimeout(t)
+    }
+  }, [toast.status, onDone])
+
+  return (
+    <div
+      className="fixed bottom-6 right-6 z-[9999] flex items-center gap-2.5 px-4 py-2.5 bg-bg-popover border border-border-strong rounded-lg shadow-xl"
+      style={{ animation: 'toast-in 0.2s ease' }}
+    >
+      {toast.status === 'loading' && <Loader2 size={14} className="text-accent-main animate-spin" />}
+      {toast.status === 'success' && <Check size={14} className="text-status-success" />}
+      {toast.status === 'error' && <X size={14} className="text-status-error" />}
+      <span className="text-[12px] text-tx-main">{toast.message}</span>
+    </div>
+  )
+}
+
 // ── Main App ──
 
 export const CollectorApp: React.FC = () => {
@@ -290,6 +318,7 @@ export const CollectorApp: React.FC = () => {
   const [items, setItems] = useState<CollectedItem[]>([])
   const [groups, setGroups] = useState<string[]>([])
   const [showCollectPanel, setShowCollectPanel] = useState(false)
+  const [toast, setToast] = useState<ToastState | null>(null)
 
   const blurClass = showCommandPalette
     ? 'opacity-50 transition-opacity duration-200'
@@ -306,7 +335,7 @@ export const CollectorApp: React.FC = () => {
 
   const [isDragOver, setIsDragOver] = useState(false)
 
-  useEffect(() => { loadItems() }, [loadItems])
+  useEffect(() => { loadItems() }, [loadItems, activeFilter])
 
   const handleDelete = useCallback(async (id: string) => {
     await window.api.collector.delete(id)
@@ -331,12 +360,22 @@ export const CollectorApp: React.FC = () => {
       else type = 'link'
     } catch { /* plain text */ }
 
+    const typeLabel = TYPE_LABELS[type]
+
+    // Show toast
+    if (url) {
+      setToast({ message: `Collecting ${typeLabel.toLowerCase()} · ${domain}...`, status: 'loading' })
+    } else {
+      setToast({ message: 'Collecting text...', status: 'loading' })
+    }
+
     // Fetch meta for URLs
     let title = type === 'text' ? val.slice(0, 80) : domain
     let description = ''
     const meta: Record<string, unknown> = domain ? { domain } : {}
 
     if (url) {
+      setToast({ message: `Fetching page info · ${domain}...`, status: 'loading' })
       try {
         const metaRes = await window.api.url.fetchMeta(url)
         if (metaRes.ok && metaRes.data) {
@@ -354,9 +393,14 @@ export const CollectorApp: React.FC = () => {
     })
     loadItems()
 
-    // Fire-and-forget markdown
-    if (addRes.ok && url && (type === 'link' || type === 'tweet')) {
-      window.api.collector.fetchMarkdown(addRes.data.id, url).catch(() => {})
+    if (addRes.ok) {
+      setToast({ message: `Collected · ${title.slice(0, 40)}${title.length > 40 ? '...' : ''}`, status: 'success' })
+      // Fire-and-forget markdown
+      if (url && (type === 'link' || type === 'tweet')) {
+        window.api.collector.fetchMarkdown(addRes.data.id, url).catch(() => {})
+      }
+    } else {
+      setToast({ message: 'Failed to collect', status: 'error' })
     }
   }, [activeFilter, loadItems])
 
@@ -474,6 +518,9 @@ export const CollectorApp: React.FC = () => {
         />,
         document.body,
       )}
+
+      {/* Toast */}
+      {toast && <CollectToast toast={toast} onDone={() => setToast(null)} />}
     </div>
   )
 }
