@@ -383,7 +383,7 @@ const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => voi
   )
 }
 
-// ── Feed Item (full-width content card) ──
+// ── Feed Item (immersive reading card) ──
 
 const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; onOpen: (item: CollectedItem) => void }> = ({ item, onDelete, onOpen }) => {
   const Icon = TYPE_ICONS[item.type]
@@ -393,7 +393,6 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
   const [markdown, setMarkdown] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
 
-  // Load markdown content for links
   useEffect(() => {
     if (item.meta?.hasMarkdown) {
       window.api.collector.getMarkdown(item.id).then((res) => {
@@ -408,70 +407,123 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
     || (item.meta?.ocrText as string)
     || ''
 
-  const isLong = contentPreview.length > 400
-  const displayContent = expanded ? contentPreview : contentPreview.slice(0, 400)
+  const isLong = contentPreview.length > 600
+  const displayContent = expanded ? contentPreview : contentPreview.slice(0, 600)
+  const hasImage = !!(localAsset || ogImage)
+  const timeAgo = (() => {
+    const diff = Date.now() - item.createdAt
+    const mins = Math.floor(diff / 60000)
+    if (mins < 60) return `${mins}m`
+    const hrs = Math.floor(mins / 60)
+    if (hrs < 24) return `${hrs}h`
+    const days = Math.floor(hrs / 24)
+    if (days < 30) return `${days}d`
+    return new Date(item.createdAt).toLocaleDateString()
+  })()
 
   return (
-    <div className="group bg-bg-hover rounded-lg border border-border-subtle overflow-hidden hover:border-border-strong transition-colors">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle">
-        <Icon size={14} className="text-tx-faint shrink-0" />
-        <span className="text-[13px] text-tx-main font-medium flex-1 truncate">{item.title}</span>
-        {domain && <span className="text-[11px] text-tx-faint shrink-0">{domain}</span>}
-        <span className="text-[10px] text-tx-faint shrink-0">{new Date(item.createdAt).toLocaleDateString()}</span>
-        {item.url && (
-          <button onClick={() => onOpen(item)} className="p-1 text-tx-faint hover:text-accent-main transition-colors shrink-0" title="Open in browser">
-            <ExternalLink size={12} />
-          </button>
+    <article className="group relative">
+      {/* Subtle left accent line */}
+      <div className="absolute left-0 top-6 bottom-6 w-px bg-border-subtle group-hover:bg-accent-main/30 transition-colors" />
+
+      <div className="pl-5">
+        {/* Meta line — minimal, not competing */}
+        <div className="flex items-center gap-2 mb-2">
+          <Icon size={11} className="text-tx-faint" />
+          <span className="text-[10px] text-tx-faint uppercase tracking-wider">{TYPE_LABELS[item.type]}</span>
+          {domain && (
+            <>
+              <span className="text-[10px] text-tx-faint">·</span>
+              <span className="text-[10px] text-tx-faint">{domain}</span>
+            </>
+          )}
+          <span className="text-[10px] text-tx-faint">·</span>
+          <span className="text-[10px] text-tx-faint">{timeAgo}</span>
+          <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {item.url && (
+              <button onClick={() => onOpen(item)} className="p-1 text-tx-faint hover:text-accent-main transition-colors" title="Open">
+                <ExternalLink size={11} />
+              </button>
+            )}
+            <button onClick={(e) => { e.stopPropagation(); onDelete(item.id) }} className="p-1 text-tx-faint hover:text-tx-main transition-colors" title="Delete">
+              <X size={11} />
+            </button>
+          </div>
+        </div>
+
+        {/* Title — readable, not bold-screaming */}
+        <h3
+          className="text-[15px] text-[#e8e8e8] leading-snug mb-3 cursor-pointer hover:text-accent-main transition-colors"
+          onClick={() => item.url ? onOpen(item) : (localAsset && onOpen(item))}
+        >
+          {item.title}
+        </h3>
+
+        {/* Image — full bleed within card, rounded, constrained */}
+        {hasImage && (
+          <div
+            className="mb-3 rounded-md overflow-hidden max-h-[280px] cursor-pointer"
+            onClick={() => onOpen(item)}
+          >
+            <img
+              src={localAsset || ogImage || ''}
+              alt=""
+              className="w-full object-cover"
+              onError={(e) => { (e.target as HTMLElement).style.display = 'none' }}
+            />
+          </div>
         )}
-        <button onClick={(e) => { e.stopPropagation(); onDelete(item.id) }} className="p-1 text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-          <X size={12} />
-        </button>
+
+        {/* Content body — the core reading experience */}
+        {contentPreview && (
+          <div className="mb-2">
+            {markdown ? (
+              <div className="
+                max-w-none text-[13px] leading-[1.75] text-[#b0b0b0]
+                [&_h1]:text-[17px] [&_h1]:text-[#e0e0e0] [&_h1]:font-medium [&_h1]:mt-5 [&_h1]:mb-2
+                [&_h2]:text-[15px] [&_h2]:text-[#d4d4d4] [&_h2]:font-medium [&_h2]:mt-4 [&_h2]:mb-2
+                [&_h3]:text-[14px] [&_h3]:text-[#c8c8c8] [&_h3]:font-medium [&_h3]:mt-3 [&_h3]:mb-1.5
+                [&_p]:my-2
+                [&_a]:text-accent-main [&_a]:no-underline hover:[&_a]:underline
+                [&_strong]:text-[#d4d4d4] [&_strong]:font-medium
+                [&_em]:text-[#b8b8b8]
+                [&_code]:text-[12px] [&_code]:text-accent-main [&_code]:bg-[#1a1a1a] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded
+                [&_pre]:bg-[#141414] [&_pre]:rounded-md [&_pre]:p-4 [&_pre]:my-3 [&_pre]:text-[12px] [&_pre]:leading-relaxed [&_pre]:overflow-x-auto
+                [&_pre_code]:bg-transparent [&_pre_code]:p-0
+                [&_blockquote]:border-l-2 [&_blockquote]:border-accent-main/30 [&_blockquote]:pl-4 [&_blockquote]:my-3 [&_blockquote]:text-[#999]
+                [&_img]:rounded-md [&_img]:max-h-[240px] [&_img]:my-3
+                [&_table]:text-[12px] [&_table]:w-full [&_table]:my-3
+                [&_th]:text-left [&_th]:text-[#999] [&_th]:font-medium [&_th]:pb-2 [&_th]:border-b [&_th]:border-border-subtle
+                [&_td]:py-1.5 [&_td]:text-[#888] [&_td]:border-b [&_td]:border-border-subtle/50
+                [&_li]:my-0.5
+                [&_ul]:my-2 [&_ul]:pl-4 [&_ul]:list-disc [&_ul]:marker:text-tx-faint
+                [&_ol]:my-2 [&_ol]:pl-4 [&_ol]:list-decimal [&_ol]:marker:text-tx-faint
+                [&_hr]:border-border-subtle [&_hr]:my-4
+                overflow-hidden
+              ">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  {displayContent}
+                </ReactMarkdown>
+              </div>
+            ) : (
+              <p className="text-[13px] text-[#a0a0a0] leading-[1.75] whitespace-pre-wrap">{displayContent}</p>
+            )}
+
+            {isLong && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="text-[12px] text-tx-faint hover:text-accent-main transition-colors mt-1"
+              >
+                {expanded ? '↑ Show less' : '↓ Show more'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Image/thumbnail */}
-      {(localAsset || ogImage) && (
-        <div className="max-h-[240px] overflow-hidden cursor-pointer" onClick={() => {
-          if (localAsset) onOpen(item)
-          else if (item.url) onOpen(item)
-        }}>
-          <img src={localAsset || ogImage || ''} alt="" className="w-full object-cover" onError={(e) => { (e.target as HTMLElement).style.display = 'none' }} />
-        </div>
-      )}
-
-      {/* Content */}
-      {contentPreview && (
-        <div className="px-4 py-3">
-          {markdown ? (
-            <div className="prose prose-invert prose-sm max-w-none text-[12px] leading-relaxed text-tx-muted
-              prose-headings:text-tx-main prose-headings:text-[13px] prose-headings:font-medium prose-headings:mt-3 prose-headings:mb-1
-              prose-p:my-1.5 prose-a:text-accent-main prose-a:no-underline hover:prose-a:underline
-              prose-code:text-accent-main prose-code:text-[11px] prose-code:bg-bg-active prose-code:px-1 prose-code:rounded
-              prose-pre:bg-bg-active prose-pre:rounded-md prose-pre:p-3 prose-pre:text-[11px]
-              prose-img:rounded-md prose-img:max-h-[200px]
-              prose-table:text-[11px] prose-th:text-tx-muted prose-td:text-tx-faint
-              prose-li:my-0.5 prose-ul:my-1 prose-ol:my-1
-              overflow-hidden">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {displayContent}
-              </ReactMarkdown>
-            </div>
-          ) : (
-            <p className="text-[12px] text-tx-muted leading-relaxed whitespace-pre-wrap">{displayContent}</p>
-          )}
-          {isLong && !expanded && (
-            <button onClick={() => setExpanded(true)} className="text-[11px] text-accent-main hover:underline mt-2">
-              Show more
-            </button>
-          )}
-          {expanded && isLong && (
-            <button onClick={() => setExpanded(false)} className="text-[11px] text-accent-main hover:underline mt-2">
-              Show less
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+      {/* Divider — breathing space between items */}
+      <div className="h-px bg-border-subtle/50 mt-5 ml-5" />
+    </article>
   )
 }
 
@@ -840,7 +892,7 @@ export const CollectorApp: React.FC = () => {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-3 pb-4 max-w-[720px]">
+          <div className="flex flex-col gap-6 pb-8 max-w-[640px]">
             {filteredItems.map((item) => (
               <FeedItem key={item.id} item={item} onDelete={handleDelete} onOpen={handleOpen} />
             ))}
