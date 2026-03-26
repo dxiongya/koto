@@ -19,6 +19,7 @@ interface PaletteItem {
   category: string
   action: () => void
   boost?: number
+  keepOpen?: boolean
 }
 
 // ── Fuzzy match with CamelCase support ──
@@ -405,7 +406,8 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
         },
         {
           id: 'cmd:search-collector', label: 'Search Collector', icon: Archive, category: 'Actions',
-          action: () => { setQuery('collector:') },
+          keepOpen: true,
+          action: () => { setQuery('collector:'); setTimeout(() => inputRef.current?.focus(), 0) },
         },
         {
           id: 'cmd:go-back', label: 'Go Back', shortcut: '⌃-', icon: ArrowRight, category: 'Navigation',
@@ -588,7 +590,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
   const executeSelected = useCallback(() => {
     const item = flatItems[selectedIndex]
-    if (item) { onClose(); item.action() }
+    if (item) { if (!item.keepOpen) onClose(); item.action() }
   }, [flatItems, selectedIndex, onClose])
 
   // Keyboard navigation
@@ -682,7 +684,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
                     <div
                       key={item.id}
                       data-index={idx}
-                      onClick={() => { onClose(); item.action() }}
+                      onClick={() => { if (!item.keepOpen) onClose(); item.action() }}
                       onMouseEnter={() => setSelectedIndex(idx)}
                       className={`flex items-center gap-2.5 px-3.5 py-2 mx-1 rounded-lg cursor-pointer transition-colors ${
                         isSelected ? 'bg-accent-bg text-accent-main' : 'text-tx-main hover:bg-bg-hover'
