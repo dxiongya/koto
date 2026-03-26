@@ -221,15 +221,18 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
   const ogImage = item.meta?.ogImage as string | undefined
   const description = item.note || (item.meta?.description as string | undefined) || ''
   const domain = (() => { try { return item.url ? new URL(item.url).hostname.replace('www.', '') : '' } catch { return '' } })()
+  const wasDragged = useRef(false)
 
   return (
     <div
       draggable
       onDragStart={(e) => {
+        wasDragged.current = true
         e.dataTransfer.setData('application/x-collector-item', item.id)
         e.dataTransfer.effectAllowed = 'move'
       }}
-      onClick={() => onOpen(item)}
+      onDragEnd={() => { setTimeout(() => { wasDragged.current = false }, 100) }}
+      onClick={() => { if (!wasDragged.current) onOpen(item) }}
       className="group flex flex-col bg-bg-hover rounded-md border border-border-subtle overflow-hidden hover:border-border-strong transition-colors cursor-pointer"
     >
       {/* Thumbnail area */}
@@ -258,7 +261,7 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
           )}
           {/* Delete on hover */}
           <button
-            onClick={() => onDelete(item.id)}
+            onClick={(e) => { e.stopPropagation(); onDelete(item.id) }}
             className="absolute top-1.5 right-1.5 p-1 rounded bg-black/40 text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity"
           >
             <X size={10} />
@@ -287,7 +290,7 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
         {/* Text type delete */}
         {item.type === 'text' && (
           <button
-            onClick={() => onDelete(item.id)}
+            onClick={(e) => { e.stopPropagation(); onDelete(item.id) }}
             className="absolute top-2 right-2 p-0.5 rounded text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity"
           >
             <X size={10} />
