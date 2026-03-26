@@ -479,22 +479,22 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
           <div className="mb-2">
             {markdown ? (
               <div className="
-                max-w-none text-[13px] leading-[1.75] text-[#b0b0b0]
-                [&_h1]:text-[17px] [&_h1]:text-[#e0e0e0] [&_h1]:font-medium [&_h1]:mt-5 [&_h1]:mb-2
-                [&_h2]:text-[15px] [&_h2]:text-[#d4d4d4] [&_h2]:font-medium [&_h2]:mt-4 [&_h2]:mb-2
-                [&_h3]:text-[14px] [&_h3]:text-[#c8c8c8] [&_h3]:font-medium [&_h3]:mt-3 [&_h3]:mb-1.5
+                max-w-none text-[13px] leading-[1.75] text-[#ccc]
+                [&_h1]:text-[17px] [&_h1]:text-[#eee] [&_h1]:font-medium [&_h1]:mt-5 [&_h1]:mb-2
+                [&_h2]:text-[15px] [&_h2]:text-[#e4e4e4] [&_h2]:font-medium [&_h2]:mt-4 [&_h2]:mb-2
+                [&_h3]:text-[14px] [&_h3]:text-[#ddd] [&_h3]:font-medium [&_h3]:mt-3 [&_h3]:mb-1.5
                 [&_p]:my-2
                 [&_a]:text-accent-main [&_a]:no-underline hover:[&_a]:underline
-                [&_strong]:text-[#d4d4d4] [&_strong]:font-medium
-                [&_em]:text-[#b8b8b8]
+                [&_strong]:text-[#e4e4e4] [&_strong]:font-medium
+                [&_em]:text-[#ccc]
                 [&_code]:text-[12px] [&_code]:text-accent-main [&_code]:bg-[#1a1a1a] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded
                 [&_pre]:bg-[#141414] [&_pre]:rounded-md [&_pre]:p-4 [&_pre]:my-3 [&_pre]:text-[12px] [&_pre]:leading-relaxed [&_pre]:overflow-x-auto
                 [&_pre_code]:bg-transparent [&_pre_code]:p-0
-                [&_blockquote]:border-l-2 [&_blockquote]:border-accent-main/30 [&_blockquote]:pl-4 [&_blockquote]:my-3 [&_blockquote]:text-[#999]
+                [&_blockquote]:border-l-2 [&_blockquote]:border-accent-main/30 [&_blockquote]:pl-4 [&_blockquote]:my-3 [&_blockquote]:text-[#aaa]
                 [&_img]:rounded-md [&_img]:max-h-[240px] [&_img]:my-3
                 [&_table]:text-[12px] [&_table]:w-full [&_table]:my-3
-                [&_th]:text-left [&_th]:text-[#999] [&_th]:font-medium [&_th]:pb-2 [&_th]:border-b [&_th]:border-border-subtle
-                [&_td]:py-1.5 [&_td]:text-[#888] [&_td]:border-b [&_td]:border-border-subtle/50
+                [&_th]:text-left [&_th]:text-[#bbb] [&_th]:font-medium [&_th]:pb-2 [&_th]:border-b [&_th]:border-border-subtle
+                [&_td]:py-1.5 [&_td]:text-[#aaa] [&_td]:border-b [&_td]:border-border-subtle/50
                 [&_li]:my-0.5
                 [&_ul]:my-2 [&_ul]:pl-4 [&_ul]:list-disc [&_ul]:marker:text-tx-faint
                 [&_ol]:my-2 [&_ol]:pl-4 [&_ol]:list-decimal [&_ol]:marker:text-tx-faint
@@ -506,7 +506,7 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
                 </ReactMarkdown>
               </div>
             ) : (
-              <p className="text-[13px] text-[#a0a0a0] leading-[1.75] whitespace-pre-wrap">{displayContent}</p>
+              <p className="text-[13px] text-[#ccc] leading-[1.75] whitespace-pre-wrap">{displayContent}</p>
             )}
 
             {isLong && (
@@ -892,7 +892,7 @@ export const CollectorApp: React.FC = () => {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-6 pb-8 max-w-[640px]">
+          <div className="flex flex-col gap-6 pb-8 max-w-[640px] mx-auto w-full">
             {filteredItems.map((item) => (
               <FeedItem key={item.id} item={item} onDelete={handleDelete} onOpen={handleOpen} />
             ))}
