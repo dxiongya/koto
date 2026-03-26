@@ -182,6 +182,9 @@ const api = {
     deleteGroup: (name: string) =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_DELETE_GROUP, name),
   },
+  shell: {
+    openExternal: (url: string) => ipcRenderer.invoke(IpcChannels.SHELL_OPEN_EXTERNAL, url),
+  },
   shortcut: {
     onShortcut: (callback: (shortcut: string) => void) => {
       const handler = (_: unknown, shortcut: string): void => callback(shortcut)

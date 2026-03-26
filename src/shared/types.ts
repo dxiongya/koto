@@ -122,6 +122,9 @@ export const IpcChannels = {
   COLLECTOR_RENAME_GROUP: 'collector:renameGroup',
   COLLECTOR_DELETE_GROUP: 'collector:deleteGroup',
 
+  // Shell
+  SHELL_OPEN_EXTERNAL: 'shell:openExternal',
+
   // Shortcuts forwarded from main process
   SHORTCUT: 'shortcut',
 } as const

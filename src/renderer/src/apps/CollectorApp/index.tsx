@@ -214,7 +214,7 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
 
 // ── Item Card ──
 
-const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void }> = ({ item, onDelete }) => {
+const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; onOpen: (item: CollectedItem) => void }> = ({ item, onDelete, onOpen }) => {
   const Icon = TYPE_ICONS[item.type]
   // Resolve thumbnail: local asset or og:image
   const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
@@ -229,7 +229,8 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void }
         e.dataTransfer.setData('application/x-collector-item', item.id)
         e.dataTransfer.effectAllowed = 'move'
       }}
-      className="group flex flex-col bg-bg-hover rounded-md border border-border-subtle overflow-hidden hover:border-border-strong transition-colors cursor-grab active:cursor-grabbing"
+      onClick={() => onOpen(item)}
+      className="group flex flex-col bg-bg-hover rounded-md border border-border-subtle overflow-hidden hover:border-border-strong transition-colors cursor-pointer"
     >
       {/* Thumbnail area */}
       {item.type !== 'text' && (
@@ -327,7 +328,7 @@ const CollectToast: React.FC<{ toast: ToastState; onDone: () => void }> = ({ toa
 
 // ── Item List Row (list view) ──
 
-const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => void }> = ({ item, onDelete }) => {
+const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; onOpen: (item: CollectedItem) => void }> = ({ item, onDelete, onOpen }) => {
   const Icon = TYPE_ICONS[item.type]
   const domain = (() => { try { return item.url ? new URL(item.url).hostname.replace('www.', '') : '' } catch { return '' } })()
   const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
@@ -340,7 +341,8 @@ const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => voi
         e.dataTransfer.setData('application/x-collector-item', item.id)
         e.dataTransfer.effectAllowed = 'move'
       }}
-      className="group flex items-center gap-3 px-3 py-2 rounded-md hover:bg-bg-hover transition-colors cursor-grab active:cursor-grabbing"
+      onClick={() => onOpen(item)}
+      className="group flex items-center gap-3 px-3 py-2 rounded-md hover:bg-bg-hover transition-colors cursor-pointer"
     >
       {/* Thumbnail */}
       <div className="w-10 h-10 rounded bg-[#161616] flex items-center justify-center shrink-0 overflow-hidden">
@@ -390,6 +392,7 @@ export const CollectorApp: React.FC = () => {
   const [hasEmbeddingKey, setHasEmbeddingKey] = useState(true)
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [typeFilter, setTypeFilter] = useState<CollectedItemType | 'all'>('all')
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
 
   const blurClass = showCommandPalette
     ? 'opacity-50 transition-opacity duration-200'
@@ -419,6 +422,21 @@ export const CollectorApp: React.FC = () => {
     await window.api.collector.delete(id)
     bumpVersion()
   }, [bumpVersion])
+
+  const handleOpen = useCallback((item: CollectedItem) => {
+    // Link/tweet/video → open in system browser
+    if (item.url && (item.type === 'link' || item.type === 'tweet' || item.type === 'video')) {
+      window.api.shell.openExternal(item.url)
+      return
+    }
+    // Image/screenshot → preview overlay
+    if (item.assetPath && (item.type === 'image' || item.type === 'screenshot')) {
+      setPreviewImage(`lite-asset://collected/${item.assetPath}`)
+      return
+    }
+    // Fallback: if there's a URL, open it
+    if (item.url) window.api.shell.openExternal(item.url)
+  }, [])
 
   // Quick collect: auto-detect type and collect immediately
   const quickCollect = useCallback(async (input: string) => {
@@ -708,13 +726,13 @@ export const CollectorApp: React.FC = () => {
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-4 gap-2.5 pb-4">
             {filteredItems.map((item) => (
-              <ItemCard key={item.id} item={item} onDelete={handleDelete} />
+              <ItemCard key={item.id} item={item} onDelete={handleDelete} onOpen={handleOpen} />
             ))}
           </div>
         ) : (
           <div className="flex flex-col gap-px pb-4">
             {filteredItems.map((item) => (
-              <ItemListRow key={item.id} item={item} onDelete={handleDelete} />
+              <ItemListRow key={item.id} item={item} onDelete={handleDelete} onOpen={handleOpen} />
             ))}
           </div>
         )}
@@ -732,6 +750,28 @@ export const CollectorApp: React.FC = () => {
 
       {/* Toast */}
       {toast && <CollectToast toast={toast} onDone={() => setToast(null)} />}
+
+      {/* Image Preview */}
+      {previewImage && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center cursor-pointer"
+          onClick={() => setPreviewImage(null)}
+        >
+          <button
+            onClick={() => setPreviewImage(null)}
+            className="absolute top-4 right-4 p-2 text-white/60 hover:text-white transition-colors"
+          >
+            <X size={20} />
+          </button>
+          <img
+            src={previewImage}
+            alt=""
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }

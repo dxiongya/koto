@@ -1,4 +1,4 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, BrowserWindow, shell } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { IpcChannels } from '../../shared/types'
@@ -603,5 +603,12 @@ export function setupIpcHandlers(): void {
     } catch (e) {
       return { ok: false, error: String(e) }
     }
+  })
+
+  // ── Shell ──
+
+  ipcMain.handle(IpcChannels.SHELL_OPEN_EXTERNAL, (_, url: string) => {
+    shell.openExternal(url)
+    return { ok: true, data: undefined }
   })
 }
