@@ -115,6 +115,7 @@ export const IpcChannels = {
   EMBEDDING_TEST: 'embedding:test',
   COLLECTOR_SEARCH: 'collector:search',
   COLLECTOR_FETCH_MARKDOWN: 'collector:fetchMarkdown',
+  COLLECTOR_GET_MARKDOWN: 'collector:getMarkdown',
   COLLECTOR_EMBED_ITEM: 'collector:embedItem',
   COLLECTOR_EMBED_ALL: 'collector:embedAll',
   COLLECTOR_GROUPS: 'collector:groups',

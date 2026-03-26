@@ -19,7 +19,7 @@ import { listAutomations, createAutomation, updateAutomation, deleteAutomation }
 import { readSnapshots, restoreSnapshot } from './automation-snapshots'
 import { loadExperience } from './automation-runner'
 import { automationScheduler } from './automation-scheduler'
-import { listCollectedItems, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, ftsSearch } from './collector-store'
+import { listCollectedItems, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, ftsSearch, readItemMarkdown } from './collector-store'
 import { hybridSearch, embedAllPending, embedAndSave } from './collector-embedding'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
 
@@ -540,6 +540,11 @@ export function setupIpcHandlers(): void {
     } catch (e) {
       return { ok: false, error: String(e) }
     }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_GET_MARKDOWN, (_, itemId: string) => {
+    const md = readItemMarkdown(itemId)
+    return { ok: true, data: md }
   })
 
   ipcMain.handle(IpcChannels.COLLECTOR_EMBED_ITEM, async (_, itemId: string) => {

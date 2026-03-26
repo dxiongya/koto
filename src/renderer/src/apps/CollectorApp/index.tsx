@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Link, Image, Video, Twitter, Monitor, Type, Globe, Play, X, ChevronDown, Layers, Folder, Check, Loader2, Sparkles, LayoutGrid, List } from 'lucide-react'
+import { Plus, Link, Image, Video, Twitter, Monitor, Type, Globe, Play, X, ChevronDown, Layers, Folder, Check, Loader2, Sparkles, LayoutGrid, List, BookOpen, ExternalLink } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useUIStore } from '../../store/useUIStore'
 import type { CollectedItem, CollectedItemType } from '../../../../shared/types'
 
@@ -381,6 +383,98 @@ const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => voi
   )
 }
 
+// ── Feed Item (full-width content card) ──
+
+const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; onOpen: (item: CollectedItem) => void }> = ({ item, onDelete, onOpen }) => {
+  const Icon = TYPE_ICONS[item.type]
+  const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
+  const ogImage = item.meta?.ogImage as string | undefined
+  const domain = (() => { try { return item.url ? new URL(item.url).hostname.replace('www.', '') : '' } catch { return '' } })()
+  const [markdown, setMarkdown] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  // Load markdown content for links
+  useEffect(() => {
+    if (item.meta?.hasMarkdown) {
+      window.api.collector.getMarkdown(item.id).then((res) => {
+        if (res.ok && res.data) setMarkdown(res.data)
+      })
+    }
+  }, [item.id, item.meta?.hasMarkdown])
+
+  const contentPreview = markdown
+    || item.note
+    || (item.meta?.description as string)
+    || (item.meta?.ocrText as string)
+    || ''
+
+  const isLong = contentPreview.length > 400
+  const displayContent = expanded ? contentPreview : contentPreview.slice(0, 400)
+
+  return (
+    <div className="group bg-bg-hover rounded-lg border border-border-subtle overflow-hidden hover:border-border-strong transition-colors">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-border-subtle">
+        <Icon size={14} className="text-tx-faint shrink-0" />
+        <span className="text-[13px] text-tx-main font-medium flex-1 truncate">{item.title}</span>
+        {domain && <span className="text-[11px] text-tx-faint shrink-0">{domain}</span>}
+        <span className="text-[10px] text-tx-faint shrink-0">{new Date(item.createdAt).toLocaleDateString()}</span>
+        {item.url && (
+          <button onClick={() => onOpen(item)} className="p-1 text-tx-faint hover:text-accent-main transition-colors shrink-0" title="Open in browser">
+            <ExternalLink size={12} />
+          </button>
+        )}
+        <button onClick={(e) => { e.stopPropagation(); onDelete(item.id) }} className="p-1 text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <X size={12} />
+        </button>
+      </div>
+
+      {/* Image/thumbnail */}
+      {(localAsset || ogImage) && (
+        <div className="max-h-[240px] overflow-hidden cursor-pointer" onClick={() => {
+          if (localAsset) onOpen(item)
+          else if (item.url) onOpen(item)
+        }}>
+          <img src={localAsset || ogImage || ''} alt="" className="w-full object-cover" onError={(e) => { (e.target as HTMLElement).style.display = 'none' }} />
+        </div>
+      )}
+
+      {/* Content */}
+      {contentPreview && (
+        <div className="px-4 py-3">
+          {markdown ? (
+            <div className="prose prose-invert prose-sm max-w-none text-[12px] leading-relaxed text-tx-muted
+              prose-headings:text-tx-main prose-headings:text-[13px] prose-headings:font-medium prose-headings:mt-3 prose-headings:mb-1
+              prose-p:my-1.5 prose-a:text-accent-main prose-a:no-underline hover:prose-a:underline
+              prose-code:text-accent-main prose-code:text-[11px] prose-code:bg-bg-active prose-code:px-1 prose-code:rounded
+              prose-pre:bg-bg-active prose-pre:rounded-md prose-pre:p-3 prose-pre:text-[11px]
+              prose-img:rounded-md prose-img:max-h-[200px]
+              prose-table:text-[11px] prose-th:text-tx-muted prose-td:text-tx-faint
+              prose-li:my-0.5 prose-ul:my-1 prose-ol:my-1
+              overflow-hidden">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {displayContent}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <p className="text-[12px] text-tx-muted leading-relaxed whitespace-pre-wrap">{displayContent}</p>
+          )}
+          {isLong && !expanded && (
+            <button onClick={() => setExpanded(true)} className="text-[11px] text-accent-main hover:underline mt-2">
+              Show more
+            </button>
+          )}
+          {expanded && isLong && (
+            <button onClick={() => setExpanded(false)} className="text-[11px] text-accent-main hover:underline mt-2">
+              Show less
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main App ──
 
 export const CollectorApp: React.FC = () => {
@@ -393,7 +487,7 @@ export const CollectorApp: React.FC = () => {
   const [showCollectPanel, setShowCollectPanel] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
   const [hasEmbeddingKey, setHasEmbeddingKey] = useState(true)
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'feed'>('grid')
   const [typeFilter, setTypeFilter] = useState<CollectedItemType | 'all'>('all')
   const [previewImage, setPreviewImage] = useState<string | null>(null)
 
@@ -673,6 +767,13 @@ export const CollectorApp: React.FC = () => {
             >
               <List size={13} />
             </button>
+            <button
+              onClick={() => setViewMode('feed')}
+              className={`p-1.5 transition-colors ${viewMode === 'feed' ? 'bg-bg-active text-tx-main' : 'text-tx-faint hover:text-tx-muted'}`}
+              title="Feed view"
+            >
+              <BookOpen size={13} />
+            </button>
           </div>
           <button
             onClick={() => setShowCollectPanel(true)}
@@ -732,10 +833,16 @@ export const CollectorApp: React.FC = () => {
               <ItemCard key={item.id} item={item} onDelete={handleDelete} onOpen={handleOpen} />
             ))}
           </div>
-        ) : (
+        ) : viewMode === 'list' ? (
           <div className="flex flex-col gap-px pb-4">
             {filteredItems.map((item) => (
               <ItemListRow key={item.id} item={item} onDelete={handleDelete} onOpen={handleOpen} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3 pb-4 max-w-[720px]">
+            {filteredItems.map((item) => (
+              <FeedItem key={item.id} item={item} onDelete={handleDelete} onOpen={handleOpen} />
             ))}
           </div>
         )}
