@@ -1,10 +1,16 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Plus, Link, Image, Video, Twitter, Monitor, Type, Globe, Play, X, ChevronDown, Layers, Folder, Check, Loader2, Sparkles, LayoutGrid, List, BookOpen, ExternalLink, Search } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useUIStore } from '../../store/useUIStore'
 import type { CollectedItem, CollectedItemType } from '../../../../shared/types'
+
+/** Extract domain from URL, returns empty string on failure */
+function getDomain(url?: string): string {
+  if (!url) return ''
+  try { return new URL(url).hostname.replace('www.', '') } catch { return '' }
+}
 
 const TYPE_ICONS: Record<CollectedItemType, React.FC<{ size?: number; className?: string }>> = {
   link: Link,
@@ -133,7 +139,7 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
   }, [onClose, detected, handleSubmit])
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh] bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh] bg-bg-app/60" onClick={onClose}>
       <div
         className="w-[400px] bg-bg-popover border border-border-strong rounded-xl shadow-2xl p-4 flex flex-col gap-3.5"
         onClick={(e) => e.stopPropagation()}
@@ -142,7 +148,7 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
         {/* Header */}
         <div className="flex items-center justify-between">
           <span className="text-[14px] text-tx-main font-medium">Collect</span>
-          <button onClick={onClose} className="text-tx-faint hover:text-tx-muted transition-colors p-0.5">
+          <button onClick={onClose} aria-label="Close" className="text-tx-faint hover:text-tx-muted transition-colors p-0.5">
             <X size={14} />
           </button>
         </div>
@@ -155,7 +161,7 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="Paste or type a URL, text, or drop an image here..."
             rows={3}
-            className="w-full bg-transparent text-[12px] text-tx-main placeholder-tx-faint outline-none resize-none"
+            className="w-full bg-transparent text-[12px] text-tx-main placeholder-tx-faint outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 resize-none"
           />
           {detected && (
             <div className="flex items-center gap-1.5 mt-1.5">
@@ -169,7 +175,7 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
         {detected?.url && detected.domain && (
           <div className="flex items-center gap-2.5 p-2.5 bg-bg-active rounded-md">
             <div className="w-10 h-10 rounded bg-bg-sidebar flex items-center justify-center shrink-0">
-              <Globe size={16} className="text-[#2a4a6b]" />
+              <Globe size={16} className="text-tx-faint" />
             </div>
             <div className="flex flex-col gap-0.5 min-w-0">
               <span className="text-[12px] text-tx-main font-medium truncate">{detected.title}</span>
@@ -191,6 +197,8 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
           <span className="text-[11px] text-tx-faint">Add to:</span>
           <button
             onClick={() => setShowGroupMenu(!showGroupMenu)}
+            aria-expanded={showGroupMenu}
+            aria-haspopup="true"
             className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-border-strong text-[11px] text-tx-muted"
           >
             {selectedGroup === 'all' ? <Layers size={11} /> : <Folder size={11} />}
@@ -221,7 +229,7 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
           <button
             onClick={handleSubmit}
             disabled={!detected || submitting}
-            className="px-3.5 py-1.5 text-[12px] text-[#111] font-medium rounded-md bg-accent-main hover:opacity-90 transition-opacity flex items-center gap-1.5 disabled:opacity-40"
+            className="px-3.5 py-1.5 text-[12px] text-bg-app font-medium rounded-md bg-accent-main hover:opacity-90 transition-opacity flex items-center gap-1.5 disabled:opacity-40"
           >
             <Plus size={12} />
             {submitting ? 'Saving...' : 'Collect'}
@@ -240,7 +248,7 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
   const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
   const ogImage = item.meta?.ogImage as string | undefined
   const description = item.note || (item.meta?.description as string | undefined) || ''
-  const domain = (() => { try { return item.url ? new URL(item.url).hostname.replace('www.', '') : '' } catch { return '' } })()
+  const domain = getDomain(item.url)
   const wasDragged = useRef(false)
 
   return (
@@ -268,11 +276,11 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
             <img src={ogImage} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
           ) : (
             <>
-              {item.type === 'link' && <Globe size={22} className="text-[#2a4a6b]" />}
-              {item.type === 'tweet' && <Twitter size={22} className="text-[#1d9bf0]" />}
+              {item.type === 'link' && <Globe size={22} className="text-tx-faint" />}
+              {item.type === 'tweet' && <Twitter size={22} className="text-accent-main" />}
               {item.type === 'video' && (
-                <div className="w-[30px] h-[30px] rounded-full bg-white/10 flex items-center justify-center">
-                  <Play size={13} className="text-white/80" />
+                <div className="w-[30px] h-[30px] rounded-full bg-tx-main/10 flex items-center justify-center">
+                  <Play size={13} className="text-tx-main/80" />
                 </div>
               )}
               {item.type === 'screenshot' && <Monitor size={22} className="text-tx-faint" />}
@@ -282,7 +290,8 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
           {/* Delete on hover */}
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(item.id) }}
-            className="absolute top-1.5 right-1.5 p-1 rounded bg-black/40 text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity"
+            aria-label="Delete"
+            className="absolute top-1.5 right-1.5 p-1 rounded bg-bg-app/60 text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity"
           >
             <X size={10} />
           </button>
@@ -322,6 +331,7 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
         {item.type === 'text' && (
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(item.id) }}
+            aria-label="Delete"
             className="absolute top-2 right-2 p-0.5 rounded text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity"
           >
             <X size={10} />
@@ -364,7 +374,7 @@ const CollectToast: React.FC<{ toast: ToastState; onDone: () => void }> = ({ toa
 
 const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; onOpen: (item: CollectedItem) => void }> = ({ item, onDelete, onOpen }) => {
   const Icon = TYPE_ICONS[item.type]
-  const domain = (() => { try { return item.url ? new URL(item.url).hostname.replace('www.', '') : '' } catch { return '' } })()
+  const domain = getDomain(item.url)
   const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
   const ogImage = item.meta?.ogImage as string | undefined
 
@@ -405,6 +415,7 @@ const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => voi
       {/* Delete */}
       <button
         onClick={() => onDelete(item.id)}
+        aria-label="Delete"
         className="p-1 text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
       >
         <X size={11} />
@@ -419,7 +430,7 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
   const Icon = TYPE_ICONS[item.type]
   const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
   const ogImage = item.meta?.ogImage as string | undefined
-  const domain = (() => { try { return item.url ? new URL(item.url).hostname.replace('www.', '') : '' } catch { return '' } })()
+  const domain = getDomain(item.url)
   const [markdown, setMarkdown] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [visible, setVisible] = useState(false)
@@ -484,11 +495,11 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
           <span className="text-[10px] text-tx-faint">{timeAgo}</span>
           <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {item.url && (
-              <button onClick={() => onOpen(item)} className="p-1 text-tx-faint hover:text-accent-main transition-colors" title="Open">
+              <button onClick={() => onOpen(item)} aria-label="Open in browser" className="p-1 text-tx-faint hover:text-accent-main transition-colors" title="Open">
                 <ExternalLink size={11} />
               </button>
             )}
-            <button onClick={(e) => { e.stopPropagation(); onDelete(item.id) }} className="p-1 text-tx-faint hover:text-tx-main transition-colors" title="Delete">
+            <button onClick={(e) => { e.stopPropagation(); onDelete(item.id) }} aria-label="Delete" className="p-1 text-tx-faint hover:text-tx-main transition-colors" title="Delete">
               <X size={11} />
             </button>
           </div>
@@ -902,10 +913,13 @@ export const CollectorApp: React.FC = () => {
   const filterLabel = activeFilter === 'all' ? 'All Items' : activeFilter
 
   // Count by type for filter chips
-  const typeCounts: Partial<Record<CollectedItemType, number>> = {}
-  for (const item of groupFiltered) {
-    typeCounts[item.type] = (typeCounts[item.type] || 0) + 1
-  }
+  const typeCounts = useMemo(() => {
+    const counts: Partial<Record<CollectedItemType, number>> = {}
+    for (const item of groupFiltered) {
+      counts[item.type] = (counts[item.type] || 0) + 1
+    }
+    return counts
+  }, [groupFiltered])
 
   return (
     <div
@@ -948,10 +962,10 @@ export const CollectorApp: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search..."
-              className="flex-1 bg-transparent text-[12px] text-tx-main outline-none placeholder-tx-faint"
+              className="flex-1 bg-transparent text-[12px] text-tx-main outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 placeholder-tx-faint"
             />
             {searchQuery && (
-              <button onClick={() => { setSearchQuery(''); setSearchResults(null) }} className="text-tx-faint hover:text-tx-main">
+              <button onClick={() => { setSearchQuery(''); setSearchResults(null) }} aria-label="Close" className="text-tx-faint hover:text-tx-main">
                 <X size={11} />
               </button>
             )}
@@ -962,6 +976,7 @@ export const CollectorApp: React.FC = () => {
           <div className="flex items-center border border-border-strong rounded-md overflow-hidden">
             <button
               onClick={() => setViewMode('grid')}
+              aria-label="Grid view"
               className={`p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-bg-active text-tx-main' : 'text-tx-faint hover:text-tx-muted'}`}
               title="Grid view"
             >
@@ -969,6 +984,7 @@ export const CollectorApp: React.FC = () => {
             </button>
             <button
               onClick={() => setViewMode('list')}
+              aria-label="List view"
               className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-bg-active text-tx-main' : 'text-tx-faint hover:text-tx-muted'}`}
               title="List view"
             >
@@ -976,6 +992,7 @@ export const CollectorApp: React.FC = () => {
             </button>
             <button
               onClick={() => setViewMode('feed')}
+              aria-label="Feed view"
               className={`p-1.5 transition-colors ${viewMode === 'feed' ? 'bg-bg-active text-tx-main' : 'text-tx-faint hover:text-tx-muted'}`}
               title="Feed view"
             >
@@ -998,7 +1015,7 @@ export const CollectorApp: React.FC = () => {
           <button
             onClick={() => setTypeFilter('all')}
             className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${
-              typeFilter === 'all' ? 'bg-accent-main text-[#111] font-medium' : 'text-tx-muted border border-border-strong hover:bg-bg-hover'
+              typeFilter === 'all' ? 'bg-accent-main text-bg-app font-medium' : 'text-tx-muted border border-border-strong hover:bg-bg-hover'
             }`}
           >
             All {groupFiltered.length}
@@ -1010,7 +1027,7 @@ export const CollectorApp: React.FC = () => {
                 key={t}
                 onClick={() => setTypeFilter(typeFilter === t ? 'all' : t)}
                 className={`px-2.5 py-1 text-[11px] rounded-md flex items-center gap-1.5 transition-colors ${
-                  typeFilter === t ? 'bg-accent-main text-[#111] font-medium' : 'text-tx-muted border border-border-strong hover:bg-bg-hover'
+                  typeFilter === t ? 'bg-accent-main text-bg-app font-medium' : 'text-tx-muted border border-border-strong hover:bg-bg-hover'
                 }`}
               >
                 <Icon size={11} />
@@ -1080,12 +1097,13 @@ export const CollectorApp: React.FC = () => {
       {/* Image Preview */}
       {previewImage && createPortal(
         <div
-          className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center cursor-pointer"
+          className="fixed inset-0 z-[9999] bg-bg-app/90 flex items-center justify-center cursor-pointer"
           onClick={() => setPreviewImage(null)}
         >
           <button
             onClick={() => setPreviewImage(null)}
-            className="absolute top-4 right-4 p-2 text-white/60 hover:text-white transition-colors"
+            aria-label="Close"
+            className="absolute top-4 right-4 p-2 text-tx-main/60 hover:text-tx-main transition-colors"
           >
             <X size={20} />
           </button>
