@@ -517,22 +517,28 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.COLLECTOR_SEARCH, async (_, query: string) => {
     try {
+      // 1. FTS5 keyword search first (fast, precise)
+      const ftsResults = ftsSearch(query)
+      const ftsData = ftsResults.map((r) => ({ item: r.item, score: r.rank, source: 'keyword' as const }))
+
+      // 2. If FTS found enough, return directly
+      if (ftsData.length >= 5) return { ok: true, data: ftsData }
+
+      // 3. Supplement with hybrid (keyword + semantic)
       const items = listCollectedItems()
-      const results = await hybridSearch(query, items)
-      // Resolve items from results
+      const hybridResults = await hybridSearch(query, items)
       const itemMap = new Map(items.map((i) => [i.id, i]))
-      const data = results
-        .map((r) => ({ item: itemMap.get(r.itemId), score: r.score, source: r.source }))
+      const ftsIds = new Set(ftsData.map((r) => r.item.id))
+
+      // Merge: FTS results first, then hybrid additions
+      const hybridAdditions = hybridResults
+        .filter((r) => !ftsIds.has(r.itemId))
+        .map((r) => ({ item: itemMap.get(r.itemId)!, score: r.score, source: r.source }))
         .filter((r) => r.item)
-      return { ok: true, data }
+
+      return { ok: true, data: [...ftsData, ...hybridAdditions] }
     } catch (e) {
-      // Fallback to FTS only
-      try {
-        const ftsResults = ftsSearch(query)
-        return { ok: true, data: ftsResults.map((r) => ({ item: r.item, score: Math.abs(r.rank), source: 'keyword' })) }
-      } catch {
-        return { ok: false, error: String(e) }
-      }
+      return { ok: false, error: String(e) }
     }
   })
 

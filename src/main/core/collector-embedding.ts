@@ -238,7 +238,7 @@ export async function semanticSearch(query: string, topK = 20): Promise<SearchRe
   }))
 
   // Filter by minimum similarity threshold, then sort
-  const MIN_SIMILARITY = 0.6
+  const MIN_SIMILARITY = 0.7
   const filtered = scored.filter((s) => s.score >= MIN_SIMILARITY)
   filtered.sort((a, b) => b.score - a.score)
   console.log(`[Search] ${filtered.length}/${scored.length} pass threshold ${MIN_SIMILARITY}. All scores: ${scored.map(s => (s.score * 100).toFixed(1) + '%').join(', ')}`)
@@ -259,13 +259,15 @@ export function keywordSearch(query: string, items: CollectedItem[], topK = 20):
       item.url || '',
       String(item.meta?.description || ''),
       String(item.meta?.domain || ''),
+      String(item.meta?.ocrText || ''),
+      String(item.meta?.imageDescription || ''),
     ].join(' ').toLowerCase()
 
     let matchCount = 0
     for (const term of terms) {
       if (text.includes(term)) matchCount++
     }
-    if (matchCount > 0 && matchCount / terms.length >= 0.5) {
+    if (matchCount > 0) {
       scored.push({
         itemId: item.id,
         score: matchCount / terms.length,
@@ -278,35 +280,32 @@ export function keywordSearch(query: string, items: CollectedItem[], topK = 20):
   return scored.slice(0, topK)
 }
 
-/** Hybrid search: combine semantic + keyword with Reciprocal Rank Fusion */
+/**
+ * Hybrid search: FTS5 keyword first, semantic as supplement.
+ * - Keyword search (FTS5 + in-memory) is always run — fast, precise
+ * - Semantic search only runs when keyword results < 5, and only adds
+ *   genuinely similar items (cosine ≥ 0.7) that keyword didn't find
+ */
 export async function hybridSearch(query: string, items: CollectedItem[], topK = 20): Promise<SearchResult[]> {
-  const k = 60 // RRF constant
+  // 1. Always: keyword search (fast, precise)
+  const keywordResults = keywordSearch(query, items, topK)
+  console.log(`[Search] Keyword: ${keywordResults.length} results for "${query}"`)
 
-  // Run both searches in parallel
-  const [semanticResults, keywordResults] = await Promise.all([
-    semanticSearch(query, topK * 2),
-    Promise.resolve(keywordSearch(query, items, topK * 2)),
-  ])
+  // 2. If keyword found enough, return them directly
+  if (keywordResults.length >= 5) return keywordResults
 
-  // RRF scoring
-  const rrfScores = new Map<string, number>()
+  // 3. Supplement with semantic search (only if API key configured)
+  const keywordIds = new Set(keywordResults.map((r) => r.itemId))
+  try {
+    const semanticResults = await semanticSearch(query, topK)
+    // Only add semantic results that keyword didn't already find
+    const newSemantic = semanticResults.filter((r) => !keywordIds.has(r.itemId))
+    console.log(`[Search] Semantic: ${semanticResults.length} total, ${newSemantic.length} new (not in keyword results)`)
 
-  for (let i = 0; i < semanticResults.length; i++) {
-    const id = semanticResults[i].itemId
-    rrfScores.set(id, (rrfScores.get(id) || 0) + 1 / (k + i + 1))
+    // Combine: keyword results first (more precise), then semantic supplements
+    return [...keywordResults, ...newSemantic].slice(0, topK)
+  } catch {
+    return keywordResults
   }
-
-  for (let i = 0; i < keywordResults.length; i++) {
-    const id = keywordResults[i].itemId
-    rrfScores.set(id, (rrfScores.get(id) || 0) + 1 / (k + i + 1))
-  }
-
-  // Sort by RRF score
-  const results: SearchResult[] = Array.from(rrfScores.entries())
-    .map(([itemId, score]) => ({ itemId, score, source: 'semantic' as const }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK)
-
-  return results
 }
 
