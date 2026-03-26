@@ -291,7 +291,7 @@ const EmbeddingSection: React.FC = () => {
       <div className="space-y-3">
         <p className="text-[12px] text-tx-faint leading-relaxed">
           Semantic search uses <span className="text-tx-muted">Google Gemini Embedding 2</span> to understand the meaning of your collected items.
-          Get an API key from <button onClick={() => window.open('https://aistudio.google.com/apikey')} className="text-accent-main hover:underline">Google AI Studio</button>.
+          Get an API key from <a href="#" onClick={(e) => { e.preventDefault(); window.open('https://aistudio.google.com/apikey') }} className="text-accent-main hover:underline">Google AI Studio</a>.
         </p>
         <div className="flex items-center gap-2">
           <div className="flex-1 relative">
