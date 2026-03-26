@@ -237,10 +237,12 @@ export async function semanticSearch(query: string, topK = 20): Promise<SearchRe
     source: 'semantic' as const,
   }))
 
-  // Sort by score descending, return top-K
-  scored.sort((a, b) => b.score - a.score)
-  console.log('[Search] Top results:', scored.slice(0, 5).map(s => `${s.itemId}=${(s.score * 100).toFixed(1)}%`).join(', '))
-  return scored.slice(0, topK)
+  // Filter by minimum similarity threshold, then sort
+  const MIN_SIMILARITY = 0.4
+  const filtered = scored.filter((s) => s.score >= MIN_SIMILARITY)
+  filtered.sort((a, b) => b.score - a.score)
+  console.log(`[Search] ${filtered.length}/${scored.length} results above ${MIN_SIMILARITY} threshold`)
+  return filtered.slice(0, topK)
 }
 
 /** Simple keyword search (title, note, url, meta) */
@@ -263,7 +265,7 @@ export function keywordSearch(query: string, items: CollectedItem[], topK = 20):
     for (const term of terms) {
       if (text.includes(term)) matchCount++
     }
-    if (matchCount > 0) {
+    if (matchCount > 0 && matchCount / terms.length >= 0.5) {
       scored.push({
         itemId: item.id,
         score: matchCount / terms.length,
