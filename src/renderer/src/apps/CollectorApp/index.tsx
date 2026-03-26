@@ -300,21 +300,23 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
               <span className="text-[9px] text-tx-faint truncate">{domain}</span>
             </>
           )}
-          {item.meta?.duplicateOf && (
-            <span
-              className="ml-auto text-[9px] text-status-warning cursor-pointer hover:underline shrink-0"
-              onClick={(e) => { e.stopPropagation(); onOpen({ ...item, id: item.meta.duplicateOf as string } as CollectedItem) }}
-              title="View original"
-            >
-              duplicate
-            </span>
-          )}
         </div>
         {/* Title */}
         <span className="text-[12px] text-tx-main font-medium leading-snug line-clamp-2">{item.title}</span>
         {/* Description */}
         {description && (
           <span className="text-[10px] text-tx-faint leading-relaxed line-clamp-2">{description}</span>
+        )}
+        {/* Duplicate warning */}
+        {item.meta?.duplicateOf && (
+          <div
+            className="flex items-center gap-1.5 mt-1 px-2 py-1 rounded bg-status-warning/10 text-[9px] text-status-warning cursor-pointer hover:bg-status-warning/15 transition-colors"
+            onClick={(e) => { e.stopPropagation(); onOpen({ ...item, id: item.meta!.duplicateOf as string } as CollectedItem) }}
+          >
+            <span>⚠ Duplicate</span>
+            <span className="text-status-warning/60">·</span>
+            <span>View original →</span>
+          </div>
         )}
         {/* Text type delete */}
         {item.type === 'text' && (
@@ -480,7 +482,6 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
           )}
           <span className="text-[10px] text-tx-faint">·</span>
           <span className="text-[10px] text-tx-faint">{timeAgo}</span>
-          {item.meta?.duplicateOf && <span className="text-[10px] text-status-warning">· duplicate</span>}
           <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {item.url && (
               <button onClick={() => onOpen(item)} className="p-1 text-tx-faint hover:text-accent-main transition-colors" title="Open">
@@ -492,6 +493,20 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
             </button>
           </div>
         </div>
+
+        {/* Duplicate warning banner */}
+        {item.meta?.duplicateOf && (
+          <div className="flex items-center gap-2 px-3 py-1.5 mb-2 rounded-md bg-status-warning/10 border border-status-warning/20 text-[11px] text-status-warning">
+            <span>⚠ Duplicate resource</span>
+            <span className="text-status-warning/60">·</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); onOpen({ ...item, id: item.meta!.duplicateOf as string } as CollectedItem) }}
+              className="hover:underline"
+            >
+              View original →
+            </button>
+          </div>
+        )}
 
         {/* Title — readable, not bold-screaming */}
         <h3
