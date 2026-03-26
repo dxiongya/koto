@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Link, Image, Video, Twitter, Monitor, Type, Globe, Play, X, ChevronDown, Layers, Folder, Check, Loader2, Sparkles, LayoutGrid, List, BookOpen, ExternalLink } from 'lucide-react'
+import { Plus, Link, Image, Video, Twitter, Monitor, Type, Globe, Play, X, ChevronDown, Layers, Folder, Check, Loader2, Sparkles, LayoutGrid, List, BookOpen, ExternalLink, Search } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useUIStore } from '../../store/useUIStore'
@@ -158,7 +158,7 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
         {/* Preview for URL types */}
         {detected?.url && detected.domain && (
           <div className="flex items-center gap-2.5 p-2.5 bg-bg-active rounded-md">
-            <div className="w-10 h-10 rounded bg-[#1a2332] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded bg-bg-sidebar flex items-center justify-center shrink-0">
               <Globe size={16} className="text-[#2a4a6b]" />
             </div>
             <div className="flex flex-col gap-0.5 min-w-0">
@@ -239,7 +239,7 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
     >
       {/* Thumbnail area */}
       {item.type !== 'text' && (
-        <div className="w-full h-[100px] bg-[#161616] flex items-center justify-center relative overflow-hidden">
+        <div className="w-full h-[100px] bg-bg-sidebar flex items-center justify-center relative overflow-hidden">
           {localAsset ? (
             item.type === 'video' ? (
               <video src={localAsset} className="w-full h-full object-cover" muted />
@@ -350,7 +350,7 @@ const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => voi
       className="group flex items-center gap-3 px-3 py-2 rounded-md hover:bg-bg-hover transition-colors cursor-pointer"
     >
       {/* Thumbnail */}
-      <div className="w-10 h-10 rounded bg-[#161616] flex items-center justify-center shrink-0 overflow-hidden">
+      <div className="w-10 h-10 rounded bg-bg-sidebar flex items-center justify-center shrink-0 overflow-hidden">
         {localAsset ? (
           <img src={localAsset} alt="" className="w-full h-full object-cover" />
         ) : ogImage ? (
@@ -453,7 +453,7 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
 
         {/* Title — readable, not bold-screaming */}
         <h3
-          className="text-[15px] text-[#e8e8e8] leading-snug mb-3 cursor-pointer hover:text-accent-main transition-colors"
+          className="text-[15px] text-tx-main leading-snug mb-3 cursor-pointer hover:text-accent-main transition-colors"
           onClick={() => item.url ? onOpen(item) : (localAsset && onOpen(item))}
         >
           {item.title}
@@ -479,22 +479,22 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
           <div className="mb-2">
             {markdown ? (
               <div className="
-                max-w-none text-[13px] leading-[1.75] text-[#ccc]
-                [&_h1]:text-[17px] [&_h1]:text-[#eee] [&_h1]:font-medium [&_h1]:mt-5 [&_h1]:mb-2
-                [&_h2]:text-[15px] [&_h2]:text-[#e4e4e4] [&_h2]:font-medium [&_h2]:mt-4 [&_h2]:mb-2
-                [&_h3]:text-[14px] [&_h3]:text-[#ddd] [&_h3]:font-medium [&_h3]:mt-3 [&_h3]:mb-1.5
+                max-w-none text-[13px] leading-[1.75] text-tx-main/85
+                [&_h1]:text-[17px] [&_h1]:text-tx-main [&_h1]:font-medium [&_h1]:mt-5 [&_h1]:mb-2
+                [&_h2]:text-[15px] [&_h2]:text-tx-main/95 [&_h2]:font-medium [&_h2]:mt-4 [&_h2]:mb-2
+                [&_h3]:text-[14px] [&_h3]:text-tx-main/90 [&_h3]:font-medium [&_h3]:mt-3 [&_h3]:mb-1.5
                 [&_p]:my-2
                 [&_a]:text-accent-main [&_a]:no-underline hover:[&_a]:underline
-                [&_strong]:text-[#e4e4e4] [&_strong]:font-medium
-                [&_em]:text-[#ccc]
-                [&_code]:text-[12px] [&_code]:text-accent-main [&_code]:bg-[#1a1a1a] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded
-                [&_pre]:bg-[#141414] [&_pre]:rounded-md [&_pre]:p-4 [&_pre]:my-3 [&_pre]:text-[12px] [&_pre]:leading-relaxed [&_pre]:overflow-x-auto
+                [&_strong]:text-tx-main [&_strong]:font-medium
+                [&_em]:text-tx-main/80
+                [&_code]:text-[12px] [&_code]:text-accent-main [&_code]:bg-bg-active [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded
+                [&_pre]:bg-bg-active [&_pre]:rounded-md [&_pre]:p-4 [&_pre]:my-3 [&_pre]:text-[12px] [&_pre]:leading-relaxed [&_pre]:overflow-x-auto
                 [&_pre_code]:bg-transparent [&_pre_code]:p-0
-                [&_blockquote]:border-l-2 [&_blockquote]:border-accent-main/30 [&_blockquote]:pl-4 [&_blockquote]:my-3 [&_blockquote]:text-[#aaa]
+                [&_blockquote]:border-l-2 [&_blockquote]:border-accent-main/30 [&_blockquote]:pl-4 [&_blockquote]:my-3 [&_blockquote]:text-tx-muted
                 [&_img]:rounded-md [&_img]:max-h-[240px] [&_img]:my-3
                 [&_table]:text-[12px] [&_table]:w-full [&_table]:my-3
-                [&_th]:text-left [&_th]:text-[#bbb] [&_th]:font-medium [&_th]:pb-2 [&_th]:border-b [&_th]:border-border-subtle
-                [&_td]:py-1.5 [&_td]:text-[#aaa] [&_td]:border-b [&_td]:border-border-subtle/50
+                [&_th]:text-left [&_th]:text-tx-muted [&_th]:font-medium [&_th]:pb-2 [&_th]:border-b [&_th]:border-border-subtle
+                [&_td]:py-1.5 [&_td]:text-tx-main/70 [&_td]:border-b [&_td]:border-border-subtle/50
                 [&_li]:my-0.5
                 [&_ul]:my-2 [&_ul]:pl-4 [&_ul]:list-disc [&_ul]:marker:text-tx-faint
                 [&_ol]:my-2 [&_ol]:pl-4 [&_ol]:list-decimal [&_ol]:marker:text-tx-faint
@@ -506,7 +506,7 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
                 </ReactMarkdown>
               </div>
             ) : (
-              <p className="text-[13px] text-[#ccc] leading-[1.75] whitespace-pre-wrap">{displayContent}</p>
+              <p className="text-[13px] text-tx-main/85 leading-[1.75] whitespace-pre-wrap">{displayContent}</p>
             )}
 
             {isLong && (
@@ -542,6 +542,10 @@ export const CollectorApp: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'feed'>('grid')
   const [typeFilter, setTypeFilter] = useState<CollectedItemType | 'all'>('all')
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<CollectedItem[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const blurClass = showCommandPalette
     ? 'opacity-50 transition-opacity duration-200'
@@ -566,6 +570,21 @@ export const CollectorApp: React.FC = () => {
       setHasEmbeddingKey(res.ok && !!res.data)
     })
   }, [])
+
+  // Inline search with debounce
+  useEffect(() => {
+    if (!searchQuery.trim()) { setSearchResults(null); setSearching(false); return }
+    setSearching(true)
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(async () => {
+      const res = await window.api.collector.search(searchQuery.trim())
+      if (res.ok) {
+        setSearchResults(res.data.map((r: { item: CollectedItem }) => r.item))
+      }
+      setSearching(false)
+    }, 300)
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
+  }, [searchQuery])
 
   const handleDelete = useCallback(async (id: string) => {
     await window.api.collector.delete(id)
@@ -756,9 +775,12 @@ export const CollectorApp: React.FC = () => {
     : items.filter((i) => i.group === activeFilter)
 
   // Then filter by type (from chips)
-  const filteredItems = typeFilter === 'all'
+  const typeFiltered = typeFilter === 'all'
     ? groupFiltered
     : groupFiltered.filter((i) => i.type === typeFilter)
+
+  // Use search results if searching, otherwise use filtered items
+  const filteredItems = searchResults !== null ? searchResults : typeFiltered
 
   // Display name for header
   const filterLabel = activeFilter === 'all' ? 'All Items' : activeFilter
@@ -796,13 +818,30 @@ export const CollectorApp: React.FC = () => {
         </button>
       )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[15px] text-tx-main font-medium">{filterLabel}</span>
-          <span className="text-[12px] text-tx-faint">{filteredItems.length}</span>
+      {/* Search + Header */}
+      <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[15px] text-tx-main font-medium shrink-0">{searchResults !== null ? 'Search' : filterLabel}</span>
+          <span className="text-[12px] text-tx-faint shrink-0">{filteredItems.length}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex-1 max-w-[280px]">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-bg-hover border border-border-subtle focus-within:border-accent-main/40 transition-colors">
+            <Search size={12} className={searching ? 'text-accent-main animate-pulse' : 'text-tx-faint'} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search..."
+              className="flex-1 bg-transparent text-[12px] text-tx-main outline-none placeholder-tx-faint"
+            />
+            {searchQuery && (
+              <button onClick={() => { setSearchQuery(''); setSearchResults(null) }} className="text-tx-faint hover:text-tx-main">
+                <X size={11} />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
           {/* View toggle */}
           <div className="flex items-center border border-border-strong rounded-md overflow-hidden">
             <button
