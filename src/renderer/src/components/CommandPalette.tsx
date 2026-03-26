@@ -302,12 +302,11 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       const items: PaletteItem[] = res.data.map((r: { item: Record<string, unknown>; score: number; source: string }, i: number) => {
         const item = r.item as { id: string; type: string; title: string; url?: string; meta?: Record<string, unknown> }
         const domain = item.url ? (() => { try { return new URL(item.url).hostname.replace('www.', '') } catch { return '' } })() : ''
-        const scorePercent = Math.round(r.score * 100)
         return {
           id: `collector:${item.id}:${i}`,
           label: item.title,
-          hint: `${scorePercent}%`,
-          detail: domain || item.type.toUpperCase(),
+          hint: domain || item.type.toUpperCase(),
+          detail: (item.meta?.ocrText as string)?.slice(0, 60) || (item.meta?.description as string)?.slice(0, 60) || undefined,
           icon: COLLECTOR_TYPE_ICONS[item.type] || Archive,
           category: r.source === 'semantic' ? '✨ Semantic Results' : 'Search Results',
           action: () => {

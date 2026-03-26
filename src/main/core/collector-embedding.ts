@@ -8,7 +8,7 @@ import path from 'path'
 import { GoogleGenAI } from '@google/genai'
 import { getLiteHome } from './lite-home'
 import { loadConfig } from './lite-home'
-import { readItemMarkdown, saveVector, getAllVectors } from './collector-store'
+import { readItemMarkdown, saveVector, getAllVectors, updateCollectedItem } from './collector-store'
 import type { CollectedItem } from '../../shared/types'
 
 const EMBEDDING_MODEL = 'gemini-embedding-2-preview'
@@ -55,6 +55,67 @@ async function embedImage(client: GoogleGenAI, imagePath: string, mimeType: stri
   }
 }
 
+/** Use Gemini Vision to describe an image and extract text (OCR) */
+async function describeImage(client: GoogleGenAI, imagePath: string, mimeType: string): Promise<{ description: string; ocrText: string } | null> {
+  try {
+    const data = fs.readFileSync(imagePath).toString('base64')
+    const result = await client.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType, data } },
+          { text: 'Describe this image briefly (1-2 sentences). Then extract ALL visible text from the image. Return in this exact format:\nDESCRIPTION: <description>\nTEXT: <all visible text separated by spaces>' },
+        ],
+      }],
+    })
+    const text = result.text || ''
+    const descMatch = text.match(/DESCRIPTION:\s*(.+)/i)
+    const ocrMatch = text.match(/TEXT:\s*(.+)/is)
+    return {
+      description: descMatch?.[1]?.trim() || '',
+      ocrText: ocrMatch?.[1]?.trim() || '',
+    }
+  } catch (e) {
+    console.error('[OCR] Failed:', e)
+    return null
+  }
+}
+
+/** OCR + describe an image item and update its metadata */
+export async function ocrAndDescribeItem(item: CollectedItem): Promise<boolean> {
+  if (!item.assetPath) return false
+  if (item.type !== 'image' && item.type !== 'screenshot') return false
+
+  const client = getClient()
+  if (!client) return false
+
+  const fullPath = path.join(getLiteHome(), 'collected', item.assetPath)
+  if (!fs.existsSync(fullPath)) return false
+
+  const ext = path.extname(fullPath).toLowerCase()
+  const mimeMap: Record<string, string> = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.webp': 'image/webp',
+  }
+  const mime = mimeMap[ext]
+  if (!mime) return false
+
+  console.log(`[OCR] Processing: ${item.id} "${item.title.slice(0, 30)}"`)
+  const result = await describeImage(client, fullPath, mime)
+  if (!result) return false
+
+  console.log(`[OCR] Description: ${result.description.slice(0, 60)}`)
+  console.log(`[OCR] Text found: ${result.ocrText.slice(0, 80)}`)
+
+  // Update item with OCR data — this also updates FTS5 index via trigger
+  const meta = { ...(item.meta || {}), ocrText: result.ocrText, imageDescription: result.description }
+  const note = [result.description, result.ocrText].filter(Boolean).join('\n')
+  updateCollectedItem(item.id, { note, meta })
+
+  return true
+}
+
 /** Build the best text representation for embedding */
 function buildEmbeddingText(item: CollectedItem): string {
   const parts: string[] = []
@@ -62,46 +123,46 @@ function buildEmbeddingText(item: CollectedItem): string {
   // Title always included
   if (item.title) parts.push(item.title)
 
-  // Description / note
+  // Description / note (includes OCR text for images)
   if (item.note) parts.push(item.note)
+
+  // OCR text from meta (also in note, but explicit for safety)
+  if (item.meta?.ocrText) parts.push(String(item.meta.ocrText))
+  if (item.meta?.imageDescription) parts.push(String(item.meta.imageDescription))
 
   // URL domain for context
   if (item.url) {
-    try {
-      parts.push(new URL(item.url).hostname)
-    } catch {}
+    try { parts.push(new URL(item.url).hostname) } catch {}
   }
 
-  // Try markdown content (richest source)
+  // Meta description (for links)
+  if (item.meta?.description) parts.push(String(item.meta.description))
+
+  // Try markdown content (richest source for links)
   const markdown = readItemMarkdown(item.id)
-  if (markdown) {
-    // Use first 4000 chars of markdown (stay within token limits)
-    parts.push(markdown.slice(0, 4000))
-  }
+  if (markdown) parts.push(markdown.slice(0, 4000))
 
   return parts.join('\n\n')
 }
 
-/** Embed a single item — decides text vs image based on type + available data */
+/** Embed a single item. For images: OCR first, then embed the text. */
 export async function embedItem(item: CollectedItem): Promise<number[] | null> {
   const client = getClient()
   if (!client) return null
 
-  // For items with local image assets, use multimodal embedding
+  // For image items: run OCR first if not done yet, then embed the extracted text
   if (item.assetPath && (item.type === 'image' || item.type === 'screenshot')) {
-    const fullPath = path.join(getLiteHome(), 'collected', item.assetPath)
-    if (fs.existsSync(fullPath)) {
-      const ext = path.extname(fullPath).toLowerCase()
-      const mimeMap: Record<string, string> = {
-        '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-        '.gif': 'image/gif', '.webp': 'image/webp',
-      }
-      const mime = mimeMap[ext]
-      if (mime) return embedImage(client, fullPath, mime)
+    if (!item.meta?.ocrText) {
+      // Run OCR — this updates the item in DB with description + extracted text
+      await ocrAndDescribeItem(item)
+      // Re-read the updated item to get OCR text
+      const { listCollectedItems } = await import('./collector-store')
+      const updated = listCollectedItems().find((i) => i.id === item.id)
+      if (updated) item = updated
     }
   }
 
-  // Text-based embedding for everything else
+  // Now embed using text (which includes OCR text for images)
   const text = buildEmbeddingText(item)
   if (!text.trim()) return null
   return embedText(client, text)
@@ -160,13 +221,14 @@ export interface SearchResult {
 /** Semantic search: embed query, find top-K similar items */
 export async function semanticSearch(query: string, topK = 20): Promise<SearchResult[]> {
   const client = getClient()
-  if (!client) return []
+  if (!client) { console.warn('[Search] No Gemini client — skipping semantic search'); return [] }
 
   const queryVector = await embedText(client, query)
-  if (!queryVector) return []
+  if (!queryVector) { console.warn('[Search] Failed to embed query'); return [] }
 
   const entries = getAllVectors()
-  if (entries.length === 0) return []
+  if (entries.length === 0) { console.warn('[Search] No vectors in DB'); return [] }
+  console.log(`[Search] Comparing query against ${entries.length} vectors`)
 
   // Compute similarities
   const scored = entries.map((entry) => ({
@@ -177,6 +239,7 @@ export async function semanticSearch(query: string, topK = 20): Promise<SearchRe
 
   // Sort by score descending, return top-K
   scored.sort((a, b) => b.score - a.score)
+  console.log('[Search] Top results:', scored.slice(0, 5).map(s => `${s.itemId}=${(s.score * 100).toFixed(1)}%`).join(', '))
   return scored.slice(0, topK)
 }
 
