@@ -19,7 +19,7 @@ import { listAutomations, createAutomation, updateAutomation, deleteAutomation }
 import { readSnapshots, restoreSnapshot } from './automation-snapshots'
 import { loadExperience } from './automation-runner'
 import { automationScheduler } from './automation-scheduler'
-import { listCollectedItems, countCollectedItems, findDuplicateByUrl, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, ftsSearch, readItemMarkdown } from './collector-store'
+import { listCollectedItems, countCollectedItems, findDuplicateByUrl, findDuplicateByHash, computeContentHash, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, ftsSearch, readItemMarkdown } from './collector-store'
 import { hybridSearch, embedAllPending, embedAndSave } from './collector-embedding'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
 
@@ -466,6 +466,16 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_CHECK_DUPLICATE, (_, url: string) => {
     try {
       const dup = findDuplicateByUrl(url)
+      return { ok: true, data: dup }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_CHECK_DUPLICATE_HASH, (_, data: ArrayBuffer) => {
+    try {
+      const hash = computeContentHash(Buffer.from(data))
+      const dup = findDuplicateByHash(hash)
       return { ok: true, data: dup }
     } catch (e) {
       return { ok: false, error: String(e) }

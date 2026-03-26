@@ -763,6 +763,16 @@ export const CollectorApp: React.FC = () => {
 
     try {
       const buffer = await file.arrayBuffer()
+
+      // Check for duplicate image/video by content hash
+      try {
+        const dupRes = await window.api.collector.checkDuplicateHash(buffer)
+        if (dupRes.ok && dupRes.data) {
+          setToast({ message: `Already collected · ${dupRes.data.title.slice(0, 40)}`, status: 'error' })
+          return
+        }
+      } catch {}
+
       const title = file.name.replace(/\.[^.]+$/, '') || `${type} ${new Date().toLocaleString()}`
       const targetGroup = activeFilter !== 'all' && !(activeFilter in TYPE_LABELS) ? activeFilter : 'all'
 

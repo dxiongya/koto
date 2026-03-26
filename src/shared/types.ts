@@ -109,6 +109,7 @@ export const IpcChannels = {
   COLLECTOR_LIST: 'collector:list',
   COLLECTOR_COUNT: 'collector:count',
   COLLECTOR_CHECK_DUPLICATE: 'collector:checkDuplicate',
+  COLLECTOR_CHECK_DUPLICATE_HASH: 'collector:checkDuplicateHash',
   COLLECTOR_ADD: 'collector:add',
   COLLECTOR_UPDATE: 'collector:update',
   COLLECTOR_DELETE: 'collector:delete',

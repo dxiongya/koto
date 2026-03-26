@@ -165,6 +165,17 @@ export function findDuplicateByUrl(url: string): CollectedItem | null {
   return row ? rowToItem(row) : null
 }
 
+/** Check if an image with the same content hash exists */
+export function findDuplicateByHash(hash: string): CollectedItem | null {
+  const row = getDb().prepare("SELECT * FROM items WHERE json_extract(meta, '$.contentHash') = ? LIMIT 1").get(hash) as Record<string, unknown> | undefined
+  return row ? rowToItem(row) : null
+}
+
+/** Compute content hash for binary data */
+export function computeContentHash(data: Buffer): string {
+  return crypto.createHash('sha256').update(data).digest('hex').slice(0, 16)
+}
+
 export function addCollectedItem(input: CollectorAddInput): CollectedItem {
   const dir = path.join(getLiteHome(), 'collected')
   fs.mkdirSync(path.join(dir, 'assets'), { recursive: true })
@@ -172,8 +183,12 @@ export function addCollectedItem(input: CollectorAddInput): CollectedItem {
   const id = generateId()
   const now = Date.now()
 
+  const meta = { ...(input.meta || {}) }
+
   let assetPath: string | undefined
   if (input.assetData && input.assetMimeType) {
+    // Store content hash for duplicate detection
+    meta.contentHash = computeContentHash(Buffer.from(input.assetData))
     const ext = mimeToExt(input.assetMimeType)
     const filename = `${id}.${ext}`
     fs.writeFileSync(path.join(dir, 'assets', filename), Buffer.from(input.assetData))
@@ -187,14 +202,14 @@ export function addCollectedItem(input: CollectorAddInput): CollectedItem {
     id, input.type, input.title, input.note || '',
     input.url || null, assetPath || null,
     input.group || 'all', input.source || 'paste',
-    JSON.stringify(input.meta || {}), now, now
+    JSON.stringify(meta), now, now
   )
 
   return {
     id, type: input.type, title: input.title, note: input.note || '',
     url: input.url, assetPath, thumbnailPath: undefined,
     group: input.group || 'all', source: input.source || 'paste',
-    meta: input.meta || {}, createdAt: now, updatedAt: now,
+    meta, createdAt: now, updatedAt: now,
   }
 }
 
