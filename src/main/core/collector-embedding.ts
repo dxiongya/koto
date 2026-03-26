@@ -238,10 +238,10 @@ export async function semanticSearch(query: string, topK = 20): Promise<SearchRe
   }))
 
   // Filter by minimum similarity threshold, then sort
-  const MIN_SIMILARITY = 0.4
+  const MIN_SIMILARITY = 0.6
   const filtered = scored.filter((s) => s.score >= MIN_SIMILARITY)
   filtered.sort((a, b) => b.score - a.score)
-  console.log(`[Search] ${filtered.length}/${scored.length} results above ${MIN_SIMILARITY} threshold`)
+  console.log(`[Search] ${filtered.length}/${scored.length} pass threshold ${MIN_SIMILARITY}. All scores: ${scored.map(s => (s.score * 100).toFixed(1) + '%').join(', ')}`)
   return filtered.slice(0, topK)
 }
 
