@@ -66,6 +66,16 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
     }
   }, [inputValue])
 
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null)
+
+  // Check duplicate on URL detection
+  useEffect(() => {
+    if (!detected?.url) { setDuplicateWarning(null); return }
+    window.api.collector.checkDuplicate(detected.url).then((res) => {
+      setDuplicateWarning(res.ok && res.data ? `Already collected as "${res.data.title}"` : null)
+    }).catch(() => setDuplicateWarning(null))
+  }, [detected?.url])
+
   const handleSubmit = useCallback(async () => {
     if (!detected || submitting) return
     setSubmitting(true)
@@ -165,6 +175,14 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
               <span className="text-[12px] text-tx-main font-medium truncate">{detected.title}</span>
               <span className="text-[10px] text-tx-faint truncate">{detected.domain}</span>
             </div>
+          </div>
+        )}
+
+        {/* Duplicate warning */}
+        {duplicateWarning && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-status-warning/10 text-status-warning text-[11px]">
+            <span>⚠</span>
+            <span>{duplicateWarning}</span>
           </div>
         )}
 
@@ -392,14 +410,27 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
   const domain = (() => { try { return item.url ? new URL(item.url).hostname.replace('www.', '') : '' } catch { return '' } })()
   const [markdown, setMarkdown] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [visible, setVisible] = useState(false)
+  const feedRef = useRef<HTMLElement>(null)
+
+  // Lazy load: only load markdown when item scrolls into view
+  useEffect(() => {
+    const el = feedRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setVisible(true); observer.disconnect() } },
+      { rootMargin: '200px' },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
-    if (item.meta?.hasMarkdown) {
-      window.api.collector.getMarkdown(item.id).then((res) => {
-        if (res.ok && res.data) setMarkdown(res.data)
-      })
-    }
-  }, [item.id, item.meta?.hasMarkdown])
+    if (!visible || !item.meta?.hasMarkdown) return
+    window.api.collector.getMarkdown(item.id).then((res) => {
+      if (res.ok && res.data) setMarkdown(res.data)
+    })
+  }, [visible, item.id, item.meta?.hasMarkdown])
 
   const contentPreview = markdown
     || item.note
@@ -422,7 +453,7 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
   })()
 
   return (
-    <article className="group relative">
+    <article ref={feedRef} className="group relative">
       {/* Subtle left accent line */}
       <div className="absolute left-0 top-6 bottom-6 w-px bg-border-subtle group-hover:bg-accent-main/30 transition-colors" />
 
@@ -547,22 +578,57 @@ export const CollectorApp: React.FC = () => {
   const [searching, setSearching] = useState(false)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const PAGE_SIZE = 50
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [totalCount, setTotalCount] = useState(0)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
   const blurClass = showCommandPalette
     ? 'opacity-50 transition-opacity duration-200'
     : 'transition-opacity duration-200'
 
+  // Load first page + groups
   const loadItems = useCallback(async () => {
-    const [itemsRes, groupsRes] = await Promise.all([
-      window.api.collector.list(),
+    const [itemsRes, groupsRes, countRes] = await Promise.all([
+      window.api.collector.list(PAGE_SIZE, 0),
       window.api.collector.groups(),
+      window.api.collector.count(),
     ])
-    if (itemsRes.ok) setItems(itemsRes.data)
+    if (itemsRes.ok) {
+      setItems(itemsRes.data)
+      setHasMore(itemsRes.data.length >= PAGE_SIZE)
+    }
     if (groupsRes.ok) setGroups(groupsRes.data)
+    if (countRes.ok) setTotalCount(countRes.data)
   }, [])
+
+  // Load next page
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore) return
+    setLoadingMore(true)
+    const res = await window.api.collector.list(PAGE_SIZE, items.length)
+    if (res.ok) {
+      setItems((prev) => [...prev, ...res.data])
+      setHasMore(res.data.length >= PAGE_SIZE)
+    }
+    setLoadingMore(false)
+  }, [items.length, loadingMore, hasMore])
 
   const [isDragOver, setIsDragOver] = useState(false)
 
   useEffect(() => { loadItems() }, [loadItems, activeFilter, collectorVersion])
+
+  // Infinite scroll
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const handleScroll = (): void => {
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) loadMore()
+    }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [loadMore])
 
   // Check embedding key status
   useEffect(() => {
@@ -625,6 +691,17 @@ export const CollectorApp: React.FC = () => {
     } catch { /* plain text */ }
 
     const typeLabel = TYPE_LABELS[type]
+
+    // Check for duplicate URL
+    if (url) {
+      try {
+        const dupRes = await window.api.collector.checkDuplicate(url)
+        if (dupRes.ok && dupRes.data) {
+          setToast({ message: `Already collected · ${dupRes.data.title.slice(0, 40)}`, status: 'error' })
+          return
+        }
+      } catch {}
+    }
 
     // Show toast
     if (url) {
@@ -906,7 +983,7 @@ export const CollectorApp: React.FC = () => {
       )}
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-tx-faint">
             <Layers size={28} />
@@ -936,6 +1013,15 @@ export const CollectorApp: React.FC = () => {
               <FeedItem key={item.id} item={item} onDelete={handleDelete} onOpen={handleOpen} />
             ))}
           </div>
+        )}
+        {/* Load more indicator */}
+        {loadingMore && (
+          <div className="flex justify-center py-4">
+            <Loader2 size={16} className="text-tx-faint animate-spin" />
+          </div>
+        )}
+        {!hasMore && filteredItems.length > PAGE_SIZE && (
+          <div className="text-center py-3 text-[11px] text-tx-faint">All {totalCount} items loaded</div>
         )}
       </div>
 

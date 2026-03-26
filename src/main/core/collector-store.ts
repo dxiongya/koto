@@ -145,9 +145,24 @@ function generateId(): string {
 
 // ── CRUD ──
 
-export function listCollectedItems(): CollectedItem[] {
-  const rows = getDb().prepare('SELECT * FROM items ORDER BY created_at DESC').all()
+export function listCollectedItems(limit = 0, offset = 0): CollectedItem[] {
+  const sql = limit > 0
+    ? 'SELECT * FROM items ORDER BY created_at DESC LIMIT ? OFFSET ?'
+    : 'SELECT * FROM items ORDER BY created_at DESC'
+  const rows = limit > 0
+    ? getDb().prepare(sql).all(limit, offset)
+    : getDb().prepare(sql).all()
   return (rows as Record<string, unknown>[]).map(rowToItem)
+}
+
+export function countCollectedItems(): number {
+  return (getDb().prepare('SELECT COUNT(*) as c FROM items').get() as { c: number }).c
+}
+
+/** Check if a URL is already collected */
+export function findDuplicateByUrl(url: string): CollectedItem | null {
+  const row = getDb().prepare('SELECT * FROM items WHERE url = ? LIMIT 1').get(url) as Record<string, unknown> | undefined
+  return row ? rowToItem(row) : null
 }
 
 export function addCollectedItem(input: CollectorAddInput): CollectedItem {

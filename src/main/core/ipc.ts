@@ -19,7 +19,7 @@ import { listAutomations, createAutomation, updateAutomation, deleteAutomation }
 import { readSnapshots, restoreSnapshot } from './automation-snapshots'
 import { loadExperience } from './automation-runner'
 import { automationScheduler } from './automation-scheduler'
-import { listCollectedItems, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, ftsSearch, readItemMarkdown } from './collector-store'
+import { listCollectedItems, countCollectedItems, findDuplicateByUrl, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, ftsSearch, readItemMarkdown } from './collector-store'
 import { hybridSearch, embedAllPending, embedAndSave } from './collector-embedding'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
 
@@ -447,9 +447,26 @@ export function setupIpcHandlers(): void {
 
   // ── Collector ──
 
-  ipcMain.handle(IpcChannels.COLLECTOR_LIST, () => {
+  ipcMain.handle(IpcChannels.COLLECTOR_LIST, (_, limit?: number, offset?: number) => {
     try {
-      return { ok: true, data: listCollectedItems() }
+      return { ok: true, data: listCollectedItems(limit || 0, offset || 0) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_COUNT, () => {
+    try {
+      return { ok: true, data: countCollectedItems() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_CHECK_DUPLICATE, (_, url: string) => {
+    try {
+      const dup = findDuplicateByUrl(url)
+      return { ok: true, data: dup }
     } catch (e) {
       return { ok: false, error: String(e) }
     }

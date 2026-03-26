@@ -156,7 +156,9 @@ const api = {
     },
   },
   collector: {
-    list: () => ipcRenderer.invoke(IpcChannels.COLLECTOR_LIST),
+    list: (limit?: number, offset?: number) => ipcRenderer.invoke(IpcChannels.COLLECTOR_LIST, limit, offset),
+    count: () => ipcRenderer.invoke(IpcChannels.COLLECTOR_COUNT),
+    checkDuplicate: (url: string) => ipcRenderer.invoke(IpcChannels.COLLECTOR_CHECK_DUPLICATE, url),
     getEmbeddingKey: () => ipcRenderer.invoke(IpcChannels.EMBEDDING_GET_API_KEY),
     setEmbeddingKey: (key: string) => ipcRenderer.invoke(IpcChannels.EMBEDDING_SET_API_KEY, key),
     testEmbedding: (apiKey: string) => ipcRenderer.invoke(IpcChannels.EMBEDDING_TEST, apiKey),
