@@ -19,8 +19,20 @@ import { listAutomations, createAutomation, updateAutomation, deleteAutomation }
 import { readSnapshots, restoreSnapshot } from './automation-snapshots'
 import { loadExperience } from './automation-runner'
 import { automationScheduler } from './automation-scheduler'
-import { listCollectedItems, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown } from './collector-store'
+import { listCollectedItems, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown } from './collector-store'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
+
+/** Decode common HTML entities */
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+}
 
 export function setupIpcHandlers(): void {
   // ── Lite Home ──
@@ -239,8 +251,8 @@ export function setupIpcHandlers(): void {
         return re.exec(html)?.[1] || altRe.exec(html)?.[1] || ''
       }
       const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
-      const title = getMetaContent('og:title') || titleMatch?.[1]?.trim() || ''
-      const description = getMetaContent('og:description') || getMetaContent('description') || ''
+      const title = decodeHtmlEntities(getMetaContent('og:title') || titleMatch?.[1]?.trim() || '')
+      const description = decodeHtmlEntities(getMetaContent('og:description') || getMetaContent('description') || '')
       const image = getMetaContent('og:image') || ''
 
       return { ok: true, data: { title, description, image } }
@@ -489,6 +501,14 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_ADD_GROUP, (_, name: string) => {
     try {
       return { ok: true, data: addCollectorGroup(name) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_RENAME_GROUP, (_, oldName: string, newName: string) => {
+    try {
+      return { ok: true, data: renameCollectorGroup(oldName, newName) }
     } catch (e) {
       return { ok: false, error: String(e) }
     }

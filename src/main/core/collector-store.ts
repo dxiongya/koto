@@ -157,6 +157,20 @@ export function addCollectorGroup(name: string): string[] {
   return groups
 }
 
+export function renameCollectorGroup(oldName: string, newName: string): string[] {
+  const groups = readGroups().map((g) => g === oldName ? newName : g)
+  groups.sort()
+  writeGroups(groups)
+  // Update items
+  const items = readItems()
+  let changed = false
+  for (const item of items) {
+    if (item.group === oldName) { item.group = newName; changed = true }
+  }
+  if (changed) writeItems(items)
+  return groups
+}
+
 export function deleteCollectorGroup(name: string): string[] {
   const groups = readGroups().filter((g) => g !== name)
   writeGroups(groups)

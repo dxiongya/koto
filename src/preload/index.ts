@@ -168,6 +168,8 @@ const api = {
     groups: () => ipcRenderer.invoke(IpcChannels.COLLECTOR_GROUPS),
     addGroup: (name: string) =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_ADD_GROUP, name),
+    renameGroup: (oldName: string, newName: string) =>
+      ipcRenderer.invoke(IpcChannels.COLLECTOR_RENAME_GROUP, oldName, newName),
     deleteGroup: (name: string) =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_DELETE_GROUP, name),
   },

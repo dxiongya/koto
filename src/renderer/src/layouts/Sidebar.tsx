@@ -941,7 +941,10 @@ const CollectorAppSection: React.FC<{
   const [groupName, setGroupName] = useState('')
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [renamingGroup, setRenamingGroup] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
   const groupInputRef = useRef<HTMLInputElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
   const openContextMenu = useContextMenu()
 
   const loadData = useCallback(() => {
@@ -1018,7 +1021,28 @@ const CollectorAppSection: React.FC<{
   }, [loadData])
 
   // Context menu for groups
+  const startRenameGroup = useCallback((group: string) => {
+    setRenamingGroup(group)
+    setRenameValue(group)
+    setTimeout(() => { renameInputRef.current?.focus(); renameInputRef.current?.select() }, 50)
+  }, [])
+
+  const handleRenameSubmit = useCallback(async () => {
+    if (!renamingGroup) return
+    const newName = renameValue.trim()
+    if (!newName || newName === renamingGroup) { setRenamingGroup(null); return }
+    const res = await window.api.collector.renameGroup(renamingGroup, newName)
+    if (res.ok) {
+      setGroups(res.data)
+      if (activeFilter === renamingGroup) setActiveItem(newName)
+      loadData()
+    }
+    setRenamingGroup(null)
+  }, [renamingGroup, renameValue, activeFilter, setActiveItem, loadData])
+
   const groupContextItems = useCallback((group: string): ContextMenuItem[] => [
+    { label: 'Rename', icon: <Pencil size={14} />, onClick: () => startRenameGroup(group) },
+    { label: '', separator: true, onClick: () => {} },
     { label: 'Delete Group', icon: <Trash2 size={14} />, danger: true, onClick: async () => {
       const res = await window.api.collector.deleteGroup(group)
       if (res.ok) {
@@ -1027,7 +1051,7 @@ const CollectorAppSection: React.FC<{
         loadData()
       }
     } },
-  ], [activeFilter, setActiveItem, loadData])
+  ], [activeFilter, setActiveItem, loadData, startRenameGroup])
 
   const isActive = (filter: string) => currentApp === 'collector.app' && activeFilter === filter
 
@@ -1127,8 +1151,27 @@ const CollectorAppSection: React.FC<{
                     : <ChevronRight size={12} className="shrink-0 text-tx-faint" />
                   }
                   <FolderOpen size={12} className={`shrink-0 ${active ? 'text-tx-active' : isDrop ? 'text-accent-main' : 'text-tx-faint'}`} />
-                  <span className={`truncate ${active ? 'text-tx-active font-medium' : isDrop ? 'text-accent-main' : 'text-tx-muted'}`}>{group}</span>
-                  {groupItems.length > 0 && <span className="text-tx-faint text-[10px] ml-auto">{groupItems.length}</span>}
+                  {renamingGroup === group ? (
+                    <input
+                      ref={renameInputRef}
+                      type="text"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        e.stopPropagation()
+                        if (e.key === 'Enter') { e.preventDefault(); handleRenameSubmit() }
+                        if (e.key === 'Escape') setRenamingGroup(null)
+                      }}
+                      onBlur={() => { if (renameValue.trim()) handleRenameSubmit(); else setRenamingGroup(null) }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-1 bg-transparent text-[12px] text-tx-main outline-none border-b border-border-strong py-0.5 min-w-0"
+                    />
+                  ) : (
+                    <>
+                      <span className={`truncate ${active ? 'text-tx-active font-medium' : isDrop ? 'text-accent-main' : 'text-tx-muted'}`}>{group}</span>
+                      {groupItems.length > 0 && <span className="text-tx-faint text-[10px] ml-auto">{groupItems.length}</span>}
+                    </>
+                  )}
                 </div>
                 {/* Expanded: show items under group */}
                 {isExpanded && groupItems.map(renderItem)}

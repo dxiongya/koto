@@ -113,6 +113,7 @@ export const IpcChannels = {
   COLLECTOR_FETCH_MARKDOWN: 'collector:fetchMarkdown',
   COLLECTOR_GROUPS: 'collector:groups',
   COLLECTOR_ADD_GROUP: 'collector:addGroup',
+  COLLECTOR_RENAME_GROUP: 'collector:renameGroup',
   COLLECTOR_DELETE_GROUP: 'collector:deleteGroup',
 
   // Shortcuts forwarded from main process
