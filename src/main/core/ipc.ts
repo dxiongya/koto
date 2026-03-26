@@ -19,7 +19,8 @@ import { listAutomations, createAutomation, updateAutomation, deleteAutomation }
 import { readSnapshots, restoreSnapshot } from './automation-snapshots'
 import { loadExperience } from './automation-runner'
 import { automationScheduler } from './automation-scheduler'
-import { listCollectedItems, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown } from './collector-store'
+import { listCollectedItems, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, ftsSearch } from './collector-store'
+import { hybridSearch, embedAllPending } from './collector-embedding'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
 
 /** Decode common HTML entities */
@@ -476,6 +477,37 @@ export function setupIpcHandlers(): void {
     try {
       const ok = deleteCollectedItem(id)
       return ok ? { ok: true, data: undefined } : { ok: false, error: 'Item not found' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_SEARCH, async (_, query: string) => {
+    try {
+      const items = listCollectedItems()
+      const results = await hybridSearch(query, items)
+      // Resolve items from results
+      const itemMap = new Map(items.map((i) => [i.id, i]))
+      const data = results
+        .map((r) => ({ item: itemMap.get(r.itemId), score: r.score, source: r.source }))
+        .filter((r) => r.item)
+      return { ok: true, data }
+    } catch (e) {
+      // Fallback to FTS only
+      try {
+        const ftsResults = ftsSearch(query)
+        return { ok: true, data: ftsResults.map((r) => ({ item: r.item, score: Math.abs(r.rank), source: 'keyword' })) }
+      } catch {
+        return { ok: false, error: String(e) }
+      }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_EMBED_ALL, async () => {
+    try {
+      const items = listCollectedItems()
+      const result = await embedAllPending(items)
+      return { ok: true, data: result }
     } catch (e) {
       return { ok: false, error: String(e) }
     }

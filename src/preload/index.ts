@@ -163,6 +163,10 @@ const api = {
       ipcRenderer.invoke(IpcChannels.COLLECTOR_UPDATE, id, patch),
     delete: (id: string) =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_DELETE, id),
+    search: (query: string) =>
+      ipcRenderer.invoke(IpcChannels.COLLECTOR_SEARCH, query),
+    embedAll: () =>
+      ipcRenderer.invoke(IpcChannels.COLLECTOR_EMBED_ALL),
     fetchMarkdown: (itemId: string, url: string) =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_FETCH_MARKDOWN, itemId, url),
     groups: () => ipcRenderer.invoke(IpcChannels.COLLECTOR_GROUPS),
