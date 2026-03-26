@@ -70,7 +70,35 @@ function getDb(): Database.Database {
   // Migrate from JSON if exists
   migrateFromJson(db)
 
+  // Backfill content hashes for existing asset items
+  backfillContentHashes(db)
+
   return db
+}
+
+/** One-time: add contentHash to items that have assets but no hash */
+function backfillContentHashes(database: Database.Database): void {
+  const rows = database.prepare(
+    "SELECT id, asset_path, meta FROM items WHERE asset_path IS NOT NULL AND json_extract(meta, '$.contentHash') IS NULL"
+  ).all() as { id: string; asset_path: string; meta: string }[]
+
+  if (rows.length === 0) return
+
+  const update = database.prepare("UPDATE items SET meta = ? WHERE id = ?")
+  let count = 0
+  for (const row of rows) {
+    const fullPath = path.join(getLiteHome(), 'collected', row.asset_path)
+    if (!fs.existsSync(fullPath)) continue
+    try {
+      const data = fs.readFileSync(fullPath)
+      const hash = crypto.createHash('sha256').update(data).digest('hex').slice(0, 16)
+      const meta = JSON.parse(row.meta || '{}')
+      meta.contentHash = hash
+      update.run(JSON.stringify(meta), row.id)
+      count++
+    } catch { /* skip */ }
+  }
+  if (count > 0) console.log(`[Collector] Backfilled content hash for ${count} items`)
 }
 
 /** One-time migration from items.json + groups.json → SQLite */
