@@ -290,7 +290,7 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
       )}
       {/* Body */}
       <div className={`p-2.5 flex flex-col gap-1 ${item.type === 'text' ? 'relative' : ''}`}>
-        {/* Type + domain */}
+        {/* Type + domain + duplicate badge */}
         <div className="flex items-center gap-1.5">
           <Icon size={9} className="text-tx-faint shrink-0" />
           <span className="text-[9px] text-tx-faint tracking-wide">{TYPE_LABELS[item.type]}</span>
@@ -299,6 +299,15 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
               <span className="text-[9px] text-tx-faint">·</span>
               <span className="text-[9px] text-tx-faint truncate">{domain}</span>
             </>
+          )}
+          {item.meta?.duplicateOf && (
+            <span
+              className="ml-auto text-[9px] text-status-warning cursor-pointer hover:underline shrink-0"
+              onClick={(e) => { e.stopPropagation(); onOpen({ ...item, id: item.meta.duplicateOf as string } as CollectedItem) }}
+              title="View original"
+            >
+              duplicate
+            </span>
           )}
         </div>
         {/* Title */}
@@ -384,6 +393,7 @@ const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => voi
           <Icon size={9} />
           <span>{TYPE_LABELS[item.type]}</span>
           {domain && <><span>·</span><span>{domain}</span></>}
+          {item.meta?.duplicateOf && <span className="text-status-warning">· duplicate</span>}
         </div>
       </div>
       {/* Time */}
@@ -470,6 +480,7 @@ const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; 
           )}
           <span className="text-[10px] text-tx-faint">·</span>
           <span className="text-[10px] text-tx-faint">{timeAgo}</span>
+          {item.meta?.duplicateOf && <span className="text-[10px] text-status-warning">· duplicate</span>}
           <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {item.url && (
               <button onClick={() => onOpen(item)} className="p-1 text-tx-faint hover:text-accent-main transition-colors" title="Open">
@@ -692,14 +703,12 @@ export const CollectorApp: React.FC = () => {
 
     const typeLabel = TYPE_LABELS[type]
 
-    // Check for duplicate URL
+    // Check for duplicate URL (warn but don't block)
+    let duplicateOf: string | undefined
     if (url) {
       try {
         const dupRes = await window.api.collector.checkDuplicate(url)
-        if (dupRes.ok && dupRes.data) {
-          setToast({ message: `Already collected · ${dupRes.data.title.slice(0, 40)}`, status: 'error' })
-          return
-        }
+        if (dupRes.ok && dupRes.data) duplicateOf = dupRes.data.id
       } catch {}
     }
 
@@ -727,6 +736,8 @@ export const CollectorApp: React.FC = () => {
       } catch {}
     }
 
+    if (duplicateOf) meta.duplicateOf = duplicateOf
+
     const addRes = await window.api.collector.add({
       type, title, note: description, url,
       group: activeFilter !== 'all' && !(activeFilter in TYPE_LABELS) ? activeFilter : 'all',
@@ -734,7 +745,9 @@ export const CollectorApp: React.FC = () => {
     })
     bumpVersion()
 
-    if (addRes.ok) {
+    if (addRes.ok && duplicateOf) {
+      setToast({ message: `Collected (duplicate) · ${title.slice(0, 35)}`, status: 'success' })
+    } else if (addRes.ok) {
       setToast({ message: `Collected · ${title.slice(0, 40)}${title.length > 40 ? '...' : ''}`, status: 'success' })
       // Fire-and-forget: markdown extraction + embedding
       const itemId = addRes.data.id
@@ -765,12 +778,10 @@ export const CollectorApp: React.FC = () => {
       const buffer = await file.arrayBuffer()
 
       // Check for duplicate image/video by content hash
+      const dupMeta: Record<string, unknown> = {}
       try {
         const dupRes = await window.api.collector.checkDuplicateHash(buffer)
-        if (dupRes.ok && dupRes.data) {
-          setToast({ message: `Already collected · ${dupRes.data.title.slice(0, 40)}`, status: 'error' })
-          return
-        }
+        if (dupRes.ok && dupRes.data) dupMeta.duplicateOf = dupRes.data.id
       } catch {}
 
       const title = file.name.replace(/\.[^.]+$/, '') || `${type} ${new Date().toLocaleString()}`
@@ -783,10 +794,13 @@ export const CollectorApp: React.FC = () => {
         source: 'paste',
         assetData: buffer,
         assetMimeType: mime,
+        meta: Object.keys(dupMeta).length > 0 ? dupMeta : undefined,
       })
       bumpVersion()
 
-      if (addRes.ok) {
+      if (addRes.ok && dupMeta.duplicateOf) {
+        setToast({ message: `Collected (duplicate) · ${title.slice(0, 35)}`, status: 'success' })
+      } else if (addRes.ok) {
         setToast({ message: `Collected · ${title.slice(0, 40)}`, status: 'success' })
         // Fire-and-forget embedding (multimodal for images)
         window.api.collector.embedItem(addRes.data.id).catch(() => {})
