@@ -209,6 +209,8 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
 
 const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void }> = ({ item, onDelete }) => {
   const Icon = TYPE_ICONS[item.type]
+  // Resolve thumbnail: local asset or og:image
+  const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
   const ogImage = item.meta?.ogImage as string | undefined
   const description = item.note || (item.meta?.description as string | undefined) || ''
   const domain = (() => { try { return item.url ? new URL(item.url).hostname.replace('www.', '') : '' } catch { return '' } })()
@@ -225,7 +227,13 @@ const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void }
       {/* Thumbnail area */}
       {item.type !== 'text' && (
         <div className="w-full h-[100px] bg-[#161616] flex items-center justify-center relative overflow-hidden">
-          {ogImage ? (
+          {localAsset ? (
+            item.type === 'video' ? (
+              <video src={localAsset} className="w-full h-full object-cover" muted />
+            ) : (
+              <img src={localAsset} alt="" className="w-full h-full object-cover" />
+            )
+          ) : ogImage ? (
             <img src={ogImage} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
           ) : (
             <>
@@ -404,13 +412,61 @@ export const CollectorApp: React.FC = () => {
     }
   }, [activeFilter, loadItems])
 
-  // Paste handler: Cmd+V in collector area
+  // Quick collect file (image, video, etc.)
+  const quickCollectFile = useCallback(async (file: File) => {
+    const mime = file.type
+    let type: CollectedItemType = 'image'
+    if (mime.startsWith('video/')) type = 'video'
+    else if (mime.startsWith('image/')) type = file.name.toLowerCase().includes('screenshot') ? 'screenshot' : 'image'
+    else return // unsupported file type
+
+    const label = type === 'video' ? 'video' : 'image'
+    setToast({ message: `Collecting ${label} · ${file.name}...`, status: 'loading' })
+
+    try {
+      const buffer = await file.arrayBuffer()
+      const title = file.name.replace(/\.[^.]+$/, '') || `${type} ${new Date().toLocaleString()}`
+      const targetGroup = activeFilter !== 'all' && !(activeFilter in TYPE_LABELS) ? activeFilter : 'all'
+
+      const addRes = await window.api.collector.add({
+        type,
+        title,
+        group: targetGroup,
+        source: 'paste',
+        assetData: buffer,
+        assetMimeType: mime,
+      })
+      loadItems()
+
+      if (addRes.ok) {
+        setToast({ message: `Collected · ${title.slice(0, 40)}`, status: 'success' })
+      } else {
+        setToast({ message: 'Failed to collect file', status: 'error' })
+      }
+    } catch {
+      setToast({ message: 'Failed to collect file', status: 'error' })
+    }
+  }, [activeFilter, loadItems])
+
+  // Paste handler: Cmd+V — images, files, or text/URL
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent): void => {
-      // Don't intercept if focus is in an input/textarea
       const tag = (document.activeElement as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
 
+      // Check for files (images from clipboard)
+      const files = e.clipboardData?.files
+      if (files && files.length > 0) {
+        e.preventDefault()
+        for (const file of Array.from(files)) {
+          if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+            quickCollectFile(file)
+          }
+        }
+        return
+      }
+
+      // Fallback: text/URL
       const text = e.clipboardData?.getData('text/plain')?.trim()
       if (text) {
         e.preventDefault()
@@ -419,21 +475,30 @@ export const CollectorApp: React.FC = () => {
     }
     window.addEventListener('paste', handlePaste)
     return () => window.removeEventListener('paste', handlePaste)
-  }, [quickCollect])
+  }, [quickCollect, quickCollectFile])
 
-  // Drop handler
+  // Drop handler — files or text/URL
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDragOver(false)
-    // Text/URL from drag
-    const text = e.dataTransfer.getData('text/plain')?.trim() || e.dataTransfer.getData('text/uri-list')?.trim()
-    if (text && !e.dataTransfer.types.includes('application/x-collector-item')) {
-      quickCollect(text)
+    if (e.dataTransfer.types.includes('application/x-collector-item')) return
+
+    // Check for dropped files
+    if (e.dataTransfer.files.length > 0) {
+      for (const file of Array.from(e.dataTransfer.files)) {
+        if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+          quickCollectFile(file)
+        }
+      }
+      return
     }
-  }, [quickCollect])
+
+    // Text/URL
+    const text = e.dataTransfer.getData('text/plain')?.trim() || e.dataTransfer.getData('text/uri-list')?.trim()
+    if (text) quickCollect(text)
+  }, [quickCollect, quickCollectFile])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    // Ignore internal collector drags
     if (e.dataTransfer.types.includes('application/x-collector-item')) return
     e.preventDefault()
     setIsDragOver(true)

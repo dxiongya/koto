@@ -7,8 +7,10 @@
  */
 import { protocol, net } from 'electron'
 import path from 'path'
+import fs from 'fs'
 import { resolveImagePath } from './image-storage'
 import { resolveVideoPath } from './video-storage'
+import { getLiteHome } from './lite-home'
 
 const MIME_TYPES: Record<string, string> = {
   '.png': 'image/png',
@@ -41,6 +43,10 @@ export function registerAssetProtocol(): void {
       resolved = resolveImagePath(pathname)
     } else if (host === 'videos') {
       resolved = resolveVideoPath(pathname)
+    } else if (host === 'collected') {
+      // Serve collected assets: lite-asset://collected/assets/{filename}
+      const filePath = path.join(getLiteHome(), 'collected', pathname)
+      if (fs.existsSync(filePath)) resolved = filePath
     }
 
     if (!resolved) {
