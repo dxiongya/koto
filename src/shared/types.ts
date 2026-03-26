@@ -114,6 +114,7 @@ export const IpcChannels = {
   EMBEDDING_SET_API_KEY: 'embedding:setApiKey',
   COLLECTOR_SEARCH: 'collector:search',
   COLLECTOR_FETCH_MARKDOWN: 'collector:fetchMarkdown',
+  COLLECTOR_EMBED_ITEM: 'collector:embedItem',
   COLLECTOR_EMBED_ALL: 'collector:embedAll',
   COLLECTOR_GROUPS: 'collector:groups',
   COLLECTOR_ADD_GROUP: 'collector:addGroup',

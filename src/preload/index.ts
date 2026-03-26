@@ -167,6 +167,8 @@ const api = {
       ipcRenderer.invoke(IpcChannels.COLLECTOR_DELETE, id),
     search: (query: string) =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_SEARCH, query),
+    embedItem: (itemId: string) =>
+      ipcRenderer.invoke(IpcChannels.COLLECTOR_EMBED_ITEM, itemId),
     embedAll: () =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_EMBED_ALL),
     fetchMarkdown: (itemId: string, url: string) =>

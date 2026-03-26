@@ -99,9 +99,16 @@ const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; gro
       onCollected()
       onClose()
 
-      // Fire-and-forget: fetch markdown for link types (for search/embedding later)
-      if (addRes.ok && detected.url && (detected.type === 'link' || detected.type === 'tweet')) {
-        window.api.collector.fetchMarkdown(addRes.data.id, detected.url).catch(() => {})
+      // Fire-and-forget: markdown + embedding
+      if (addRes.ok) {
+        const itemId = addRes.data.id
+        if (detected.url && (detected.type === 'link' || detected.type === 'tweet')) {
+          window.api.collector.fetchMarkdown(itemId, detected.url)
+            .then(() => window.api.collector.embedItem(itemId))
+            .catch(() => {})
+        } else {
+          window.api.collector.embedItem(itemId).catch(() => {})
+        }
       }
     } finally {
       setSubmitting(false)
@@ -411,9 +418,14 @@ export const CollectorApp: React.FC = () => {
 
     if (addRes.ok) {
       setToast({ message: `Collected · ${title.slice(0, 40)}${title.length > 40 ? '...' : ''}`, status: 'success' })
-      // Fire-and-forget markdown
+      // Fire-and-forget: markdown extraction + embedding
+      const itemId = addRes.data.id
       if (url && (type === 'link' || type === 'tweet')) {
-        window.api.collector.fetchMarkdown(addRes.data.id, url).catch(() => {})
+        window.api.collector.fetchMarkdown(itemId, url)
+          .then(() => window.api.collector.embedItem(itemId))
+          .catch(() => {})
+      } else {
+        window.api.collector.embedItem(itemId).catch(() => {})
       }
     } else {
       setToast({ message: 'Failed to collect', status: 'error' })
@@ -448,6 +460,8 @@ export const CollectorApp: React.FC = () => {
 
       if (addRes.ok) {
         setToast({ message: `Collected · ${title.slice(0, 40)}`, status: 'success' })
+        // Fire-and-forget embedding (multimodal for images)
+        window.api.collector.embedItem(addRes.data.id).catch(() => {})
       } else {
         setToast({ message: 'Failed to collect file', status: 'error' })
       }

@@ -20,7 +20,7 @@ import { readSnapshots, restoreSnapshot } from './automation-snapshots'
 import { loadExperience } from './automation-runner'
 import { automationScheduler } from './automation-scheduler'
 import { listCollectedItems, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, ftsSearch } from './collector-store'
-import { hybridSearch, embedAllPending } from './collector-embedding'
+import { hybridSearch, embedAllPending, embedAndSave } from './collector-embedding'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
 
 /** Decode common HTML entities */
@@ -515,6 +515,18 @@ export function setupIpcHandlers(): void {
       } catch {
         return { ok: false, error: String(e) }
       }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_EMBED_ITEM, async (_, itemId: string) => {
+    try {
+      const items = listCollectedItems()
+      const item = items.find((i) => i.id === itemId)
+      if (!item) return { ok: false, error: 'Item not found' }
+      const ok = await embedAndSave(item)
+      return ok ? { ok: true, data: undefined } : { ok: false, error: 'Embedding failed (no API key?)' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
     }
   })
 
