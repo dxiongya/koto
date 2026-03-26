@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Search, FileText, FileCode, Terminal, Settings, Globe, Archive,
   Plus, PanelLeft, Moon, Sun, ArrowRight, Hash, Clock, HelpCircle,
+  Link, Image, Video, Twitter, Monitor, Type, Sparkles, AtSign,
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import type { AppType } from '../../../shared/types'
@@ -152,6 +153,7 @@ const HELP_ITEMS: PaletteItem[] = [
   { id: 'help:files', label: 'Type to search files by name', icon: Search, category: 'Help', action: () => {} },
   { id: 'help:cmd', label: '> Commands and actions', icon: Settings, category: 'Help', action: () => {} },
   { id: 'help:search', label: '# Search file contents', icon: Hash, category: 'Help', action: () => {} },
+  { id: 'help:collector', label: '@ Search collected items', icon: Sparkles, category: 'Help', action: () => {} },
   { id: 'help:line', label: ': Go to line number', icon: ArrowRight, category: 'Help', action: () => {} },
   { id: 'help:camel', label: 'ABC CamelCase abbreviation (e.g. CP → CommandPalette)', icon: FileCode, category: 'Help', action: () => {} },
 ]
@@ -212,9 +214,10 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
   // ── Mode detection ──
   const isCommandMode = query.startsWith('>')
   const isSearchMode = query.startsWith('#')
+  const isCollectorSearch = query.startsWith('@')
   const isLineMode = query.startsWith(':')
   const isHelpMode = query.startsWith('?')
-  const searchQuery = isCommandMode || isSearchMode || isLineMode || isHelpMode
+  const searchQuery = isCommandMode || isSearchMode || isCollectorSearch || isLineMode || isHelpMode
     ? query.slice(1).trim()
     : query.trim()
 
@@ -265,6 +268,56 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
   }, [isSearchMode, searchQuery, liteHome, codeProjectPath])
 
+  // ── Collector search with debounce ──
+  const [collectorResults, setCollectorResults] = useState<PaletteItem[]>([])
+  const collectorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const COLLECTOR_TYPE_ICONS: Record<string, React.FC<{ size?: number; className?: string }>> = {
+    link: Link, image: Image, video: Video, tweet: Twitter, screenshot: Monitor, text: Type,
+  }
+
+  useEffect(() => {
+    if (!isCollectorSearch || searchQuery.length < 2) {
+      setCollectorResults([])
+      setSearching(false)
+      return
+    }
+    setSearching(true)
+    if (collectorTimerRef.current) clearTimeout(collectorTimerRef.current)
+    collectorTimerRef.current = setTimeout(async () => {
+      const res = await window.api.collector.search(searchQuery)
+      if (!res.ok) { setCollectorResults([]); setSearching(false); return }
+
+      const items: PaletteItem[] = res.data.map((r: { item: Record<string, unknown>; score: number; source: string }, i: number) => {
+        const item = r.item as { id: string; type: string; title: string; url?: string; meta?: Record<string, unknown> }
+        const domain = item.url ? (() => { try { return new URL(item.url).hostname.replace('www.', '') } catch { return '' } })() : ''
+        const scorePercent = Math.round(r.score * 100)
+        return {
+          id: `collector:${item.id}:${i}`,
+          label: item.title,
+          hint: `${scorePercent}%`,
+          detail: domain || item.type.toUpperCase(),
+          icon: COLLECTOR_TYPE_ICONS[item.type] || Archive,
+          category: r.source === 'semantic' ? '✨ Semantic Results' : 'Search Results',
+          action: () => {
+            const store = useUIStore.getState()
+            store.setCurrentApp('collector.app')
+            useUIStore.setState({
+              appStates: {
+                ...store.appStates,
+                'collector.app': { ...store.appStates['collector.app'], activeFilePath: 'all' },
+              },
+            })
+          },
+        }
+      })
+      setCollectorResults(items)
+      setSearching(false)
+      setSelectedIndex(0)
+    }, 300)
+    return () => { if (collectorTimerRef.current) clearTimeout(collectorTimerRef.current) }
+  }, [isCollectorSearch, searchQuery])
+
   // Recent files lookup
   const recentPathSet = useMemo(() => {
     const map = new Map<string, number>()
@@ -278,6 +331,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
     if (isHelpMode) return HELP_ITEMS
     if (isSearchMode) return searchResults
+    if (isCollectorSearch) return collectorResults
     if (isLineMode) {
       // ":42" → go to line (only meaningful in code.app / notes.app)
       const lineNum = parseInt(searchQuery, 10)
@@ -449,11 +503,11 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     )
 
     return all
-  }, [isCommandMode, isSearchMode, isLineMode, isHelpMode, searchResults, noteFiles, codeFiles, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
+  }, [isCommandMode, isSearchMode, isCollectorSearch, isLineMode, isHelpMode, searchResults, collectorResults, noteFiles, codeFiles, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
 
   // ── Filter + sort ──
   const filtered = useMemo(() => {
-    if (isSearchMode || isLineMode || isHelpMode) return items
+    if (isSearchMode || isCollectorSearch || isLineMode || isHelpMode) return items
     if (!searchQuery) return items
     return items
       .filter((item) => fuzzyMatch(searchQuery, item.label))
@@ -462,18 +516,20 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
         const scoreB = fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 2
         return scoreB - scoreA
       })
-  }, [items, searchQuery, isSearchMode, isLineMode, isHelpMode])
+  }, [items, searchQuery, isSearchMode, isCollectorSearch, isLineMode, isHelpMode])
 
   // ── Group by category ──
   const grouped = useMemo(() => {
     const groups: { category: string; items: PaletteItem[] }[] = []
     const categoryOrder = isSearchMode
       ? ['Search Results']
-      : isHelpMode
-        ? ['Help']
-        : isLineMode
-          ? ['Navigation']
-          : ['Recent', 'Actions', 'Apps', 'Notes', 'Code', 'Terminals', 'Navigation']
+      : isCollectorSearch
+        ? ['✨ Semantic Results', 'Search Results']
+        : isHelpMode
+          ? ['Help']
+          : isLineMode
+            ? ['Navigation']
+            : ['Recent', 'Actions', 'Apps', 'Notes', 'Code', 'Terminals', 'Navigation']
     const map = new Map<string, PaletteItem[]>()
     for (const item of filtered) {
       const arr = map.get(item.category) || []
@@ -487,7 +543,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       if (catItems?.length) groups.push({ category: cat, items: catItems.slice(0, 10) })
     }
     return groups
-  }, [filtered, isSearchMode, isHelpMode, isLineMode, searchQuery])
+  }, [filtered, isSearchMode, isCollectorSearch, isHelpMode, isLineMode, searchQuery])
 
   const flatItems = useMemo(() => grouped.flatMap((g) => g.items), [grouped])
 
@@ -528,11 +584,13 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
   const placeholder = isCommandMode ? 'Type a command...'
     : isSearchMode ? 'Search file contents...'
+    : isCollectorSearch ? 'Search collected items...'
     : isLineMode ? 'Type a line number...'
     : isHelpMode ? ''
     : 'Search files, apps, actions...'
 
   const modeIcon = isSearchMode ? Hash
+    : isCollectorSearch ? Sparkles
     : isLineMode ? ArrowRight
     : isHelpMode ? HelpCircle
     : Search
@@ -545,7 +603,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       <div className="fixed top-[12%] left-1/2 -translate-x-1/2 w-[90%] max-w-[520px] bg-bg-popover rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-border-strong overflow-hidden z-[101] flex flex-col">
         {/* Input */}
         <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border-subtle">
-          <ModeIcon size={15} className={isCommandMode || isSearchMode || isLineMode ? 'text-accent-main shrink-0' : 'text-tx-faint shrink-0'} />
+          <ModeIcon size={15} className={isCommandMode || isSearchMode || isCollectorSearch || isLineMode ? 'text-accent-main shrink-0' : 'text-tx-faint shrink-0'} />
           <input
             ref={inputRef}
             value={query}
@@ -554,7 +612,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
             className="flex-1 bg-transparent text-tx-main text-[13px] outline-none placeholder:text-tx-faint"
             spellCheck={false}
           />
-          {!isCommandMode && !isSearchMode && !isLineMode && !isHelpMode && (
+          {!isCommandMode && !isSearchMode && !isCollectorSearch && !isLineMode && !isHelpMode && (
             <div className="flex items-center gap-1.5">
               <kbd className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
                 onClick={() => { setQuery('>'); inputRef.current?.focus() }}>{'>'}</kbd>
@@ -599,7 +657,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-[13px] truncate">
-                            <HighlightMatch text={item.label} query={isSearchMode || isLineMode || isHelpMode ? '' : searchQuery} />
+                            <HighlightMatch text={item.label} query={isSearchMode || isCollectorSearch || isLineMode || isHelpMode ? '' : searchQuery} />
                           </span>
                           {item.hint && (
                             <span className="text-[11px] text-tx-faint truncate max-w-[140px] shrink-0">{item.hint}</span>
