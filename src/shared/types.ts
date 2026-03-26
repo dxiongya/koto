@@ -110,6 +110,8 @@ export const IpcChannels = {
   COLLECTOR_ADD: 'collector:add',
   COLLECTOR_UPDATE: 'collector:update',
   COLLECTOR_DELETE: 'collector:delete',
+  COLLECTOR_GET_API_KEY: 'collector:getApiKey',
+  COLLECTOR_SET_API_KEY: 'collector:setApiKey',
   COLLECTOR_SEARCH: 'collector:search',
   COLLECTOR_FETCH_MARKDOWN: 'collector:fetchMarkdown',
   COLLECTOR_EMBED_ALL: 'collector:embedAll',
@@ -381,6 +383,8 @@ export interface LiteConfig {
   terminalSessions: TerminalSessionInfo[]
   // recent files
   recentFiles: RecentFileEntry[]
+  // collector.app
+  collectorGeminiApiKey: string
   // AI
   ai: AISettings
   // MCP Servers
@@ -414,6 +418,7 @@ export const DEFAULT_LITE_CONFIG: LiteConfig = {
   recentProjects: [],
   terminalSessions: [],
   recentFiles: [],
+  collectorGeminiApiKey: '',
   ai: { ...DEFAULT_AI_SETTINGS },
   mcpServers: [],
 }

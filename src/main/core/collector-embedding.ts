@@ -14,15 +14,12 @@ import type { CollectedItem } from '../../shared/types'
 const EMBEDDING_MODEL = 'gemini-embedding-exp-03-07'
 const VECTOR_DIM = 768
 
-/** Get a configured Gemini client, or null if no API key */
+/** Get a configured Gemini client using collector's dedicated API key */
 function getClient(): GoogleGenAI | null {
   const config = loadConfig()
-  // Look for a Google provider with API key
-  const googleProvider = config.ai?.providers?.find(
-    (p) => p.type === 'google' && p.apiKey && p.enabled
-  )
-  if (!googleProvider?.apiKey) return null
-  return new GoogleGenAI({ apiKey: googleProvider.apiKey })
+  const apiKey = config.collectorGeminiApiKey
+  if (!apiKey) return null
+  return new GoogleGenAI({ apiKey })
 }
 
 /** Embed text content via Gemini */

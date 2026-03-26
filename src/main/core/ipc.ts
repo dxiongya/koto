@@ -482,6 +482,22 @@ export function setupIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle(IpcChannels.COLLECTOR_GET_API_KEY, () => {
+    const config = loadConfig()
+    // Return masked key for display
+    const key = config.collectorGeminiApiKey || ''
+    return { ok: true, data: key ? `${key.slice(0, 6)}...${key.slice(-4)}` : '' }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_SET_API_KEY, (_, apiKey: string) => {
+    try {
+      saveConfig({ collectorGeminiApiKey: apiKey })
+      return { ok: true, data: undefined }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
   ipcMain.handle(IpcChannels.COLLECTOR_SEARCH, async (_, query: string) => {
     try {
       const items = listCollectedItems()
