@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, Link, Image, Video, Twitter, Monitor, Type, Globe, Play, X, ChevronDown, Layers, Folder, Check, Loader2, Sparkles } from 'lucide-react'
+import { Plus, Link, Image, Video, Twitter, Monitor, Type, Globe, Play, X, ChevronDown, Layers, Folder, Check, Loader2, Sparkles, LayoutGrid, List } from 'lucide-react'
 import { useUIStore } from '../../store/useUIStore'
 import type { CollectedItem, CollectedItemType } from '../../../../shared/types'
 
@@ -325,6 +325,57 @@ const CollectToast: React.FC<{ toast: ToastState; onDone: () => void }> = ({ toa
   )
 }
 
+// ── Item List Row (list view) ──
+
+const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => void }> = ({ item, onDelete }) => {
+  const Icon = TYPE_ICONS[item.type]
+  const domain = (() => { try { return item.url ? new URL(item.url).hostname.replace('www.', '') : '' } catch { return '' } })()
+  const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
+  const ogImage = item.meta?.ogImage as string | undefined
+
+  return (
+    <div
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/x-collector-item', item.id)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      className="group flex items-center gap-3 px-3 py-2 rounded-md hover:bg-bg-hover transition-colors cursor-grab active:cursor-grabbing"
+    >
+      {/* Thumbnail */}
+      <div className="w-10 h-10 rounded bg-[#161616] flex items-center justify-center shrink-0 overflow-hidden">
+        {localAsset ? (
+          <img src={localAsset} alt="" className="w-full h-full object-cover" />
+        ) : ogImage ? (
+          <img src={ogImage} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+        ) : (
+          <Icon size={16} className="text-tx-faint" />
+        )}
+      </div>
+      {/* Info */}
+      <div className="flex-1 min-w-0">
+        <div className="text-[12px] text-tx-main truncate">{item.title}</div>
+        <div className="flex items-center gap-1.5 text-[10px] text-tx-faint">
+          <Icon size={9} />
+          <span>{TYPE_LABELS[item.type]}</span>
+          {domain && <><span>·</span><span>{domain}</span></>}
+        </div>
+      </div>
+      {/* Time */}
+      <span className="text-[10px] text-tx-faint shrink-0">
+        {new Date(item.createdAt).toLocaleDateString()}
+      </span>
+      {/* Delete */}
+      <button
+        onClick={() => onDelete(item.id)}
+        className="p-1 text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+      >
+        <X size={11} />
+      </button>
+    </div>
+  )
+}
+
 // ── Main App ──
 
 export const CollectorApp: React.FC = () => {
@@ -334,7 +385,9 @@ export const CollectorApp: React.FC = () => {
   const [groups, setGroups] = useState<string[]>([])
   const [showCollectPanel, setShowCollectPanel] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
-  const [hasEmbeddingKey, setHasEmbeddingKey] = useState(true) // assume true until checked
+  const [hasEmbeddingKey, setHasEmbeddingKey] = useState(true)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [typeFilter, setTypeFilter] = useState<CollectedItemType | 'all'>('all')
 
   const blurClass = showCommandPalette
     ? 'opacity-50 transition-opacity duration-200'
@@ -528,20 +581,24 @@ export const CollectorApp: React.FC = () => {
 
   const handleDragLeave = useCallback(() => setIsDragOver(false), [])
 
-  // Determine if activeFilter is a type or group
-  const isTypeFilter = activeFilter in TYPE_LABELS
-  const filteredItems = activeFilter === 'all'
+  // Filter by group (from sidebar)
+  const groupFiltered = activeFilter === 'all'
     ? items
-    : isTypeFilter
-      ? items.filter((i) => i.type === activeFilter)
-      : items.filter((i) => i.group === activeFilter)
+    : items.filter((i) => i.group === activeFilter)
+
+  // Then filter by type (from chips)
+  const filteredItems = typeFilter === 'all'
+    ? groupFiltered
+    : groupFiltered.filter((i) => i.type === typeFilter)
 
   // Display name for header
-  const filterLabel = activeFilter === 'all'
-    ? 'All Items'
-    : isTypeFilter
-      ? TYPE_LABELS[activeFilter as CollectedItemType]
-      : activeFilter
+  const filterLabel = activeFilter === 'all' ? 'All Items' : activeFilter
+
+  // Count by type for filter chips
+  const typeCounts: Partial<Record<CollectedItemType, number>> = {}
+  for (const item of groupFiltered) {
+    typeCounts[item.type] = (typeCounts[item.type] || 0) + 1
+  }
 
   return (
     <div
@@ -576,16 +633,64 @@ export const CollectorApp: React.FC = () => {
           <span className="text-[15px] text-tx-main font-medium">{filterLabel}</span>
           <span className="text-[12px] text-tx-faint">{filteredItems.length}</span>
         </div>
-        <button
-          onClick={() => setShowCollectPanel(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-tx-muted border border-border-strong rounded-md hover:bg-bg-hover transition-colors"
-        >
-          <Plus size={12} />
-          Collect
-        </button>
+        <div className="flex items-center gap-2">
+          {/* View toggle */}
+          <div className="flex items-center border border-border-strong rounded-md overflow-hidden">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-bg-active text-tx-main' : 'text-tx-faint hover:text-tx-muted'}`}
+              title="Grid view"
+            >
+              <LayoutGrid size={13} />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-bg-active text-tx-main' : 'text-tx-faint hover:text-tx-muted'}`}
+              title="List view"
+            >
+              <List size={13} />
+            </button>
+          </div>
+          <button
+            onClick={() => setShowCollectPanel(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-tx-muted border border-border-strong rounded-md hover:bg-bg-hover transition-colors"
+          >
+            <Plus size={12} />
+            Collect
+          </button>
+        </div>
       </div>
 
-      {/* Grid */}
+      {/* Type filter chips */}
+      {Object.keys(typeCounts).length > 1 && (
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+          <button
+            onClick={() => setTypeFilter('all')}
+            className={`px-2.5 py-1 text-[11px] rounded-md transition-colors ${
+              typeFilter === 'all' ? 'bg-accent-main text-[#111] font-medium' : 'text-tx-muted border border-border-strong hover:bg-bg-hover'
+            }`}
+          >
+            All {groupFiltered.length}
+          </button>
+          {(Object.entries(typeCounts) as [CollectedItemType, number][]).map(([t, count]) => {
+            const Icon = TYPE_ICONS[t]
+            return (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(typeFilter === t ? 'all' : t)}
+                className={`px-2.5 py-1 text-[11px] rounded-md flex items-center gap-1.5 transition-colors ${
+                  typeFilter === t ? 'bg-accent-main text-[#111] font-medium' : 'text-tx-muted border border-border-strong hover:bg-bg-hover'
+                }`}
+              >
+                <Icon size={11} />
+                {TYPE_LABELS[t]} {count}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-tx-faint">
@@ -598,10 +703,16 @@ export const CollectorApp: React.FC = () => {
               Collect your first item
             </button>
           </div>
-        ) : (
+        ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-4 gap-2.5 pb-4">
             {filteredItems.map((item) => (
               <ItemCard key={item.id} item={item} onDelete={handleDelete} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-px pb-4">
+            {filteredItems.map((item) => (
+              <ItemListRow key={item.id} item={item} onDelete={handleDelete} />
             ))}
           </div>
         )}

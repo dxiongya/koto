@@ -108,10 +108,15 @@ export async function ocrAndDescribeItem(item: CollectedItem): Promise<boolean> 
   console.log(`[OCR] Description: ${result.description.slice(0, 60)}`)
   console.log(`[OCR] Text found: ${result.ocrText.slice(0, 80)}`)
 
-  // Update item with OCR data — this also updates FTS5 index via trigger
+  // Update item with OCR data + auto-name — this also updates FTS5 index via trigger
   const meta = { ...(item.meta || {}), ocrText: result.ocrText, imageDescription: result.description }
   const note = [result.description, result.ocrText].filter(Boolean).join('\n')
-  updateCollectedItem(item.id, { note, meta })
+  // Auto-name: use description as title if current title is generic
+  const genericTitles = ['image', 'screenshot', 'untitled', '']
+  const title = genericTitles.includes(item.title.toLowerCase())
+    ? result.description.slice(0, 60) || item.title
+    : item.title
+  updateCollectedItem(item.id, { title, note, meta })
 
   return true
 }
