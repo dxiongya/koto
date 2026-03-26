@@ -17,7 +17,7 @@ const VECTOR_DIM = 768
 /** Get a configured Gemini client using collector's dedicated API key */
 function getClient(): GoogleGenAI | null {
   const config = loadConfig()
-  const apiKey = config.collectorGeminiApiKey
+  const apiKey = config.embeddingGeminiApiKey
   if (!apiKey) return null
   return new GoogleGenAI({ apiKey })
 }

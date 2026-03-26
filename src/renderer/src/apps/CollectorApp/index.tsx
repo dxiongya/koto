@@ -327,9 +327,7 @@ export const CollectorApp: React.FC = () => {
   const [groups, setGroups] = useState<string[]>([])
   const [showCollectPanel, setShowCollectPanel] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
-  const [apiKeyDisplay, setApiKeyDisplay] = useState<string | null>(null)
-  const [apiKeyInput, setApiKeyInput] = useState('')
-  const [showApiKeySetup, setShowApiKeySetup] = useState(false)
+  const [hasEmbeddingKey, setHasEmbeddingKey] = useState(true) // assume true until checked
 
   const blurClass = showCommandPalette
     ? 'opacity-50 transition-opacity duration-200'
@@ -348,24 +346,12 @@ export const CollectorApp: React.FC = () => {
 
   useEffect(() => { loadItems() }, [loadItems, activeFilter])
 
-  // Check API key status
+  // Check embedding key status
   useEffect(() => {
-    window.api.collector.getApiKey().then((res) => {
-      if (res.ok) setApiKeyDisplay(res.data || '')
+    window.api.collector.getEmbeddingKey().then((res) => {
+      setHasEmbeddingKey(res.ok && !!res.data)
     })
   }, [])
-
-  const handleSaveApiKey = useCallback(async () => {
-    const key = apiKeyInput.trim()
-    if (!key) return
-    await window.api.collector.setApiKey(key)
-    setApiKeyDisplay(`${key.slice(0, 6)}...${key.slice(-4)}`)
-    setApiKeyInput('')
-    setShowApiKeySetup(false)
-    setToast({ message: 'Gemini API key saved · semantic search enabled', status: 'success' })
-    // Trigger embedding of all items
-    window.api.collector.embedAll().catch(() => {})
-  }, [apiKeyInput])
 
   const handleDelete = useCallback(async (id: string) => {
     await window.api.collector.delete(id)
@@ -559,31 +545,15 @@ export const CollectorApp: React.FC = () => {
           </div>
         </div>
       )}
-      {/* Gemini API Key Banner */}
-      {apiKeyDisplay !== null && !apiKeyDisplay && !showApiKeySetup && (
+      {/* Embedding hint — link to Settings */}
+      {!hasEmbeddingKey && (
         <button
-          onClick={() => setShowApiKeySetup(true)}
+          onClick={() => useUIStore.getState().setCurrentApp('settings.app')}
           className="shrink-0 flex items-center gap-2 px-3 py-2 rounded-md border border-border-subtle bg-bg-hover text-[11px] text-tx-faint hover:text-tx-muted hover:border-border-strong transition-colors"
         >
           <Sparkles size={12} className="text-accent-main" />
-          <span>Set up Gemini API key for semantic search</span>
+          <span>Configure Gemini API key in Settings for semantic search</span>
         </button>
-      )}
-      {showApiKeySetup && (
-        <div className="shrink-0 flex items-center gap-2 px-3 py-2 rounded-md border border-accent-main/30 bg-bg-hover">
-          <Sparkles size={12} className="text-accent-main shrink-0" />
-          <input
-            type="password"
-            value={apiKeyInput}
-            onChange={(e) => setApiKeyInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveApiKey(); if (e.key === 'Escape') setShowApiKeySetup(false) }}
-            placeholder="Paste Gemini API key..."
-            className="flex-1 bg-transparent text-[12px] text-tx-main outline-none placeholder-tx-faint"
-            autoFocus
-          />
-          <button onClick={handleSaveApiKey} disabled={!apiKeyInput.trim()} className="text-[11px] text-accent-main hover:underline disabled:opacity-40">Save</button>
-          <button onClick={() => setShowApiKeySetup(false)} className="text-tx-faint hover:text-tx-muted"><X size={12} /></button>
-        </div>
       )}
 
       {/* Header */}

@@ -255,6 +255,81 @@ const FEATURE_LABELS: Record<AIFeature, { name: string; desc: string }> = {
 
 const FEATURES: AIFeature[] = ['completion', 'chat']
 
+// ── Embedding Section ──
+
+const EmbeddingSection: React.FC = () => {
+  const [apiKey, setApiKey] = useState('')
+  const [savedKey, setSavedKey] = useState('')
+  const [showKey, setShowKey] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    window.api.collector.getEmbeddingKey().then((res) => {
+      if (res.ok && res.data) {
+        setSavedKey(res.data)
+        setApiKey(res.data)
+      }
+    })
+  }, [])
+
+  const handleSave = useCallback(async () => {
+    const key = apiKey.trim()
+    if (!key) return
+    setSaving(true)
+    await window.api.collector.setEmbeddingKey(key)
+    setSavedKey(key)
+    setSaving(false)
+    // Trigger embedding of all collected items
+    window.api.collector.embedAll().catch(() => {})
+  }, [apiKey])
+
+  const maskedKey = savedKey ? `${savedKey.slice(0, 8)}${'•'.repeat(20)}${savedKey.slice(-4)}` : ''
+
+  return (
+    <section className="mb-10">
+      <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Embedding</h2>
+      <div className="space-y-3">
+        <p className="text-[12px] text-tx-faint leading-relaxed">
+          Semantic search uses <span className="text-tx-muted">Google Gemini Embedding 2</span> to understand the meaning of your collected items.
+          Get an API key from <button onClick={() => window.open('https://aistudio.google.com/apikey')} className="text-accent-main hover:underline">Google AI Studio</button>.
+        </p>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 relative">
+            <input
+              type={showKey ? 'text' : 'password'}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSave() }}
+              placeholder="Gemini API key"
+              className="w-full px-3 py-2 text-[12px] bg-bg-input border border-border-subtle rounded-md text-tx-main placeholder-tx-faint outline-none focus:border-accent-main/50 transition-colors"
+            />
+          </div>
+          <button
+            onClick={() => setShowKey(!showKey)}
+            className="p-2 text-tx-faint hover:text-tx-muted transition-colors"
+            title={showKey ? 'Hide key' : 'Show key'}
+          >
+            {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!apiKey.trim() || apiKey === savedKey || saving}
+            className="px-3 py-2 text-[11px] text-[#111] font-medium bg-accent-main rounded-md hover:opacity-90 disabled:opacity-30 transition-opacity"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+        {savedKey && (
+          <div className="flex items-center gap-2 text-[11px] text-status-success">
+            <Check size={12} />
+            <span>API key configured — semantic search enabled</span>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
 const AISettingsSection: React.FC = () => {
   const ai = useUIStore((s) => s.ai)
   const addAIProvider = useUIStore((s) => s.addAIProvider)
@@ -1261,6 +1336,9 @@ const SettingsApp: React.FC = () => {
     <div className={`flex-1 overflow-y-auto ${blurClass}`}>
       <div className="max-w-[560px] mx-auto py-12 px-6">
         <h1 className="text-tx-main text-lg font-semibold mb-8">Settings</h1>
+
+        {/* ── Embedding (Gemini) ── */}
+        <EmbeddingSection />
 
         {/* ── AI Providers ── */}
         <AISettingsSection />

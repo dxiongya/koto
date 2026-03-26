@@ -482,16 +482,15 @@ export function setupIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle(IpcChannels.COLLECTOR_GET_API_KEY, () => {
+  ipcMain.handle(IpcChannels.EMBEDDING_GET_API_KEY, () => {
     const config = loadConfig()
-    // Return masked key for display
-    const key = config.collectorGeminiApiKey || ''
-    return { ok: true, data: key ? `${key.slice(0, 6)}...${key.slice(-4)}` : '' }
+    const key = config.embeddingGeminiApiKey || ''
+    return { ok: true, data: key }
   })
 
-  ipcMain.handle(IpcChannels.COLLECTOR_SET_API_KEY, (_, apiKey: string) => {
+  ipcMain.handle(IpcChannels.EMBEDDING_SET_API_KEY, (_, apiKey: string) => {
     try {
-      saveConfig({ collectorGeminiApiKey: apiKey })
+      saveConfig({ embeddingGeminiApiKey: apiKey })
       return { ok: true, data: undefined }
     } catch (e) {
       return { ok: false, error: String(e) }
