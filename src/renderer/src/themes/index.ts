@@ -3,12 +3,16 @@ import { darkTheme } from './dark'
 import { lightTheme } from './light'
 import { cursorDarkTheme } from './cursor-dark'
 import { cursorLightTheme } from './cursor-light'
+import { cursorMidnightTheme } from './cursor-midnight'
+import { cursorHighContrastTheme } from './cursor-high-contrast'
 import { fonts } from './fonts'
 
 export { darkTheme } from './dark'
 export { lightTheme } from './light'
 export { cursorDarkTheme } from './cursor-dark'
 export { cursorLightTheme } from './cursor-light'
+export { cursorMidnightTheme } from './cursor-midnight'
+export { cursorHighContrastTheme } from './cursor-high-contrast'
 export { fonts, fontList } from './fonts'
 export type { ThemeDefinition, ThemeColors, FontId, FontDefinition } from './types'
 
@@ -17,6 +21,8 @@ export const builtinThemes: Record<string, ThemeDefinition> = {
   light: lightTheme,
   'cursor-dark': cursorDarkTheme,
   'cursor-light': cursorLightTheme,
+  'cursor-midnight': cursorMidnightTheme,
+  'cursor-high-contrast': cursorHighContrastTheme,
 }
 
 /** All themes grouped by group name, preserving insertion order */

@@ -22,8 +22,8 @@ export const cursorDarkTheme: ThemeDefinition = {
     'border-strong': 'rgba(228, 228, 228, 0.12)',
     'accent-main': '#88C0D0',
     'accent-bg': 'rgba(136, 192, 208, 0.12)',
-    'status-success': '#A3BE8C',
-    'status-error': '#BF616A',
-    'status-warning': '#EBCB8B',
+    'status-success': '#3FA266',
+    'status-error': '#E34671',
+    'status-warning': '#F1B467',
   },
 }
