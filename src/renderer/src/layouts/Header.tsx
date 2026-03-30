@@ -38,7 +38,8 @@ export const Header: React.FC = () => {
       >
         <button
           onClick={toggleSidebar}
-          className="p-1.5 rounded-md hover:bg-bg-hover text-tx-faint hover:text-tx-main transition-colors shrink-0"
+          className="p-1.5 rounded-md hover:bg-bg-hover text-tx-faint hover:text-tx-main transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50"
+          aria-label="Toggle sidebar"
           title="Toggle Sidebar"
         >
           <PanelLeft size={16} strokeWidth={1.5} />

@@ -138,7 +138,7 @@ const AIProviderForm: React.FC<{
           value={form.name}
           onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
           placeholder="e.g. My GPT-4o"
-          className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint"
+          className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint"
         />
       </div>
 
@@ -151,7 +151,7 @@ const AIProviderForm: React.FC<{
             value={form.apiKey}
             onChange={(e) => { setForm((p) => ({ ...p, apiKey: e.target.value })); setTestResult(null) }}
             placeholder="sk-..."
-            className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 pr-9 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono"
+            className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 pr-9 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono"
           />
           <button
             type="button"
@@ -172,7 +172,7 @@ const AIProviderForm: React.FC<{
             value={form.baseUrl}
             onChange={(e) => setForm((p) => ({ ...p, baseUrl: e.target.value }))}
             placeholder="https://api.example.com/v1"
-            className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono"
+            className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono"
           />
         </div>
       )}
@@ -185,7 +185,7 @@ const AIProviderForm: React.FC<{
           value={form.model}
           onChange={(e) => setForm((p) => ({ ...p, model: e.target.value }))}
           placeholder="model name"
-          className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono"
+          className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono"
         />
         {suggestedModels.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -342,7 +342,7 @@ const EmbeddingSection: React.FC = () => {
           <div className="flex items-center gap-3">
             <button
               onClick={() => { setEditing(true); setFormKey('') }}
-              className="px-3 py-1.5 text-[11px] text-[#111] font-medium bg-accent-main rounded-md hover:opacity-90"
+              className="px-3 py-1.5 text-[11px] text-bg-app font-medium bg-accent-main rounded-md hover:opacity-90"
             >
               Configure
             </button>
@@ -366,7 +366,7 @@ const EmbeddingSection: React.FC = () => {
                 onKeyDown={(e) => { if (e.key === 'Enter') handleTest() }}
                 placeholder="AIza..."
                 autoFocus
-                className="flex-1 bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint"
+                className="flex-1 bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint"
               />
               <button onClick={() => setShowKey(!showKey)} className="p-2 text-tx-faint hover:text-tx-muted" title={showKey ? 'Hide' : 'Show'}>
                 {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -403,7 +403,7 @@ const EmbeddingSection: React.FC = () => {
             <button
               onClick={handleSave}
               disabled={!formKey.trim() || saving}
-              className="px-3 py-1.5 text-[11px] text-[#111] font-medium bg-accent-main rounded-md hover:opacity-90 disabled:opacity-30"
+              className="px-3 py-1.5 text-[11px] text-bg-app font-medium bg-accent-main rounded-md hover:opacity-90 disabled:opacity-30"
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
@@ -561,7 +561,7 @@ const AISettingsSection: React.FC = () => {
                   <select
                     value={routed ?? ''}
                     onChange={(e) => setAIFeatureProvider(feature, e.target.value || null)}
-                    className="bg-bg-app text-tx-main text-xs rounded-md px-2 py-1.5 border border-border-subtle outline-none focus:border-accent-main/50 min-w-[140px]"
+                    className="bg-bg-app text-tx-main text-xs rounded-md px-2 py-1.5 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 min-w-[140px]"
                   >
                     <option value="">Default ({ai.providers.find((p) => p.id === ai.activeProviderId)?.name || 'none'})</option>
                     {ai.providers.filter((p) => p.enabled).map((p) => (
@@ -799,7 +799,7 @@ const MCPServerForm: React.FC<{
           type="text" value={form.name}
           onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
           placeholder="e.g. GitHub MCP"
-          className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint"
+          className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint"
         />
       </div>
       <div>
@@ -808,7 +808,7 @@ const MCPServerForm: React.FC<{
           type="text" value={form.description}
           onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
           placeholder="e.g. X/Twitter API - search tweets, get user info"
-          className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint"
+          className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint"
         />
       </div>
       {/* Transport mode toggle */}
@@ -825,7 +825,7 @@ const MCPServerForm: React.FC<{
               type="text" value={form.command}
               onChange={(e) => setForm((p) => ({ ...p, command: e.target.value }))}
               placeholder="e.g. npx, node, python"
-              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono"
+              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono"
             />
           </div>
           <div>
@@ -834,7 +834,7 @@ const MCPServerForm: React.FC<{
               type="text" value={form.args}
               onChange={(e) => setForm((p) => ({ ...p, args: e.target.value }))}
               placeholder="e.g. -y @modelcontextprotocol/server-everything"
-              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono"
+              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono"
             />
           </div>
           <div>
@@ -844,7 +844,7 @@ const MCPServerForm: React.FC<{
               onChange={(e) => setForm((p) => ({ ...p, env: e.target.value }))}
               placeholder="GITHUB_TOKEN=ghp_..."
               rows={2}
-              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono resize-none"
+              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono resize-none"
             />
           </div>
         </>
@@ -856,7 +856,7 @@ const MCPServerForm: React.FC<{
               type="text" value={form.url}
               onChange={(e) => setForm((p) => ({ ...p, url: e.target.value }))}
               placeholder="https://mcp.example.com/sse"
-              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono"
+              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono"
             />
           </div>
           <div>
@@ -866,7 +866,7 @@ const MCPServerForm: React.FC<{
               onChange={(e) => setForm((p) => ({ ...p, headers: e.target.value }))}
               placeholder="Authorization: Bearer sk-..."
               rows={2}
-              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono resize-none"
+              className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono resize-none"
             />
           </div>
         </>
@@ -876,7 +876,7 @@ const MCPServerForm: React.FC<{
         <input
           type="number" value={form.timeout}
           onChange={(e) => setForm((p) => ({ ...p, timeout: Number(e.target.value) || 30000 }))}
-          className="w-32 bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 font-mono"
+          className="w-32 bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 font-mono"
         />
       </div>
       <div className="flex items-center gap-2 pt-1">
@@ -1067,7 +1067,7 @@ const MCPServersSection: React.FC = () => {
             onChange={(e) => { setJsonText(e.target.value); setJsonError(null); setJsonDirty(true) }}
             rows={Math.min(20, Math.max(8, jsonText.split('\n').length + 2))}
             spellCheck={false}
-            className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 font-mono resize-y leading-relaxed"
+            className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 font-mono resize-y leading-relaxed"
           />
           {jsonError && <div className="text-xs text-status-error px-1">{jsonError}</div>}
           <div className="flex items-center gap-2">
@@ -1283,15 +1283,15 @@ const SkillsSection: React.FC = () => {
         <div className="space-y-3 bg-bg-hover rounded-lg p-4 border border-border-subtle mb-4">
           <div>
             <label className="block text-xs text-tx-muted mb-1.5">Name</label>
-            <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. code-review" className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint" />
+            <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. code-review" className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint" />
           </div>
           <div>
             <label className="block text-xs text-tx-muted mb-1.5">Description</label>
-            <input type="text" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="One-line description" className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint" />
+            <input type="text" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="One-line description" className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint" />
           </div>
           <div>
             <label className="block text-xs text-tx-muted mb-1.5">Skill Content (instructions for AI)</label>
-            <textarea value={newContent} onChange={(e) => setNewContent(e.target.value)} placeholder="When doing X, focus on..." rows={8} className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono resize-none" />
+            <textarea value={newContent} onChange={(e) => setNewContent(e.target.value)} placeholder="When doing X, focus on..." rows={8} className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono resize-none" />
           </div>
           <div className="flex items-center gap-2">
             <div className="flex-1" />
@@ -1306,7 +1306,7 @@ const SkillsSection: React.FC = () => {
         <div className="space-y-3 bg-bg-hover rounded-lg p-4 border border-border-subtle mb-4">
           <div>
             <label className="block text-xs text-tx-muted mb-1.5">Import Skill</label>
-            <input type="text" value={importInput} onChange={(e) => { setImportInput(e.target.value); setImportError(null) }} placeholder="skills.sh URL, GitHub URL, or owner/repo/skill" className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus:border-accent-main/50 placeholder-tx-faint font-mono" />
+            <input type="text" value={importInput} onChange={(e) => { setImportInput(e.target.value); setImportError(null) }} placeholder="skills.sh URL, GitHub URL, or owner/repo/skill" className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono" />
           </div>
           <div className="text-[11px] text-tx-faint leading-relaxed space-y-1">
             <div>Supported formats:</div>

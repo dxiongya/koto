@@ -70,7 +70,7 @@ const AutomationForm: React.FC<{
           value={form.name}
           onChange={(e) => update('name', e.target.value)}
           placeholder="e.g., Update crypto prices"
-          className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none focus:border-accent-main/50"
+          className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50"
         />
       </div>
 
@@ -101,7 +101,7 @@ const AutomationForm: React.FC<{
           value={form.filePath}
           onChange={(e) => update('filePath', e.target.value)}
           placeholder="/path/to/notes/file.md"
-          className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs font-mono outline-none focus:border-accent-main/50"
+          className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs font-mono outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50"
         />
       </div>
 
@@ -113,7 +113,7 @@ const AutomationForm: React.FC<{
             value={form.sectionHeading}
             onChange={(e) => update('sectionHeading', e.target.value)}
             placeholder="e.g., ## Market Data"
-            className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none focus:border-accent-main/50"
+            className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50"
           />
         </div>
       )}
@@ -126,7 +126,7 @@ const AutomationForm: React.FC<{
             value={form.tableIdentifier}
             onChange={(e) => update('tableIdentifier', e.target.value)}
             placeholder="e.g., Name|Price|Change"
-            className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none focus:border-accent-main/50"
+            className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50"
           />
         </div>
       )}
@@ -139,7 +139,7 @@ const AutomationForm: React.FC<{
           onChange={(e) => update('promptTemplate', e.target.value)}
           placeholder="Describe what the AI should do each time this runs..."
           rows={4}
-          className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none focus:border-accent-main/50 resize-none"
+          className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 resize-none"
         />
       </div>
 
@@ -150,7 +150,7 @@ const AutomationForm: React.FC<{
           <select
             value={form.interval}
             onChange={(e) => update('interval', Number(e.target.value))}
-            className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none"
+            className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50"
           >
             {Object.entries(INTERVAL_LABELS).map(([val, label]) => (
               <option key={val} value={val}>{label}</option>
@@ -162,7 +162,7 @@ const AutomationForm: React.FC<{
           <select
             value={form.providerId}
             onChange={(e) => update('providerId', e.target.value)}
-            className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none"
+            className="w-full mt-1 px-2.5 py-1.5 rounded bg-bg-input border border-border-subtle text-tx-main text-xs outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50"
           >
             <option value="default">Default (AI Chat)</option>
             {providers.map((p) => (

@@ -635,7 +635,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      <div className="fixed inset-0 z-[100] bg-black/20" onClick={onClose} />
+      <div className="fixed inset-0 z-[100] bg-bg-app/20" role="presentation" onClick={onClose} />
       <div className="fixed top-[12%] left-1/2 -translate-x-1/2 w-[90%] max-w-[520px] bg-bg-popover rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-border-strong overflow-hidden z-[101] flex flex-col">
         {/* Input */}
         <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border-subtle">
@@ -650,14 +650,14 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
           />
           {!isCommandMode && !isSearchMode && !isCollectorSearch && !isLineMode && !isHelpMode && (
             <div className="flex items-center gap-1.5">
-              <kbd className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
-                onClick={() => { setQuery('>'); inputRef.current?.focus() }}>{'>'}</kbd>
-              <kbd className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
-                onClick={() => { setQuery('#'); inputRef.current?.focus() }}>#</kbd>
-              <kbd className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
-                onClick={() => { setQuery(':'); inputRef.current?.focus() }}>:</kbd>
-              <kbd className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
-                onClick={() => { setQuery('?'); inputRef.current?.focus() }}>?</kbd>
+              <button type="button" aria-label="Command mode" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted focus-visible:ring-1 focus-visible:ring-accent-main/50"
+                onClick={() => { setQuery('>'); inputRef.current?.focus() }}>{'>'}</button>
+              <button type="button" aria-label="Search content" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted focus-visible:ring-1 focus-visible:ring-accent-main/50"
+                onClick={() => { setQuery('#'); inputRef.current?.focus() }}>#</button>
+              <button type="button" aria-label="Go to line" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted focus-visible:ring-1 focus-visible:ring-accent-main/50"
+                onClick={() => { setQuery(':'); inputRef.current?.focus() }}>:</button>
+              <button type="button" aria-label="Help" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted focus-visible:ring-1 focus-visible:ring-accent-main/50"
+                onClick={() => { setQuery('?'); inputRef.current?.focus() }}>?</button>
             </div>
           )}
         </div>
