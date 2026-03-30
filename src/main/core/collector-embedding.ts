@@ -8,7 +8,7 @@ import path from 'path'
 import { GoogleGenAI } from '@google/genai'
 import { getLiteHome } from './lite-home'
 import { loadConfig } from './lite-home'
-import { readItemMarkdown, saveVector, getAllVectors, updateCollectedItem } from './collector-store'
+import { readItemMarkdown, saveVector, getAllVectors, getEmbeddedItemIds, updateCollectedItem } from './collector-store'
 import type { CollectedItem } from '../../shared/types'
 
 const EMBEDDING_MODEL = 'gemini-embedding-2-preview'
@@ -188,8 +188,7 @@ export async function embedAndSave(item: CollectedItem): Promise<boolean> {
 
 /** Embed all items that don't have vectors yet */
 export async function embedAllPending(items: CollectedItem[]): Promise<{ embedded: number; failed: number }> {
-  const existingVecs = getAllVectors()
-  const existingIds = new Set(existingVecs.map((e) => e.itemId))
+  const existingIds = getEmbeddedItemIds()
   const pending = items.filter((item) => !existingIds.has(item.id))
 
   let embedded = 0

@@ -552,7 +552,7 @@ export function setupIpcHandlers(): void {
       if (ftsData.length >= 5) return { ok: true, data: ftsData }
 
       // 3. Supplement with hybrid (keyword + semantic)
-      const items = listCollectedItems()
+      const items = listCollectedItems(100, 0)
       const hybridResults = await hybridSearch(query, items)
       const itemMap = new Map(items.map((i) => [i.id, i]))
       const ftsIds = new Set(ftsData.map((r) => r.item.id))

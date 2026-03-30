@@ -60,13 +60,16 @@ export const CollectorApp: React.FC = () => {
 
   useEffect(() => { loadItems() }, [loadItems, activeFilter, collectorVersion])
 
+  const loadMoreRef = useRef(loadMore)
+  loadMoreRef.current = loadMore
+
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const handleScroll = (): void => { if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) loadMore() }
+    const handleScroll = (): void => { if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) loadMoreRef.current() }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
-  }, [loadMore])
+  }, [])
 
   useEffect(() => {
     window.api.collector.getEmbeddingKey().then((res) => { setHasEmbeddingKey(res.ok && !!res.data) })
@@ -200,6 +203,11 @@ export const CollectorApp: React.FC = () => {
 
   // ── Paste & Drop ──
 
+  const quickCollectRef = useRef(quickCollect)
+  quickCollectRef.current = quickCollect
+  const quickCollectFileRef = useRef(quickCollectFile)
+  quickCollectFileRef.current = quickCollectFile
+
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent): void => {
       const tag = (document.activeElement as HTMLElement)?.tagName
@@ -207,26 +215,26 @@ export const CollectorApp: React.FC = () => {
       const files = e.clipboardData?.files
       if (files && files.length > 0) {
         e.preventDefault()
-        for (const file of Array.from(files)) { if (file.type.startsWith('image/') || file.type.startsWith('video/')) quickCollectFile(file) }
+        for (const file of Array.from(files)) { if (file.type.startsWith('image/') || file.type.startsWith('video/')) quickCollectFileRef.current(file) }
         return
       }
       const text = e.clipboardData?.getData('text/plain')?.trim()
-      if (text) { e.preventDefault(); quickCollect(text) }
+      if (text) { e.preventDefault(); quickCollectRef.current(text) }
     }
     window.addEventListener('paste', handlePaste)
     return () => window.removeEventListener('paste', handlePaste)
-  }, [quickCollect, quickCollectFile])
+  }, [])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setIsDragOver(false)
     if (e.dataTransfer.types.includes('application/x-collector-item')) return
     if (e.dataTransfer.files.length > 0) {
-      for (const file of Array.from(e.dataTransfer.files)) { if (file.type.startsWith('image/') || file.type.startsWith('video/')) quickCollectFile(file) }
+      for (const file of Array.from(e.dataTransfer.files)) { if (file.type.startsWith('image/') || file.type.startsWith('video/')) quickCollectFileRef.current(file) }
       return
     }
     const text = e.dataTransfer.getData('text/plain')?.trim() || e.dataTransfer.getData('text/uri-list')?.trim()
-    if (text) quickCollect(text)
-  }, [quickCollect, quickCollectFile])
+    if (text) quickCollectRef.current(text)
+  }, [])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (e.dataTransfer.types.includes('application/x-collector-item')) return

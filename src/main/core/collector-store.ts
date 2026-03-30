@@ -65,6 +65,9 @@ function getDb(): Database.Database {
       vector BLOB NOT NULL,
       embedded_at INTEGER NOT NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_items_url ON items(url);
+    CREATE INDEX IF NOT EXISTS idx_items_group ON items("group");
   `)
 
   // Migrate from JSON if exists
@@ -380,6 +383,11 @@ export function getAllVectors(): { itemId: string; vector: number[] }[] {
     itemId: row.item_id,
     vector: Array.from(new Float64Array(row.vector.buffer, row.vector.byteOffset, row.vector.byteLength / 8)),
   }))
+}
+
+export function getEmbeddedItemIds(): Set<string> {
+  const rows = getDb().prepare('SELECT item_id FROM vectors').all() as { item_id: string }[]
+  return new Set(rows.map(r => r.item_id))
 }
 
 export function removeVector(itemId: string): void {
