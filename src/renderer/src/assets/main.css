@@ -404,6 +404,11 @@ ul.editor-checklist {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
 /* Code blocks: fixed-position ghost text at cursor */
 .ghost-text-code-overlay {
   color: var(--tx-muted);

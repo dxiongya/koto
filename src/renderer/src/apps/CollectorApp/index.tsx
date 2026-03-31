@@ -9,6 +9,7 @@ import { ItemCard } from './ItemCard'
 import { ItemListRow } from './ItemListRow'
 import { FeedItem } from './FeedItem'
 import { CollectToast } from './CollectToast'
+import { DetailPanel } from './DetailPanel'
 
 const PAGE_SIZE = 50
 
@@ -25,6 +26,7 @@ export const CollectorApp: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'feed'>('grid')
   const [typeFilter, setTypeFilter] = useState<CollectedItemType | 'all'>('all')
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [detailItem, setDetailItem] = useState<CollectedItem | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<CollectedItem[] | null>(null)
   const [searching, setSearching] = useState(false)
@@ -97,13 +99,12 @@ export const CollectorApp: React.FC = () => {
   }, [bumpVersion])
 
   const handleOpen = useCallback((item: CollectedItem) => {
-    if (item.url && (item.type === 'link' || item.type === 'tweet' || item.type === 'video')) {
-      window.api.shell.openExternal(item.url); return
-    }
-    if (item.assetPath && (item.type === 'image' || item.type === 'screenshot')) {
-      setPreviewImage(`lite-asset://collected/${item.assetPath}`); return
-    }
+    setDetailItem(item)
+  }, [])
+
+  const handleOpenExternal = useCallback((item: CollectedItem) => {
     if (item.url) window.api.shell.openExternal(item.url)
+    else if (item.assetPath) setPreviewImage(`lite-asset://collected/${item.assetPath}`)
   }, [])
 
   // ── Quick collect (paste/drop) ──
@@ -351,6 +352,10 @@ export const CollectorApp: React.FC = () => {
           <button onClick={() => setPreviewImage(null)} aria-label="Close" className="absolute top-4 right-4 p-2 text-tx-main/60 hover:text-tx-main transition-colors"><X size={20} /></button>
           <img src={previewImage} alt="" className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
         </div>, document.body
+      )}
+      {detailItem && createPortal(
+        <DetailPanel item={detailItem} onClose={() => setDetailItem(null)} onOpenExternal={handleOpenExternal} />,
+        document.body
       )}
     </div>
   )
