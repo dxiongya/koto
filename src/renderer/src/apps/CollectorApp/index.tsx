@@ -286,7 +286,7 @@ export const CollectorApp: React.FC = () => {
           <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-bg-hover border border-border-subtle focus-within:border-accent-main/40 transition-colors">
             <Search size={12} className={searching ? 'text-accent-main animate-pulse' : 'text-tx-faint'} />
             <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Search..."
-              className="flex-1 bg-transparent text-[12px] text-tx-main outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 placeholder-tx-faint" />
+              className="flex-1 bg-transparent text-[12px] text-tx-main outline-none placeholder-tx-faint" />
             {searchQuery && <button onClick={() => { setSearchQuery(''); setSearchResults(null) }} aria-label="Clear search" className="text-tx-faint hover:text-tx-main"><X size={11} /></button>}
           </div>
         </div>
