@@ -1466,8 +1466,31 @@ const SettingsApp: React.FC = () => {
             })}
           </div>
 
-          {/* Dark / Light toggle */}
-          <div className="flex gap-2">
+          {/* Theme variants within selected group */}
+          {(() => {
+            const groupThemes = themeGroups.find(g => g.group === currentGroup)?.themes || []
+            return (
+              <div className={`grid gap-2 mb-4 ${groupThemes.length <= 2 ? 'grid-cols-2' : groupThemes.length <= 4 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                {groupThemes.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setTheme(t.id)}
+                    className={`flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                      currentThemeId === t.id
+                        ? 'bg-accent-main/10 text-accent-main border border-accent-main/30'
+                        : 'text-tx-muted hover:bg-bg-hover border border-border-subtle'
+                    }`}
+                  >
+                    {t.isDark ? <Moon size={14} /> : <Sun size={14} />}
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            )
+          })()}
+
+          {/* Legacy Dark / Light toggle — hidden, kept for compatibility */}
+          <div className="hidden flex gap-2">
             <button
               onClick={() => handleModeToggle(true)}
               className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
