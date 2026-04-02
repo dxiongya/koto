@@ -637,6 +637,17 @@ export function setupIpcHandlers(): void {
     }
   })
 
+  // ── Apps ──
+
+  ipcMain.handle(IpcChannels.APPS_DISCOVER, () => {
+    try {
+      const { discoverApps } = require('./app-loader')
+      return { ok: true, data: discoverApps() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
   // ── Shell ──
 
   ipcMain.handle(IpcChannels.SHELL_OPEN_EXTERNAL, (_, url: string) => {

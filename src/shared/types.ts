@@ -126,6 +126,9 @@ export const IpcChannels = {
   COLLECTOR_RENAME_GROUP: 'collector:renameGroup',
   COLLECTOR_DELETE_GROUP: 'collector:deleteGroup',
 
+  // Apps
+  APPS_DISCOVER: 'apps:discover',
+
   // Shell
   SHELL_OPEN_EXTERNAL: 'shell:openExternal',
 

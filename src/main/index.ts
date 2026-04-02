@@ -8,6 +8,7 @@ import { setProjectPath } from './core/fs'
 import { fileWatcher } from './core/watcher'
 import { ptyManager } from './core/pty-manager'
 import { registerAssetProtocol } from './core/asset-protocol'
+import { registerAppProtocol } from './core/app-loader'
 import { mcpManager } from './core/mcp-manager'
 import { automationScheduler } from './core/automation-scheduler'
 
@@ -102,7 +103,8 @@ function createWindow(): void {
 
 // Register custom protocol scheme before app is ready
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'lite-asset', privileges: { secure: true, supportFetchAPI: true, stream: true } }
+  { scheme: 'lite-asset', privileges: { secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: 'lite-app', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true } },
 ])
 
 app.whenReady().then(() => {
@@ -119,7 +121,7 @@ app.whenReady().then(() => {
         responseHeaders: {
           ...details.responseHeaders,
           'Content-Security-Policy': [
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: lite-asset: https: http:; connect-src 'self' https:;"
+            "default-src 'self' lite-app:; script-src 'self' lite-app:; style-src 'self' 'unsafe-inline'; img-src 'self' data: lite-asset: lite-app: https: http:; connect-src 'self' https:;"
           ],
         },
       })
@@ -127,6 +129,7 @@ app.whenReady().then(() => {
   }
 
   registerAssetProtocol()
+  registerAppProtocol()
   setupIpcHandlers()
   createWindow()
 

@@ -187,6 +187,9 @@ const api = {
     deleteGroup: (name: string) =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_DELETE_GROUP, name),
   },
+  apps: {
+    discover: () => ipcRenderer.invoke(IpcChannels.APPS_DISCOVER),
+  },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke(IpcChannels.SHELL_OPEN_EXTERNAL, url),
   },
