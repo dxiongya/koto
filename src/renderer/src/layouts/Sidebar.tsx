@@ -968,7 +968,7 @@ const TerminalAppSection: React.FC<{
           ${isDragOver ? 'bg-accent-main/15 outline outline-2 outline-accent-main/50 outline-offset-[-2px]' : ''}`}
       >
         {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
-        {prefix && <span className="text-tx-faint text-[11px] font-mono select-none shrink-0" style={{ width: '1.2em' }}>{prefix}</span>}
+        {prefix && <span className="text-tx-faint/50 text-[12px] font-mono select-none shrink-0 leading-none">{prefix}</span>}
         {isDragOver && <span className="text-[9px] text-accent-main font-medium shrink-0">⫼ split</span>}
         <Terminal size={13} className={`${isActive ? 'text-tx-active' : isDragOver ? 'text-accent-main' : 'text-tx-muted'} shrink-0`} />
         {isRenaming ? (
@@ -1033,7 +1033,7 @@ const TerminalAppSection: React.FC<{
                 const s = sessions.find((ss) => ss.id === tid)
                 if (!s) return null
                 const isLast = idx === group.terminalIds.length - 1
-                const prefix = isLast ? '\u2514' : '\u251C'
+                const prefix = isLast ? '└' : '├'
                 return renderTerminalRow(s, ws.id, prefix)
               })}
             </div>

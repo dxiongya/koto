@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react'
+import { Terminal, X } from 'lucide-react'
 import { useUIStore } from '../../store/useUIStore'
 import { TerminalView } from './TerminalView'
 import type { TerminalViewHandle } from './TerminalView'
@@ -52,7 +53,7 @@ export const TerminalApp: React.FC = () => {
 
   return (
     <div className={`flex-1 flex flex-col overflow-hidden ${blurClass}`}>
-      <div className="flex-1 overflow-hidden bg-bg-app p-1 relative"
+      <div className="flex-1 overflow-hidden relative"
         onDragOver={handleMainDragOver} onDragLeave={handleMainDragLeave} onDrop={handleMainDrop}>
         {/* Render all terminals (always mounted for PTY persistence) */}
         {terminalSessions.map((session) => {
@@ -69,8 +70,8 @@ export const TerminalApp: React.FC = () => {
           )
         })}
 
-        {/* Split-pane overlay: renders the split layout on top */}
-        {activeGroupTerminalIds.length > 1 && (
+        {/* Tab bar + split pane overlays */}
+        {activeGroupTerminalIds.length > 0 && (
           <div className="absolute inset-0 flex z-10 pointer-events-none">
             {activeGroupTerminalIds.map((tid, idx) => (
               <React.Fragment key={tid}>
@@ -79,6 +80,10 @@ export const TerminalApp: React.FC = () => {
                   terminalId={tid}
                   isActiveTerminal={tid === activeTerminalId}
                   onActivate={() => setActiveTerminalId(tid)}
+                  onClose={() => {
+                    window.api.terminal.close(tid)
+                    useUIStore.getState().removeTerminalSession(tid)
+                  }}
                 />
               </React.Fragment>
             ))}
@@ -103,26 +108,41 @@ export const TerminalApp: React.FC = () => {
   )
 }
 
-/** Clickable overlay for each split pane to handle activation and border highlight */
+/** Split pane overlay with tab bar — shows title, status, close */
 function SplitPaneOverlay({
   terminalId,
   isActiveTerminal,
   onActivate,
+  onClose,
 }: {
   terminalId: string
   isActiveTerminal: boolean
   onActivate: () => void
+  onClose: () => void
 }) {
+  const session = useUIStore((s) => s.terminalSessions.find((t) => t.id === terminalId))
+  const title = session?.title || 'Terminal'
+
   return (
-    <div
-      className="flex-1 relative pointer-events-auto"
-      style={{
-        borderTop: isActiveTerminal ? '2px solid var(--accent-main)' : '2px solid transparent',
-      }}
-      onClick={onActivate}
-    >
-      {/* This div just captures clicks; the actual terminal renders underneath */}
-      <div className="absolute inset-0" style={{ pointerEvents: 'none' }} />
+    <div className="flex-1 flex flex-col pointer-events-auto" onClick={onActivate}>
+      {/* Tab bar */}
+      <div className={`shrink-0 flex items-center gap-2 px-3 h-[28px] text-[11px] border-b
+        ${isActiveTerminal ? 'bg-bg-active border-accent-main/30' : 'bg-bg-sidebar border-border-subtle'}`}>
+        <Terminal size={11} className={isActiveTerminal ? 'text-accent-main' : 'text-tx-faint'} />
+        <span className={`truncate ${isActiveTerminal ? 'text-accent-main font-medium' : 'text-tx-muted'}`}>{title}</span>
+        <div className="ml-auto flex items-center gap-1">
+          {isActiveTerminal && <div className="w-1.5 h-1.5 rounded-full bg-accent-main" title="Active" />}
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose() }}
+            className="p-0.5 text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity"
+            aria-label="Close terminal"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      </div>
+      {/* Click area below tab — transparent, lets terminal underneath receive events */}
+      <div className="flex-1" style={{ pointerEvents: 'none' }} />
     </div>
   )
 }
