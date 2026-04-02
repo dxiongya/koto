@@ -47,9 +47,11 @@ export const TerminalApp: React.FC = () => {
     const raw = e.dataTransfer.getData('application/x-terminal-drag')
     if (!raw || !activeWorkspace || !activeTerminalId) return
     const { termId } = JSON.parse(raw) as { termId: string; workspaceId: string }
+    // Don't split with self, and don't split if already in same group
     if (termId === activeTerminalId) return
+    if (activeGroupTerminalIds.includes(termId)) return
     splitTerminalInWorkspace(activeWorkspace.id, activeTerminalId, termId)
-  }, [activeWorkspace, activeTerminalId, splitTerminalInWorkspace])
+  }, [activeWorkspace, activeTerminalId, activeGroupTerminalIds, splitTerminalInWorkspace])
 
   return (
     <div className={`flex-1 flex flex-col overflow-hidden ${blurClass}`}>

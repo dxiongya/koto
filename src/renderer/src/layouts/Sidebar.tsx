@@ -1032,8 +1032,8 @@ const TerminalAppSection: React.FC<{
               {group.terminalIds.map((tid, idx) => {
                 const s = sessions.find((ss) => ss.id === tid)
                 if (!s) return null
-                const isLast = idx === group.terminalIds.length - 1
-                const prefix = isLast ? '└' : '├'
+                const total = group.terminalIds.length
+                const prefix = idx === 0 ? '┌' : idx === total - 1 ? '└' : '├'
                 return renderTerminalRow(s, ws.id, prefix)
               })}
             </div>
