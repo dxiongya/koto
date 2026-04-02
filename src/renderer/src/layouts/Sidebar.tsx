@@ -794,12 +794,14 @@ const TerminalAppSection: React.FC<{
   const addSession = useUIStore((s) => s.addTerminalSession)
   const removeSession = useUIStore((s) => s.removeTerminalSession)
   const setActiveId = useUIStore((s) => s.setActiveTerminalId)
-  const codeProjectPath = useUIStore((s) => s.codeProjectPath)
   const setCurrentApp = useUIStore((s) => s.setCurrentApp)
-  const terminalGroups = useUIStore((s) => s.terminalGroups)
-  const activeGroupId = useUIStore((s) => s.activeGroupId)
-  const splitTerminal = useUIStore((s) => s.splitTerminal)
-  const setActiveGroup = useUIStore((s) => s.setActiveGroup)
+  const terminalWorkspaces = useUIStore((s) => s.terminalWorkspaces)
+  const activeWorkspaceId = useUIStore((s) => s.activeWorkspaceId)
+  const addTerminalWorkspace = useUIStore((s) => s.addTerminalWorkspace)
+  const removeTerminalWorkspace = useUIStore((s) => s.removeTerminalWorkspace)
+  const setActiveWorkspace = useUIStore((s) => s.setActiveWorkspace)
+  const createTerminalInWorkspace = useUIStore((s) => s.createTerminalInWorkspace)
+  const splitTerminalInWorkspace = useUIStore((s) => s.splitTerminalInWorkspace)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
@@ -828,14 +830,32 @@ const TerminalAppSection: React.FC<{
     setRenameValue('')
   }, [renamingId, renameValue])
 
-  const handleCreate = useCallback(async () => {
-    const cwd = codeProjectPath ?? undefined
-    const res = await window.api.terminal.create(cwd)
+  const handleOpenFolder = useCallback(async () => {
+    const res = await window.api.dialog.selectFolder()
     if (res.ok) {
-      addSession({ id: res.data, title: `Terminal ${sessions.length + 1}`, cwd: cwd })
+      addTerminalWorkspace(res.data)
+      if (!expanded) onHeaderClick()
       setCurrentApp('terminal.app')
     }
-  }, [codeProjectPath, sessions.length, addSession, setCurrentApp])
+  }, [addTerminalWorkspace, expanded, onHeaderClick, setCurrentApp])
+
+  const handleCreateInWorkspace = useCallback(async (workspaceId: string, cwd: string) => {
+    const res = await window.api.terminal.create(cwd)
+    if (res.ok) {
+      addSession({ id: res.data, title: `Terminal ${sessions.length + 1}`, cwd })
+      createTerminalInWorkspace(workspaceId, res.data)
+      setCurrentApp('terminal.app')
+    }
+  }, [sessions.length, addSession, createTerminalInWorkspace, setCurrentApp])
+
+  const handleHeaderCreate = useCallback(async () => {
+    const activeWs = terminalWorkspaces.find((ws) => ws.id === activeWorkspaceId)
+    if (activeWs) {
+      await handleCreateInWorkspace(activeWs.id, activeWs.path)
+    } else {
+      await handleOpenFolder()
+    }
+  }, [terminalWorkspaces, activeWorkspaceId, handleCreateInWorkspace, handleOpenFolder])
 
   const handleClose = useCallback((e: React.MouseEvent, id: string) => {
     e.stopPropagation()
@@ -843,22 +863,31 @@ const TerminalAppSection: React.FC<{
     removeSession(id)
   }, [removeSession])
 
-  const handleSelect = useCallback((id: string) => {
+  const handleSelect = useCallback((id: string, workspaceId: string) => {
     setActiveId(id)
-    // Also activate the group containing this terminal
-    const group = terminalGroups.find((g) => g.terminalIds.includes(id))
-    if (group) setActiveGroup(group.id)
+    setActiveWorkspace(workspaceId)
+    // Find the group containing this terminal and set it as active in the workspace
+    const ws = useUIStore.getState().terminalWorkspaces.find((w) => w.id === workspaceId)
+    if (ws) {
+      const group = ws.groups.find((g) => g.terminalIds.includes(id))
+      if (group) {
+        const nextWorkspaces = useUIStore.getState().terminalWorkspaces.map((w) =>
+          w.id === workspaceId ? { ...w, activeGroupId: group.id } : w,
+        )
+        useUIStore.setState({ terminalWorkspaces: nextWorkspaces })
+      }
+    }
     setCurrentApp('terminal.app')
     onFocusSidebar?.()
-  }, [setActiveId, setCurrentApp, onFocusSidebar, terminalGroups, setActiveGroup])
+  }, [setActiveId, setActiveWorkspace, setCurrentApp, onFocusSidebar])
 
-  const handleDragStart = useCallback((e: React.DragEvent, terminalId: string) => {
-    e.dataTransfer.setData('application/x-terminal-id', terminalId)
+  const handleDragStart = useCallback((e: React.DragEvent, terminalId: string, workspaceId: string) => {
+    e.dataTransfer.setData('application/x-terminal-drag', JSON.stringify({ termId: terminalId, workspaceId }))
     e.dataTransfer.effectAllowed = 'move'
   }, [])
 
   const handleDragOver = useCallback((e: React.DragEvent, terminalId: string) => {
-    if (e.dataTransfer.types.includes('application/x-terminal-id')) {
+    if (e.dataTransfer.types.includes('application/x-terminal-drag')) {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
       setDragOverId(terminalId)
@@ -869,22 +898,54 @@ const TerminalAppSection: React.FC<{
     setDragOverId(null)
   }, [])
 
-  const handleDrop = useCallback((e: React.DragEvent, targetTerminalId: string) => {
+  const handleDrop = useCallback((e: React.DragEvent, targetTerminalId: string, targetWorkspaceId: string) => {
     e.preventDefault()
     setDragOverId(null)
-    const draggedId = e.dataTransfer.getData('application/x-terminal-id')
+    const raw = e.dataTransfer.getData('application/x-terminal-drag')
+    if (!raw) return
+    const { termId: draggedId, workspaceId: srcWorkspaceId } = JSON.parse(raw) as { termId: string; workspaceId: string }
     if (!draggedId || draggedId === targetTerminalId) return
-    // Merge dragged terminal into the same group as target
-    splitTerminal(targetTerminalId, draggedId)
-  }, [splitTerminal])
+    if (srcWorkspaceId === targetWorkspaceId) {
+      // Same workspace → merge into split group
+      splitTerminalInWorkspace(targetWorkspaceId, targetTerminalId, draggedId)
+    } else {
+      // Different workspace → move terminal to target workspace as new group
+      // Remove from source workspace groups
+      const state = useUIStore.getState()
+      const nextWorkspaces = state.terminalWorkspaces.map((ws) => {
+        if (ws.id === srcWorkspaceId) {
+          const groups = ws.groups.map((g) => ({
+            ...g,
+            terminalIds: g.terminalIds.filter((tid) => tid !== draggedId),
+          })).filter((g) => g.terminalIds.length > 0)
+          const activeGroupStillExists = groups.some((g) => g.id === ws.activeGroupId)
+          return { ...ws, groups, activeGroupId: activeGroupStillExists ? ws.activeGroupId : (groups[0]?.id ?? null) }
+        }
+        if (ws.id === targetWorkspaceId) {
+          const newGroupId = `group-${draggedId}-${Date.now()}`
+          return { ...ws, groups: [...ws.groups, { id: newGroupId, terminalIds: [draggedId] }], activeGroupId: newGroupId }
+        }
+        return ws
+      })
+      useUIStore.setState({ terminalWorkspaces: nextWorkspaces, activeWorkspaceId: targetWorkspaceId, activeTerminalId: draggedId })
+    }
+  }, [splitTerminalInWorkspace])
 
-  // Build group-aware rendering structure
-  const findGroupForTerminal = (tid: string) => terminalGroups.find((g) => g.terminalIds.includes(tid))
+  const handleCloseWorkspace = useCallback((e: React.MouseEvent, wsId: string) => {
+    e.stopPropagation()
+    // Close all PTYs in this workspace
+    const ws = useUIStore.getState().terminalWorkspaces.find((w) => w.id === wsId)
+    if (ws) {
+      for (const g of ws.groups) {
+        for (const tid of g.terminalIds) {
+          window.api.terminal.close(tid)
+        }
+      }
+    }
+    removeTerminalWorkspace(wsId)
+  }, [removeTerminalWorkspace])
 
-  // Render terminal items grouped
-  const renderedGroupIds = new Set<string>()
-
-  const renderTerminalRow = (session: typeof sessions[0], prefix?: string) => {
+  const renderTerminalRow = (session: typeof sessions[0], workspaceId: string, prefix?: string) => {
     const isActive = session.id === activeTerminalId && currentApp === 'terminal.app'
     const isRenaming = renamingId === session.id
     const isDragOver = dragOverId === session.id
@@ -895,13 +956,13 @@ const TerminalAppSection: React.FC<{
         tabIndex={0}
         aria-selected={isActive}
         draggable={!isRenaming}
-        onClick={() => handleSelect(session.id)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelect(session.id) } }}
-        onDragStart={(e) => handleDragStart(e, session.id)}
+        onClick={() => handleSelect(session.id, workspaceId)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelect(session.id, workspaceId) } }}
+        onDragStart={(e) => handleDragStart(e, session.id, workspaceId)}
         onDragOver={(e) => handleDragOver(e, session.id)}
         onDragLeave={handleDragLeave}
-        onDrop={(e) => handleDrop(e, session.id)}
-        className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
+        onDrop={(e) => handleDrop(e, session.id, workspaceId)}
+        className={`pl-[36px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
           ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}
           ${isDragOver ? 'ring-1 ring-accent-main/40 ring-inset' : ''}`}
@@ -938,6 +999,57 @@ const TerminalAppSection: React.FC<{
     )
   }
 
+  const renderWorkspace = (ws: typeof terminalWorkspaces[0]) => {
+    const isActiveWs = ws.id === activeWorkspaceId
+    return (
+      <div key={ws.id}>
+        {/* Workspace header */}
+        <div
+          className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
+            ${isActiveWs && currentApp === 'terminal.app' ? 'text-tx-active' : 'text-tx-main hover:bg-bg-hover'}`}
+          onClick={() => { setActiveWorkspace(ws.id); setCurrentApp('terminal.app') }}
+        >
+          <Folder size={13} className={`${isActiveWs ? 'text-tx-active' : 'text-tx-muted'} shrink-0`} />
+          <span className={`truncate ${isActiveWs && currentApp === 'terminal.app' ? 'font-medium' : ''}`}>{ws.name}</span>
+          <button
+            onClick={(e) => handleCloseWorkspace(e, ws.id)}
+            className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 text-tx-faint hover:text-tx-main transition-opacity"
+          >
+            <X size={12} />
+          </button>
+        </div>
+        {/* Terminals in this workspace */}
+        {ws.groups.map((group) => {
+          if (group.terminalIds.length === 1) {
+            const s = sessions.find((ss) => ss.id === group.terminalIds[0])
+            if (!s) return null
+            return renderTerminalRow(s, ws.id)
+          }
+          // Multi-terminal group: show with tree prefixes
+          return (
+            <div key={group.id}>
+              {group.terminalIds.map((tid, idx) => {
+                const s = sessions.find((ss) => ss.id === tid)
+                if (!s) return null
+                const isLast = idx === group.terminalIds.length - 1
+                const prefix = isLast ? '\u2514' : '\u251C'
+                return renderTerminalRow(s, ws.id, prefix)
+              })}
+            </div>
+          )
+        })}
+        {/* Add terminal to this workspace */}
+        <button
+          type="button"
+          onClick={() => handleCreateInWorkspace(ws.id, ws.path)}
+          className="w-full text-left pl-[36px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset"
+        >
+          + new terminal
+        </button>
+      </div>
+    )
+  }
+
   return (
     <>
       <AppSectionHeader
@@ -947,44 +1059,45 @@ const TerminalAppSection: React.FC<{
         expanded={expanded}
         onClick={onHeaderClick}
         actions={
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); if (!expanded) onHeaderClick(); handleCreate() }}
-            className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50"
-            aria-label="New terminal"
-            title="New terminal"
-          >
-            <Plus size={14} />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleOpenFolder() }}
+              className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50"
+              aria-label="Open folder"
+              title="Open folder"
+            >
+              <FolderOpen size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); if (!expanded) onHeaderClick(); handleHeaderCreate() }}
+              className="p-0.5 rounded text-tx-muted hover:text-tx-main hover:bg-border-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50"
+              aria-label="New terminal"
+              title="New terminal"
+            >
+              <Plus size={14} />
+            </button>
+          </>
         }
       />
       {expanded && (
         <div className="mb-3 mt-1">
-          {sessions.length === 0 ? (
-            <button type="button" onClick={handleCreate} className="w-full text-left pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset">
-              New terminal...
+          {terminalWorkspaces.length === 0 ? (
+            <button type="button" onClick={handleOpenFolder} className="w-full text-left pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset">
+              + Open Folder
             </button>
           ) : (
-            sessions.map((session) => {
-              const group = findGroupForTerminal(session.id)
-              if (!group) return renderTerminalRow(session)
-              // Single-terminal group: render normally
-              if (group.terminalIds.length === 1) return renderTerminalRow(session)
-              // Multi-terminal group: render with tree prefixes, but only once per group
-              if (renderedGroupIds.has(group.id)) return null
-              renderedGroupIds.add(group.id)
-              return (
-                <div key={group.id}>
-                  {group.terminalIds.map((tid, idx) => {
-                    const s = sessions.find((ss) => ss.id === tid)
-                    if (!s) return null
-                    const isLast = idx === group.terminalIds.length - 1
-                    const prefix = isLast ? '\u2514' : '\u251C'
-                    return renderTerminalRow(s, prefix)
-                  })}
-                </div>
-              )
-            })
+            <>
+              {terminalWorkspaces.map((ws) => renderWorkspace(ws))}
+              <button
+                type="button"
+                onClick={handleOpenFolder}
+                className="w-full text-left pl-[20px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset"
+              >
+                + Open Folder
+              </button>
+            </>
           )}
         </div>
       )}

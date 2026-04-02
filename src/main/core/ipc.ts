@@ -296,6 +296,21 @@ export function setupIpcHandlers(): void {
     return { ok: true, data: result.filePaths }
   })
 
+  ipcMain.handle(IpcChannels.DIALOG_SELECT_FOLDER, async () => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return { ok: false, error: 'No focused window' }
+
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openDirectory'],
+      title: 'Open Folder',
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, error: 'cancelled' }
+    }
+    return { ok: true, data: result.filePaths[0] }
+  })
+
   // ── AI ──
 
   ipcMain.handle(

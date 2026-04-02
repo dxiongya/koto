@@ -14,11 +14,13 @@ export const TerminalApp: React.FC = () => {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
   const activeTerminalId = useUIStore((s) => s.activeTerminalId)
   const terminalSessions = useUIStore((s) => s.terminalSessions)
-  const terminalGroups = useUIStore((s) => s.terminalGroups)
-  const activeGroupId = useUIStore((s) => s.activeGroupId)
+  const terminalWorkspaces = useUIStore((s) => s.terminalWorkspaces)
+  const activeWorkspaceId = useUIStore((s) => s.activeWorkspaceId)
   const setActiveTerminalId = useUIStore((s) => s.setActiveTerminalId)
 
-  const activeGroup = terminalGroups.find((g) => g.id === activeGroupId)
+  // Find active workspace and its active group
+  const activeWorkspace = terminalWorkspaces.find((ws) => ws.id === activeWorkspaceId)
+  const activeGroup = activeWorkspace?.groups.find((g) => g.id === activeWorkspace.activeGroupId)
   const activeGroupTerminalIds = activeGroup?.terminalIds ?? []
 
   const blurClass = showCommandPalette
@@ -38,6 +40,7 @@ export const TerminalApp: React.FC = () => {
               initialBuffer={session._restoredBuffer}
               isActive={session.id === activeTerminalId}
               isVisible={inActiveGroup}
+              activeGroupTerminalIds={activeGroupTerminalIds}
             />
           )
         })}
@@ -60,7 +63,7 @@ export const TerminalApp: React.FC = () => {
 
         {terminalSessions.length === 0 && (
           <div className="flex items-center justify-center h-full text-tx-faint text-sm">
-            Create a terminal from the sidebar
+            Open a folder to start
           </div>
         )}
       </div>
@@ -108,22 +111,20 @@ function TerminalPane({
   initialBuffer,
   isActive,
   isVisible,
+  activeGroupTerminalIds,
 }: {
   terminalId: string
   initialBuffer?: string
   isActive: boolean
   isVisible: boolean
+  activeGroupTerminalIds: string[]
 }) {
   const ref = useRef<TerminalViewHandle | null>(null)
-  const terminalGroups = useUIStore((s) => s.terminalGroups)
-  const activeGroupId = useUIStore((s) => s.activeGroupId)
 
   // Determine layout position within the group for split rendering
-  const activeGroup = terminalGroups.find((g) => g.id === activeGroupId)
-  const groupTerminalIds = activeGroup?.terminalIds ?? []
-  const isSplit = isVisible && groupTerminalIds.length > 1
-  const splitIndex = isSplit ? groupTerminalIds.indexOf(terminalId) : -1
-  const splitCount = isSplit ? groupTerminalIds.length : 1
+  const isSplit = isVisible && activeGroupTerminalIds.length > 1
+  const splitIndex = isSplit ? activeGroupTerminalIds.indexOf(terminalId) : -1
+  const splitCount = isSplit ? activeGroupTerminalIds.length : 1
 
   useEffect(() => {
     terminalRefs.set(terminalId, ref)

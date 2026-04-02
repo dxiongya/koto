@@ -17,9 +17,12 @@ export interface TerminalSession {
   _restoredBuffer?: string
 }
 
-export interface TerminalGroup {
+export interface TerminalWorkspace {
   id: string
-  terminalIds: string[]
+  path: string        // absolute folder path
+  name: string        // display name (folder basename)
+  groups: { id: string; terminalIds: string[] }[]
+  activeGroupId: string | null
 }
 
 interface UIState {
@@ -51,8 +54,8 @@ interface UIState {
   // terminal.app specific
   terminalSessions: TerminalSession[]
   activeTerminalId: string | null
-  terminalGroups: TerminalGroup[]
-  activeGroupId: string | null
+  terminalWorkspaces: TerminalWorkspace[]
+  activeWorkspaceId: string | null
 
   // recent files
   recentFiles: RecentFileEntry[]
@@ -110,11 +113,11 @@ interface UIState {
   addTerminalSession: (session: TerminalSession) => void
   removeTerminalSession: (id: string) => void
   setActiveTerminalId: (id: string | null) => void
-  createTerminalGroup: (terminalId: string) => void
-  addToGroup: (groupId: string, terminalId: string) => void
-  removeFromGroup: (groupId: string, terminalId: string) => void
-  splitTerminal: (existingTerminalId: string, newTerminalId: string) => void
-  setActiveGroup: (groupId: string) => void
+  addTerminalWorkspace: (path: string) => void
+  removeTerminalWorkspace: (id: string) => void
+  setActiveWorkspace: (id: string) => void
+  createTerminalInWorkspace: (workspaceId: string, sessionId: string) => void
+  splitTerminalInWorkspace: (workspaceId: string, existingTermId: string, newTermId: string) => void
 
   // recent files
   trackRecentFile: (filePath: string, app: AppType) => void
@@ -175,8 +178,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   recentProjects: [],
   terminalSessions: [],
   activeTerminalId: null,
-  terminalGroups: [],
-  activeGroupId: null,
+  terminalWorkspaces: [],
+  activeWorkspaceId: null,
   recentFiles: [],
   ai: { ...DEFAULT_AI_SETTINGS },
   mcpServers: [],
@@ -333,14 +336,9 @@ export const useUIStore = create<UIState>((set, get) => ({
   addTerminalSession: (session) => {
     const prev = get()
     const nextSessions = [...prev.terminalSessions, session]
-    const newGroupId = `group-${session.id}`
-    const newGroup: TerminalGroup = { id: newGroupId, terminalIds: [session.id] }
-    const nextGroups = [...prev.terminalGroups, newGroup]
     set({
       terminalSessions: nextSessions,
       activeTerminalId: session.id,
-      terminalGroups: nextGroups,
-      activeGroupId: newGroupId,
     })
     persistState({ terminalSessions: nextSessions.map((t) => ({ title: t.title, cwd: t.cwd })) })
   },
@@ -348,100 +346,130 @@ export const useUIStore = create<UIState>((set, get) => ({
   removeTerminalSession: (id) => {
     const prev = get()
     const nextSessions = prev.terminalSessions.filter((t) => t.id !== id)
-    // Remove terminal from its group; delete group if empty
-    let nextGroups = prev.terminalGroups.map((g) => ({
-      ...g,
-      terminalIds: g.terminalIds.filter((tid) => tid !== id),
-    })).filter((g) => g.terminalIds.length > 0)
+    // Clean up from workspace groups
+    const nextWorkspaces = prev.terminalWorkspaces.map((ws) => {
+      const nextGroups = ws.groups.map((g) => ({
+        ...g,
+        terminalIds: g.terminalIds.filter((tid) => tid !== id),
+      })).filter((g) => g.terminalIds.length > 0)
+      // Update activeGroupId if the active group was removed
+      const activeGroupStillExists = nextGroups.some((g) => g.id === ws.activeGroupId)
+      return {
+        ...ws,
+        groups: nextGroups,
+        activeGroupId: activeGroupStillExists
+          ? ws.activeGroupId
+          : (nextGroups.length > 0 ? nextGroups[nextGroups.length - 1].id : null),
+      }
+    })
     // Determine new active terminal
     const newActiveId = prev.activeTerminalId === id
       ? (nextSessions.length > 0 ? nextSessions[nextSessions.length - 1].id : null)
       : prev.activeTerminalId
-    // Determine new active group
-    let newActiveGroupId = prev.activeGroupId
-    const currentGroupStillExists = nextGroups.some((g) => g.id === prev.activeGroupId)
-    if (!currentGroupStillExists) {
-      // Find group containing the new active terminal
-      newActiveGroupId = newActiveId
-        ? (nextGroups.find((g) => g.terminalIds.includes(newActiveId))?.id ?? null)
-        : null
-    }
     set({
       terminalSessions: nextSessions,
       activeTerminalId: newActiveId,
-      terminalGroups: nextGroups,
-      activeGroupId: newActiveGroupId,
+      terminalWorkspaces: nextWorkspaces,
     })
     persistState({ terminalSessions: nextSessions.map((t) => ({ title: t.title, cwd: t.cwd })) })
   },
 
   setActiveTerminalId: (id) => set({ activeTerminalId: id }),
 
-  createTerminalGroup: (terminalId) => {
+  addTerminalWorkspace: (path) => {
     const prev = get()
-    // Remove from existing group first
-    const cleaned = prev.terminalGroups.map((g) => ({
-      ...g,
-      terminalIds: g.terminalIds.filter((tid) => tid !== terminalId),
-    })).filter((g) => g.terminalIds.length > 0)
-    const newGroupId = `group-${terminalId}-${Date.now()}`
-    const newGroup: TerminalGroup = { id: newGroupId, terminalIds: [terminalId] }
-    set({ terminalGroups: [...cleaned, newGroup], activeGroupId: newGroupId })
-  },
-
-  addToGroup: (groupId, terminalId) => {
-    const prev = get()
-    // Remove from any existing group
-    const cleaned = prev.terminalGroups.map((g) => ({
-      ...g,
-      terminalIds: g.terminalIds.filter((tid) => tid !== terminalId),
-    })).filter((g) => g.terminalIds.length > 0)
-    // Add to target group
-    const nextGroups = cleaned.map((g) =>
-      g.id === groupId ? { ...g, terminalIds: [...g.terminalIds, terminalId] } : g,
-    )
-    set({ terminalGroups: nextGroups, activeGroupId: groupId })
-  },
-
-  removeFromGroup: (groupId, terminalId) => {
-    const prev = get()
-    const nextGroups = prev.terminalGroups.map((g) =>
-      g.id === groupId ? { ...g, terminalIds: g.terminalIds.filter((tid) => tid !== terminalId) } : g,
-    ).filter((g) => g.terminalIds.length > 0)
-    // If removed terminal was standalone, create new group for it
-    const stillInGroup = nextGroups.some((g) => g.terminalIds.includes(terminalId))
-    if (!stillInGroup && prev.terminalSessions.some((s) => s.id === terminalId)) {
-      const newGroupId = `group-${terminalId}-${Date.now()}`
-      nextGroups.push({ id: newGroupId, terminalIds: [terminalId] })
+    // Don't add duplicate workspace for same path
+    if (prev.terminalWorkspaces.some((ws) => ws.path === path)) {
+      const existing = prev.terminalWorkspaces.find((ws) => ws.path === path)!
+      set({ activeWorkspaceId: existing.id })
+      return
     }
-    set({ terminalGroups: nextGroups })
+    const name = path.split('/').filter(Boolean).pop() || path
+    const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const newWs: TerminalWorkspace = { id, path, name, groups: [], activeGroupId: null }
+    const nextWorkspaces = [...prev.terminalWorkspaces, newWs]
+    set({ terminalWorkspaces: nextWorkspaces, activeWorkspaceId: id })
+    persistState({ terminalWorkspaces: nextWorkspaces.map((ws) => ({ id: ws.id, path: ws.path, name: ws.name })) })
   },
 
-  splitTerminal: (existingTerminalId, newTerminalId) => {
+  removeTerminalWorkspace: (id) => {
     const prev = get()
-    const targetGroup = prev.terminalGroups.find((g) => g.terminalIds.includes(existingTerminalId))
-    if (!targetGroup) return
-    // Remove newTerminalId from its current group
-    const cleaned = prev.terminalGroups.map((g) => ({
-      ...g,
-      terminalIds: g.terminalIds.filter((tid) => tid !== newTerminalId),
-    })).filter((g) => g.terminalIds.length > 0)
-    // Add newTerminalId to the target group after existingTerminalId
-    const nextGroups = cleaned.map((g) => {
-      if (g.id !== targetGroup.id) return g
-      const idx = g.terminalIds.indexOf(existingTerminalId)
-      const newIds = [...g.terminalIds]
-      newIds.splice(idx + 1, 0, newTerminalId)
-      return { ...g, terminalIds: newIds }
+    const ws = prev.terminalWorkspaces.find((w) => w.id === id)
+    if (!ws) return
+    // Close all terminals in this workspace
+    const termIdsToRemove = new Set(ws.groups.flatMap((g) => g.terminalIds))
+    const nextSessions = prev.terminalSessions.filter((t) => !termIdsToRemove.has(t.id))
+    const nextWorkspaces = prev.terminalWorkspaces.filter((w) => w.id !== id)
+    const newActiveWsId = prev.activeWorkspaceId === id
+      ? (nextWorkspaces.length > 0 ? nextWorkspaces[nextWorkspaces.length - 1].id : null)
+      : prev.activeWorkspaceId
+    const newActiveTermId = termIdsToRemove.has(prev.activeTerminalId ?? '')
+      ? (nextSessions.length > 0 ? nextSessions[nextSessions.length - 1].id : null)
+      : prev.activeTerminalId
+    set({
+      terminalWorkspaces: nextWorkspaces,
+      activeWorkspaceId: newActiveWsId,
+      terminalSessions: nextSessions,
+      activeTerminalId: newActiveTermId,
+    })
+    persistState({
+      terminalWorkspaces: nextWorkspaces.map((ws) => ({ id: ws.id, path: ws.path, name: ws.name })),
+      terminalSessions: nextSessions.map((t) => ({ title: t.title, cwd: t.cwd })),
+    })
+  },
+
+  setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
+
+  createTerminalInWorkspace: (workspaceId, sessionId) => {
+    const prev = get()
+    const newGroupId = `group-${sessionId}-${Date.now()}`
+    const nextWorkspaces = prev.terminalWorkspaces.map((ws) => {
+      if (ws.id !== workspaceId) return ws
+      const newGroup = { id: newGroupId, terminalIds: [sessionId] }
+      return { ...ws, groups: [...ws.groups, newGroup], activeGroupId: newGroupId }
+    })
+    set({ terminalWorkspaces: nextWorkspaces, activeWorkspaceId: workspaceId })
+  },
+
+  splitTerminalInWorkspace: (workspaceId, existingTermId, newTermId) => {
+    const prev = get()
+    const nextWorkspaces = prev.terminalWorkspaces.map((ws) => {
+      if (ws.id !== workspaceId) return ws
+      // Remove newTermId from any previous group in this workspace
+      let groups = ws.groups.map((g) => ({
+        ...g,
+        terminalIds: g.terminalIds.filter((tid) => tid !== newTermId),
+      })).filter((g) => g.terminalIds.length > 0)
+      // Find the group containing existingTermId and add newTermId after it
+      groups = groups.map((g) => {
+        const idx = g.terminalIds.indexOf(existingTermId)
+        if (idx === -1) return g
+        const newIds = [...g.terminalIds]
+        newIds.splice(idx + 1, 0, newTermId)
+        return { ...g, terminalIds: newIds }
+      })
+      return { ...ws, groups }
+    })
+    // Also remove newTermId from groups in other workspaces
+    const finalWorkspaces = nextWorkspaces.map((ws) => {
+      if (ws.id === workspaceId) return ws
+      const groups = ws.groups.map((g) => ({
+        ...g,
+        terminalIds: g.terminalIds.filter((tid) => tid !== newTermId),
+      })).filter((g) => g.terminalIds.length > 0)
+      const activeGroupStillExists = groups.some((g) => g.id === ws.activeGroupId)
+      return {
+        ...ws,
+        groups,
+        activeGroupId: activeGroupStillExists ? ws.activeGroupId : (groups[0]?.id ?? null),
+      }
     })
     set({
-      terminalGroups: nextGroups,
-      activeGroupId: targetGroup.id,
-      activeTerminalId: newTerminalId,
+      terminalWorkspaces: finalWorkspaces,
+      activeWorkspaceId: workspaceId,
+      activeTerminalId: newTermId,
     })
   },
-
-  setActiveGroup: (groupId) => set({ activeGroupId: groupId }),
 
   // ── navigation ──
 

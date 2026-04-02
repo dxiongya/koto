@@ -65,6 +65,7 @@ export const IpcChannels = {
   // Dialog
   DIALOG_SELECT_IMAGES: 'dialog:selectImages',
   DIALOG_SELECT_VIDEOS: 'dialog:selectVideos',
+  DIALOG_SELECT_FOLDER: 'dialog:selectFolder',
 
   // URL Metadata
   URL_FETCH_META: 'url:fetchMeta',

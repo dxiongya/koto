@@ -55,6 +55,7 @@ export interface VideoAPI {
 export interface DialogAPI {
   selectImages: () => Promise<IpcResult<string[]>>
   selectVideos: () => Promise<IpcResult<string[]>>
+  selectFolder: () => Promise<IpcResult<string>>
 }
 
 export interface UrlMeta {
