@@ -1,23 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useUIStore } from './store/useUIStore'
 import { MainLayout } from './layouts/MainLayout'
-import { CodeApp } from './apps/CodeApp'
-import { NotesApp } from './apps/NotesApp'
-import { TerminalApp, getTerminalRefs } from './apps/TerminalApp'
 import { SettingsApp } from './apps/SettingsApp'
-import { CollectorApp } from './apps/CollectorApp'
 import { ContextMenuProvider } from './components/ContextMenu'
 import { FileSwitcher } from './components/FileSwitcher'
 import { builtinThemes, applyTheme, applyFont } from './themes'
 import type { FontId } from './themes'
-
-const appComponents: Record<string, React.FC> = {
-  'code.app': CodeApp,
-  'notes.app': NotesApp,
-  'terminal.app': TerminalApp,
-  'collector.app': CollectorApp,
-  'settings.app': SettingsApp,
-}
+import { getAppRegistry } from './core/AppContext'
+import { AppAPIProvider } from './core/AppContext'
+import { registerBuiltinApps } from './core/builtinApps'
+import { getTerminalRefs } from './apps/TerminalApp'
 
 export default function App() {
   const currentApp = useUIStore((s) => s.currentApp)
@@ -46,7 +38,7 @@ export default function App() {
           useUIStore.setState({ fontFamily: c.fontFamily as FontId })
           applyFont(c.fontFamily as FontId)
         }
-        if (c.lastApp && c.lastApp in appComponents) store.setCurrentApp(c.lastApp)
+        if (c.lastApp) store.setCurrentApp(c.lastApp)
         if (c.appStates) useUIStore.setState({ appStates: { ...store.appStates, ...c.appStates } })
         if (c.sidebarOpen !== undefined) useUIStore.setState({ sidebarOpen: c.sidebarOpen })
         if (c.notesExpandedGroups) useUIStore.setState({ notesExpandedGroups: c.notesExpandedGroups })
@@ -84,11 +76,14 @@ export default function App() {
         }
       }
 
+      // Register built-in apps
+      return registerBuiltinApps(getAppRegistry())
+    }).then(() => {
       setRestored(true)
     }).catch((err) => {
       console.error('Failed to restore state:', err)
       applyTheme(builtinThemes.dark)
-      setRestored(true)
+      registerBuiltinApps(getAppRegistry()).then(() => setRestored(true))
     })
   }, [])
 
@@ -215,12 +210,20 @@ export default function App() {
     return <div className="w-screen h-screen bg-bg-app" />
   }
 
-  const ActiveApp = appComponents[currentApp]
+  const registry = getAppRegistry()
+  const registeredApp = registry.get(currentApp)
+  const ActiveApp = currentApp === 'settings.app' ? SettingsApp : registeredApp?.definition.component
 
   return (
     <>
       <MainLayout>
-        {ActiveApp ? <ActiveApp /> : <PlaceholderApp name={currentApp} />}
+        {ActiveApp ? (
+          <AppAPIProvider appId={currentApp}>
+            <ActiveApp api={undefined as any} />
+          </AppAPIProvider>
+        ) : (
+          <PlaceholderApp name={currentApp} />
+        )}
       </MainLayout>
       <ContextMenuProvider />
       <FileSwitcher />
