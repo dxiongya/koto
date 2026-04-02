@@ -10,6 +10,7 @@ import {
   Power, PowerOff, RefreshCw, ChevronDown, ChevronRight, Wrench
 } from 'lucide-react'
 import { AutomationSection } from '../../components/AutomationSection'
+import { getAppRegistry } from '../../core/AppContext'
 
 /** Mini app preview using a theme's colors */
 const ThemePreview: React.FC<{ t: ThemeDefinition }> = ({ t }) => (
@@ -256,6 +257,75 @@ const FEATURE_LABELS: Record<AIFeature, { name: string; desc: string }> = {
 const FEATURES: AIFeature[] = ['completion', 'chat']
 
 // ── Embedding Section ──
+
+// ── Apps Section ──
+
+const AppsSection: React.FC = () => {
+  const [, forceUpdate] = useState(0)
+  const registry = getAppRegistry()
+  const allApps = registry.getAll()
+
+  const toggle = useCallback((id: string) => {
+    const app = registry.get(id)
+    if (!app) return
+    registry.setEnabled(id, !app.enabled)
+    forceUpdate((n) => n + 1)
+  }, [registry])
+
+  const moveUp = useCallback((id: string) => {
+    const apps = registry.getAll()
+    const idx = apps.findIndex((a) => a.definition.manifest.id === id)
+    if (idx <= 0) return
+    const ids = apps.map((a) => a.definition.manifest.id)
+    ;[ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]]
+    registry.reorder(ids)
+    forceUpdate((n) => n + 1)
+  }, [registry])
+
+  const moveDown = useCallback((id: string) => {
+    const apps = registry.getAll()
+    const idx = apps.findIndex((a) => a.definition.manifest.id === id)
+    if (idx < 0 || idx >= apps.length - 1) return
+    const ids = apps.map((a) => a.definition.manifest.id)
+    ;[ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]]
+    registry.reorder(ids)
+    forceUpdate((n) => n + 1)
+  }, [registry])
+
+  return (
+    <section className="mb-10">
+      <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Apps</h2>
+      <div className="space-y-1.5">
+        {allApps.map(({ definition, enabled }, idx) => {
+          const m = definition.manifest
+          return (
+            <div key={m.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors ${enabled ? 'border-border-subtle bg-bg-hover' : 'border-transparent opacity-50'}`}>
+              <div className="flex flex-col gap-0.5">
+                <button onClick={() => moveUp(m.id)} disabled={idx === 0} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▲</button>
+                <button onClick={() => moveDown(m.id)} disabled={idx === allApps.length - 1} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▼</button>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[13px] text-tx-main font-medium">{m.name}</span>
+                  {m.builtin && <span className="text-[9px] text-tx-faint bg-bg-active px-1.5 py-0.5 rounded">built-in</span>}
+                  <span className="text-[10px] text-tx-faint">v{m.version}</span>
+                </div>
+                <div className="text-[11px] text-tx-faint truncate mt-0.5">{m.description}</div>
+              </div>
+              <button
+                onClick={() => toggle(m.id)}
+                className={`shrink-0 w-9 h-5 rounded-full transition-colors relative ${enabled ? 'bg-accent-main' : 'bg-border-strong'}`}
+              >
+                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-bg-app shadow transition-transform ${enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+          )
+        })}
+      </div>
+      <p className="text-[10px] text-tx-faint mt-3">Enable or disable apps. Reorder with ▲▼ arrows. Disabled apps are hidden from the sidebar.</p>
+    </section>
+  )
+}
 
 const EmbeddingSection: React.FC = () => {
   const [savedKey, setSavedKey] = useState('')
@@ -1438,6 +1508,9 @@ const SettingsApp: React.FC = () => {
 
         {/* ── Automations ── */}
         <AutomationSection />
+
+        {/* ── Apps ── */}
+        <AppsSection />
 
         {/* ── Theme ── */}
         <section className="mb-10">
