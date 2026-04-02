@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react'
+import React, { useRef, useEffect, useCallback, useState } from 'react'
 import { useUIStore } from '../../store/useUIStore'
 import { TerminalView } from './TerminalView'
 import type { TerminalViewHandle } from './TerminalView'
@@ -17,6 +17,8 @@ export const TerminalApp: React.FC = () => {
   const terminalWorkspaces = useUIStore((s) => s.terminalWorkspaces)
   const activeWorkspaceId = useUIStore((s) => s.activeWorkspaceId)
   const setActiveTerminalId = useUIStore((s) => s.setActiveTerminalId)
+  const splitTerminalInWorkspace = useUIStore((s) => s.splitTerminalInWorkspace)
+  const [dropSide, setDropSide] = useState<'left' | 'right' | null>(null)
 
   // Find active workspace and its active group
   const activeWorkspace = terminalWorkspaces.find((ws) => ws.id === activeWorkspaceId)
@@ -27,9 +29,31 @@ export const TerminalApp: React.FC = () => {
     ? 'opacity-50 transition-opacity duration-200'
     : 'transition-opacity duration-200'
 
+  const handleMainDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('application/x-terminal-drag')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const midX = rect.left + rect.width / 2
+    setDropSide(e.clientX < midX ? 'left' : 'right')
+  }, [])
+
+  const handleMainDragLeave = useCallback(() => setDropSide(null), [])
+
+  const handleMainDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDropSide(null)
+    const raw = e.dataTransfer.getData('application/x-terminal-drag')
+    if (!raw || !activeWorkspace || !activeTerminalId) return
+    const { termId } = JSON.parse(raw) as { termId: string; workspaceId: string }
+    if (termId === activeTerminalId) return
+    splitTerminalInWorkspace(activeWorkspace.id, activeTerminalId, termId)
+  }, [activeWorkspace, activeTerminalId, splitTerminalInWorkspace])
+
   return (
     <div className={`flex-1 flex flex-col overflow-hidden ${blurClass}`}>
-      <div className="flex-1 overflow-hidden bg-bg-app p-1 relative">
+      <div className="flex-1 overflow-hidden bg-bg-app p-1 relative"
+        onDragOver={handleMainDragOver} onDragLeave={handleMainDragLeave} onDrop={handleMainDrop}>
         {/* Render all terminals (always mounted for PTY persistence) */}
         {terminalSessions.map((session) => {
           const inActiveGroup = activeGroupTerminalIds.includes(session.id)
@@ -58,6 +82,14 @@ export const TerminalApp: React.FC = () => {
                 />
               </React.Fragment>
             ))}
+          </div>
+        )}
+
+        {/* Drop preview overlay */}
+        {dropSide && (
+          <div className="absolute inset-0 z-50 flex pointer-events-none">
+            <div className={`flex-1 transition-colors ${dropSide === 'left' ? 'bg-accent-main/10 border-2 border-dashed border-accent-main/40 rounded-md m-1' : ''}`} />
+            <div className={`flex-1 transition-colors ${dropSide === 'right' ? 'bg-accent-main/10 border-2 border-dashed border-accent-main/40 rounded-md m-1' : ''}`} />
           </div>
         )}
 

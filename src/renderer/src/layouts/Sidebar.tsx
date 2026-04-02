@@ -965,11 +965,12 @@ const TerminalAppSection: React.FC<{
         className={`pl-[36px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
           ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}
-          ${isDragOver ? 'ring-1 ring-accent-main/40 ring-inset' : ''}`}
+          ${isDragOver ? 'bg-accent-main/15 outline outline-2 outline-accent-main/50 outline-offset-[-2px]' : ''}`}
       >
         {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
         {prefix && <span className="text-tx-faint text-[11px] font-mono select-none shrink-0" style={{ width: '1.2em' }}>{prefix}</span>}
-        <Terminal size={13} className={`${isActive ? 'text-tx-active' : 'text-tx-muted'} shrink-0`} />
+        {isDragOver && <span className="text-[9px] text-accent-main font-medium shrink-0">⫼ split</span>}
+        <Terminal size={13} className={`${isActive ? 'text-tx-active' : isDragOver ? 'text-accent-main' : 'text-tx-muted'} shrink-0`} />
         {isRenaming ? (
           <input
             ref={renameInputRef}
