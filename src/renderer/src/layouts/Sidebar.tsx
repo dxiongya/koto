@@ -796,9 +796,14 @@ const TerminalAppSection: React.FC<{
   const setActiveId = useUIStore((s) => s.setActiveTerminalId)
   const codeProjectPath = useUIStore((s) => s.codeProjectPath)
   const setCurrentApp = useUIStore((s) => s.setCurrentApp)
+  const terminalGroups = useUIStore((s) => s.terminalGroups)
+  const activeGroupId = useUIStore((s) => s.activeGroupId)
+  const splitTerminal = useUIStore((s) => s.splitTerminal)
+  const setActiveGroup = useUIStore((s) => s.setActiveGroup)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
 
   // Enter key rename trigger
   useEffect(() => {
@@ -840,9 +845,98 @@ const TerminalAppSection: React.FC<{
 
   const handleSelect = useCallback((id: string) => {
     setActiveId(id)
+    // Also activate the group containing this terminal
+    const group = terminalGroups.find((g) => g.terminalIds.includes(id))
+    if (group) setActiveGroup(group.id)
     setCurrentApp('terminal.app')
     onFocusSidebar?.()
-  }, [setActiveId, setCurrentApp, onFocusSidebar])
+  }, [setActiveId, setCurrentApp, onFocusSidebar, terminalGroups, setActiveGroup])
+
+  const handleDragStart = useCallback((e: React.DragEvent, terminalId: string) => {
+    e.dataTransfer.setData('application/x-terminal-id', terminalId)
+    e.dataTransfer.effectAllowed = 'move'
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, terminalId: string) => {
+    if (e.dataTransfer.types.includes('application/x-terminal-id')) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setDragOverId(terminalId)
+    }
+  }, [])
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverId(null)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent, targetTerminalId: string) => {
+    e.preventDefault()
+    setDragOverId(null)
+    const draggedId = e.dataTransfer.getData('application/x-terminal-id')
+    if (!draggedId || draggedId === targetTerminalId) return
+    // Merge dragged terminal into the same group as target
+    splitTerminal(targetTerminalId, draggedId)
+  }, [splitTerminal])
+
+  // Build group-aware rendering structure
+  const findGroupForTerminal = (tid: string) => terminalGroups.find((g) => g.terminalIds.includes(tid))
+
+  // Render terminal items grouped
+  const renderedGroupIds = new Set<string>()
+
+  const renderTerminalRow = (session: typeof sessions[0], prefix?: string) => {
+    const isActive = session.id === activeTerminalId && currentApp === 'terminal.app'
+    const isRenaming = renamingId === session.id
+    const isDragOver = dragOverId === session.id
+    return (
+      <div
+        key={session.id}
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={isActive}
+        draggable={!isRenaming}
+        onClick={() => handleSelect(session.id)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelect(session.id) } }}
+        onDragStart={(e) => handleDragStart(e, session.id)}
+        onDragOver={(e) => handleDragOver(e, session.id)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e, session.id)}
+        className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
+          focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
+          ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}
+          ${isDragOver ? 'ring-1 ring-accent-main/40 ring-inset' : ''}`}
+      >
+        {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
+        {prefix && <span className="text-tx-faint text-[11px] font-mono select-none shrink-0" style={{ width: '1.2em' }}>{prefix}</span>}
+        <Terminal size={13} className={`${isActive ? 'text-tx-active' : 'text-tx-muted'} shrink-0`} />
+        {isRenaming ? (
+          <input
+            ref={renameInputRef}
+            type="text"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); handleRenameSubmit() }
+              if (e.key === 'Escape') { setRenamingId(null); setRenameValue('') }
+            }}
+            onBlur={() => { if (renameValue.trim()) handleRenameSubmit(); else { setRenamingId(null); setRenameValue('') } }}
+            onClick={(e) => e.stopPropagation()}
+            className="flex-1 bg-transparent text-[13px] text-tx-main outline-none border-b border-border-strong py-0.5"
+          />
+        ) : (
+          <span className={`truncate ${isActive ? 'text-tx-active font-medium' : 'text-tx-main'}`}>{session.title}</span>
+        )}
+        {!isRenaming && (
+          <button
+            onClick={(e) => handleClose(e, session.id)}
+            className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 text-tx-faint hover:text-tx-main transition-opacity"
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+    )
+  }
 
   return (
     <>
@@ -872,47 +966,22 @@ const TerminalAppSection: React.FC<{
             </button>
           ) : (
             sessions.map((session) => {
-              const isActive = session.id === activeTerminalId && currentApp === 'terminal.app'
-              const isRenaming = renamingId === session.id
+              const group = findGroupForTerminal(session.id)
+              if (!group) return renderTerminalRow(session)
+              // Single-terminal group: render normally
+              if (group.terminalIds.length === 1) return renderTerminalRow(session)
+              // Multi-terminal group: render with tree prefixes, but only once per group
+              if (renderedGroupIds.has(group.id)) return null
+              renderedGroupIds.add(group.id)
               return (
-                <div
-                  key={session.id}
-                  role="treeitem"
-                  tabIndex={0}
-                  aria-selected={isActive}
-                  onClick={() => handleSelect(session.id)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelect(session.id) } }}
-                  className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
-                    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
-                    ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
-                >
-                  {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
-                  <Terminal size={13} className={`${isActive ? 'text-tx-active' : 'text-tx-muted'} shrink-0`} />
-                  {isRenaming ? (
-                    <input
-                      ref={renameInputRef}
-                      type="text"
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') { e.preventDefault(); handleRenameSubmit() }
-                        if (e.key === 'Escape') { setRenamingId(null); setRenameValue('') }
-                      }}
-                      onBlur={() => { if (renameValue.trim()) handleRenameSubmit(); else { setRenamingId(null); setRenameValue('') } }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex-1 bg-transparent text-[13px] text-tx-main outline-none border-b border-border-strong py-0.5"
-                    />
-                  ) : (
-                    <span className={`truncate ${isActive ? 'text-tx-active font-medium' : 'text-tx-main'}`}>{session.title}</span>
-                  )}
-                  {!isRenaming && (
-                    <button
-                      onClick={(e) => handleClose(e, session.id)}
-                      className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 text-tx-faint hover:text-tx-main transition-opacity"
-                    >
-                      <X size={12} />
-                    </button>
-                  )}
+                <div key={group.id}>
+                  {group.terminalIds.map((tid, idx) => {
+                    const s = sessions.find((ss) => ss.id === tid)
+                    if (!s) return null
+                    const isLast = idx === group.terminalIds.length - 1
+                    const prefix = isLast ? '\u2514' : '\u251C'
+                    return renderTerminalRow(s, prefix)
+                  })}
                 </div>
               )
             })

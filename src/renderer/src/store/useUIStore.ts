@@ -17,6 +17,11 @@ export interface TerminalSession {
   _restoredBuffer?: string
 }
 
+export interface TerminalGroup {
+  id: string
+  terminalIds: string[]
+}
+
 interface UIState {
   // Theme & Font
   theme: string
@@ -46,6 +51,8 @@ interface UIState {
   // terminal.app specific
   terminalSessions: TerminalSession[]
   activeTerminalId: string | null
+  terminalGroups: TerminalGroup[]
+  activeGroupId: string | null
 
   // recent files
   recentFiles: RecentFileEntry[]
@@ -103,6 +110,11 @@ interface UIState {
   addTerminalSession: (session: TerminalSession) => void
   removeTerminalSession: (id: string) => void
   setActiveTerminalId: (id: string | null) => void
+  createTerminalGroup: (terminalId: string) => void
+  addToGroup: (groupId: string, terminalId: string) => void
+  removeFromGroup: (groupId: string, terminalId: string) => void
+  splitTerminal: (existingTerminalId: string, newTerminalId: string) => void
+  setActiveGroup: (groupId: string) => void
 
   // recent files
   trackRecentFile: (filePath: string, app: AppType) => void
@@ -163,6 +175,8 @@ export const useUIStore = create<UIState>((set, get) => ({
   recentProjects: [],
   terminalSessions: [],
   activeTerminalId: null,
+  terminalGroups: [],
+  activeGroupId: null,
   recentFiles: [],
   ai: { ...DEFAULT_AI_SETTINGS },
   mcpServers: [],
@@ -317,22 +331,117 @@ export const useUIStore = create<UIState>((set, get) => ({
   // ── terminal.app ──
 
   addTerminalSession: (session) => {
-    const next = [...get().terminalSessions, session]
-    set({ terminalSessions: next, activeTerminalId: session.id })
-    persistState({ terminalSessions: next.map((t) => ({ title: t.title, cwd: t.cwd })) })
+    const prev = get()
+    const nextSessions = [...prev.terminalSessions, session]
+    const newGroupId = `group-${session.id}`
+    const newGroup: TerminalGroup = { id: newGroupId, terminalIds: [session.id] }
+    const nextGroups = [...prev.terminalGroups, newGroup]
+    set({
+      terminalSessions: nextSessions,
+      activeTerminalId: session.id,
+      terminalGroups: nextGroups,
+      activeGroupId: newGroupId,
+    })
+    persistState({ terminalSessions: nextSessions.map((t) => ({ title: t.title, cwd: t.cwd })) })
   },
 
   removeTerminalSession: (id) => {
     const prev = get()
-    const next = prev.terminalSessions.filter((t) => t.id !== id)
+    const nextSessions = prev.terminalSessions.filter((t) => t.id !== id)
+    // Remove terminal from its group; delete group if empty
+    let nextGroups = prev.terminalGroups.map((g) => ({
+      ...g,
+      terminalIds: g.terminalIds.filter((tid) => tid !== id),
+    })).filter((g) => g.terminalIds.length > 0)
+    // Determine new active terminal
     const newActiveId = prev.activeTerminalId === id
-      ? (next.length > 0 ? next[next.length - 1].id : null)
+      ? (nextSessions.length > 0 ? nextSessions[nextSessions.length - 1].id : null)
       : prev.activeTerminalId
-    set({ terminalSessions: next, activeTerminalId: newActiveId })
-    persistState({ terminalSessions: next.map((t) => ({ title: t.title, cwd: t.cwd })) })
+    // Determine new active group
+    let newActiveGroupId = prev.activeGroupId
+    const currentGroupStillExists = nextGroups.some((g) => g.id === prev.activeGroupId)
+    if (!currentGroupStillExists) {
+      // Find group containing the new active terminal
+      newActiveGroupId = newActiveId
+        ? (nextGroups.find((g) => g.terminalIds.includes(newActiveId))?.id ?? null)
+        : null
+    }
+    set({
+      terminalSessions: nextSessions,
+      activeTerminalId: newActiveId,
+      terminalGroups: nextGroups,
+      activeGroupId: newActiveGroupId,
+    })
+    persistState({ terminalSessions: nextSessions.map((t) => ({ title: t.title, cwd: t.cwd })) })
   },
 
   setActiveTerminalId: (id) => set({ activeTerminalId: id }),
+
+  createTerminalGroup: (terminalId) => {
+    const prev = get()
+    // Remove from existing group first
+    const cleaned = prev.terminalGroups.map((g) => ({
+      ...g,
+      terminalIds: g.terminalIds.filter((tid) => tid !== terminalId),
+    })).filter((g) => g.terminalIds.length > 0)
+    const newGroupId = `group-${terminalId}-${Date.now()}`
+    const newGroup: TerminalGroup = { id: newGroupId, terminalIds: [terminalId] }
+    set({ terminalGroups: [...cleaned, newGroup], activeGroupId: newGroupId })
+  },
+
+  addToGroup: (groupId, terminalId) => {
+    const prev = get()
+    // Remove from any existing group
+    const cleaned = prev.terminalGroups.map((g) => ({
+      ...g,
+      terminalIds: g.terminalIds.filter((tid) => tid !== terminalId),
+    })).filter((g) => g.terminalIds.length > 0)
+    // Add to target group
+    const nextGroups = cleaned.map((g) =>
+      g.id === groupId ? { ...g, terminalIds: [...g.terminalIds, terminalId] } : g,
+    )
+    set({ terminalGroups: nextGroups, activeGroupId: groupId })
+  },
+
+  removeFromGroup: (groupId, terminalId) => {
+    const prev = get()
+    const nextGroups = prev.terminalGroups.map((g) =>
+      g.id === groupId ? { ...g, terminalIds: g.terminalIds.filter((tid) => tid !== terminalId) } : g,
+    ).filter((g) => g.terminalIds.length > 0)
+    // If removed terminal was standalone, create new group for it
+    const stillInGroup = nextGroups.some((g) => g.terminalIds.includes(terminalId))
+    if (!stillInGroup && prev.terminalSessions.some((s) => s.id === terminalId)) {
+      const newGroupId = `group-${terminalId}-${Date.now()}`
+      nextGroups.push({ id: newGroupId, terminalIds: [terminalId] })
+    }
+    set({ terminalGroups: nextGroups })
+  },
+
+  splitTerminal: (existingTerminalId, newTerminalId) => {
+    const prev = get()
+    const targetGroup = prev.terminalGroups.find((g) => g.terminalIds.includes(existingTerminalId))
+    if (!targetGroup) return
+    // Remove newTerminalId from its current group
+    const cleaned = prev.terminalGroups.map((g) => ({
+      ...g,
+      terminalIds: g.terminalIds.filter((tid) => tid !== newTerminalId),
+    })).filter((g) => g.terminalIds.length > 0)
+    // Add newTerminalId to the target group after existingTerminalId
+    const nextGroups = cleaned.map((g) => {
+      if (g.id !== targetGroup.id) return g
+      const idx = g.terminalIds.indexOf(existingTerminalId)
+      const newIds = [...g.terminalIds]
+      newIds.splice(idx + 1, 0, newTerminalId)
+      return { ...g, terminalIds: newIds }
+    })
+    set({
+      terminalGroups: nextGroups,
+      activeGroupId: targetGroup.id,
+      activeTerminalId: newTerminalId,
+    })
+  },
+
+  setActiveGroup: (groupId) => set({ activeGroupId: groupId }),
 
   // ── navigation ──
 
