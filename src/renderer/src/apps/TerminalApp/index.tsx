@@ -108,7 +108,7 @@ export const TerminalApp: React.FC = () => {
   )
 }
 
-/** Split pane overlay with tab bar — shows title, status, close */
+/** Split pane overlay — only the tab bar captures events, terminal area is transparent */
 function SplitPaneOverlay({
   terminalId,
   isActiveTerminal,
@@ -124,10 +124,13 @@ function SplitPaneOverlay({
   const title = session?.title || 'Terminal'
 
   return (
-    <div className="flex-1 flex flex-col pointer-events-auto" onClick={onActivate}>
-      {/* Tab bar */}
-      <div className={`shrink-0 flex items-center gap-2 px-3 h-[28px] text-[11px] border-b
-        ${isActiveTerminal ? 'bg-bg-active border-accent-main/30' : 'bg-bg-sidebar border-border-subtle'}`}>
+    <div className="flex-1 flex flex-col pointer-events-none">
+      {/* Tab bar — only this captures events */}
+      <div
+        className={`shrink-0 flex items-center gap-2 px-3 h-[28px] text-[11px] border-b pointer-events-auto cursor-pointer group
+          ${isActiveTerminal ? 'bg-bg-active border-accent-main/30' : 'bg-bg-sidebar border-border-subtle hover:bg-bg-hover'}`}
+        onClick={onActivate}
+      >
         <Terminal size={11} className={isActiveTerminal ? 'text-accent-main' : 'text-tx-faint'} />
         <span className={`truncate ${isActiveTerminal ? 'text-accent-main font-medium' : 'text-tx-muted'}`}>{title}</span>
         <div className="ml-auto flex items-center gap-1">
@@ -141,8 +144,8 @@ function SplitPaneOverlay({
           </button>
         </div>
       </div>
-      {/* Click area below tab — transparent, lets terminal underneath receive events */}
-      <div className="flex-1" style={{ pointerEvents: 'none' }} />
+      {/* Terminal area — fully transparent to let xterm receive all events */}
+      <div className="flex-1" />
     </div>
   )
 }

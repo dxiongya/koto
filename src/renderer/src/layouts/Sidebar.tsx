@@ -962,7 +962,7 @@ const TerminalAppSection: React.FC<{
         onDragOver={(e) => handleDragOver(e, session.id)}
         onDragLeave={handleDragLeave}
         onDrop={(e) => handleDrop(e, session.id, workspaceId)}
-        className={`pl-[36px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
+        className={`${prefix ? 'pl-[8px]' : 'pl-[36px]'} py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
           ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}
           ${isDragOver ? 'bg-accent-main/15 outline outline-2 outline-accent-main/50 outline-offset-[-2px]' : ''}`}
@@ -1026,9 +1026,9 @@ const TerminalAppSection: React.FC<{
             if (!s) return null
             return renderTerminalRow(s, ws.id)
           }
-          // Multi-terminal group: show with tree prefixes
+          // Multi-terminal group: show with tree prefixes and visual grouping
           return (
-            <div key={group.id}>
+            <div key={group.id} className="my-0.5 ml-[28px] border-l border-border-subtle/50 pl-1">
               {group.terminalIds.map((tid, idx) => {
                 const s = sessions.find((ss) => ss.id === tid)
                 if (!s) return null
