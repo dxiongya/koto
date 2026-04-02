@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import { useContextMenu, type ContextMenuItem } from '../components/ContextMenu'
+import { getAppRegistry } from '../core/AppContext'
 import type { AppType, FileNode, CollectedItem } from '../../../shared/types'
 
 // ── Helpers ──
@@ -1228,6 +1229,7 @@ export const Sidebar: React.FC = () => {
     }
   }, [liteHome])
 
+  const enabledApps = getAppRegistry().getEnabled()
   const [expandedSections, setExpandedSections] = useState<string[]>(['notes.app'])
   const [renameTrigger, setRenameTrigger] = useState(0)
   const [notesSelectedGroup, setNotesSelectedGroup] = useState<string | null>(null)
@@ -1303,8 +1305,8 @@ export const Sidebar: React.FC = () => {
     }
   }, [confirmDelete, handleConfirmDelete, notesSelectedGroup])
 
-  const handleAppClick = (appId: AppType) => {
-    setCurrentApp(appId)
+  const handleAppClick = (appId: string) => {
+    setCurrentApp(appId as AppType)
     setExpandedSections((prev) =>
       prev.includes(appId) ? prev.filter((s) => s !== appId) : [...prev, appId]
     )
@@ -1328,52 +1330,33 @@ export const Sidebar: React.FC = () => {
       {/* Top drag area for macOS */}
       <div className="h-8 w-full shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
 
-      {/* App Sections */}
+      {/* App Sections — dynamically from Registry */}
       <div className="flex-1 overflow-y-auto pb-4 pt-2">
-        {/* notes.app */}
-        <NotesAppSection
-          currentApp={currentApp}
-          expanded={expandedSections.includes('notes.app')}
-          onHeaderClick={() => handleAppClick('notes.app')}
-          liteHome={liteHome}
-          onFileClick={handleNoteFileClick}
-          renameTrigger={renameTrigger}
-          selectedGroup={notesSelectedGroup}
-          onGroupSelect={setNotesSelectedGroup}
-        />
-
-        {/* code.app */}
-        <CodeAppSection
-          currentApp={currentApp}
-          expanded={expandedSections.includes('code.app')}
-          onHeaderClick={() => handleAppClick('code.app')}
-          codeProjectPath={codeProjectPath}
-        />
-
-        {/* collector.app */}
-        <CollectorAppSection
-          currentApp={currentApp}
-          expanded={expandedSections.includes('collector.app')}
-          onHeaderClick={() => handleAppClick('collector.app')}
-        />
-
-        {/* browser.app */}
-        <AppSectionHeader
-          appId="browser.app"
-          icon={<Chrome size={14} strokeWidth={2.5} />}
-          currentApp={currentApp}
-          expanded={expandedSections.includes('browser.app')}
-          onClick={() => handleAppClick('browser.app')}
-        />
-
-        {/* terminal.app */}
-        <TerminalAppSection
-          currentApp={currentApp}
-          expanded={expandedSections.includes('terminal.app')}
-          onHeaderClick={() => handleAppClick('terminal.app')}
-          renameTrigger={renameTrigger}
-          onFocusSidebar={() => sidebarRef.current?.focus()}
-        />
+        {enabledApps.map(({ definition }) => {
+          const id = definition.manifest.id
+          switch (id) {
+            case 'notes.app':
+              return <NotesAppSection key={id} currentApp={currentApp} expanded={expandedSections.includes(id)}
+                onHeaderClick={() => handleAppClick(id)} liteHome={liteHome} onFileClick={handleNoteFileClick}
+                renameTrigger={renameTrigger} selectedGroup={notesSelectedGroup} onGroupSelect={setNotesSelectedGroup} />
+            case 'collector.app':
+              return <CollectorAppSection key={id} currentApp={currentApp} expanded={expandedSections.includes(id)}
+                onHeaderClick={() => handleAppClick(id)} />
+            case 'code.app':
+              return <CodeAppSection key={id} currentApp={currentApp} expanded={expandedSections.includes(id)}
+                onHeaderClick={() => handleAppClick(id)} codeProjectPath={codeProjectPath} />
+            case 'terminal.app':
+              return <TerminalAppSection key={id} currentApp={currentApp} expanded={expandedSections.includes(id)}
+                onHeaderClick={() => handleAppClick(id)} renameTrigger={renameTrigger}
+                onFocusSidebar={() => sidebarRef.current?.focus()} />
+            default:
+              // Generic app header for any new/third-party app
+              return <AppSectionHeader key={id} appId={id as AppType}
+                icon={<FileText size={14} strokeWidth={2.5} />}
+                currentApp={currentApp} expanded={expandedSections.includes(id)}
+                onClick={() => handleAppClick(id)} />
+          }
+        })}
       </div>
 
       {/* Bottom Actions */}
