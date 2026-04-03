@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import '@xterm/xterm/css/xterm.css'
-import { xtermTheme } from './xterm-theme'
+import { buildXtermTheme } from './xterm-theme'
 
 interface TerminalViewProps {
   terminalId: string
@@ -41,7 +41,7 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
       if (!containerRef.current) return
 
       const term = new Terminal({
-        theme: xtermTheme,
+        theme: buildXtermTheme(),
         fontSize: 13,
         fontFamily: "'SF Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
         cursorBlink: true,
@@ -84,6 +84,12 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         term.write(`\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`)
       })
 
+      // Sync xterm theme when app theme changes (CSS custom properties on :root)
+      const themeObserver = new MutationObserver(() => {
+        term.options.theme = buildXtermTheme()
+      })
+      themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
+
       // Debounced resize observer
       let resizeRaf = 0
       const resizeObserver = new ResizeObserver(() => {
@@ -102,6 +108,7 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
       return () => {
         cancelAnimationFrame(resizeRaf)
         resizeObserver.disconnect()
+        themeObserver.disconnect()
         unsubData()
         unsubExit()
         term.dispose()

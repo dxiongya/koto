@@ -339,30 +339,29 @@ const PaneTabBarMemo = memo(function PaneTabBar({
 
   return (
     <div
-      className={`shrink-0 flex items-center gap-1.5 px-2 h-[28px] text-[11px] border-b cursor-pointer group select-none
-        ${isActiveTerminal ? 'bg-bg-active border-accent-main/30' : 'bg-bg-sidebar border-border-subtle hover:bg-bg-hover'}`}
+      className={`shrink-0 flex items-center gap-1.5 px-3 py-[4px] text-[13px] border-b cursor-pointer group select-none relative
+        ${isActiveTerminal ? 'bg-bg-active border-border-subtle' : 'bg-bg-sidebar border-border-subtle hover:bg-bg-hover'}`}
       onClick={onActivate}
     >
+      {/* Active indicator — matches sidebar pattern */}
+      {isActiveTerminal && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-accent-main" />}
       <div
         draggable
         onDragStart={handleDragStart}
-        className="cursor-grab active:cursor-grabbing text-tx-faint hover:text-tx-muted p-0.5 -ml-0.5"
+        className="cursor-grab active:cursor-grabbing text-tx-faint hover:text-tx-muted p-0.5"
         onClick={(e) => e.stopPropagation()}
       >
-        <GripVertical size={10} />
+        <GripVertical size={12} />
       </div>
-      <Terminal size={11} className={isActiveTerminal ? 'text-accent-main' : 'text-tx-faint'} />
-      <span className={`truncate ${isActiveTerminal ? 'text-accent-main font-medium' : 'text-tx-muted'}`}>{title}</span>
-      <div className="ml-auto flex items-center gap-1">
-        {isActiveTerminal && <div className="w-1.5 h-1.5 rounded-full bg-accent-main" title="Active" />}
-        <button
-          onClick={(e) => { e.stopPropagation(); onClose() }}
-          className="p-0.5 text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity"
-          aria-label="Close terminal"
-        >
-          <X size={11} />
-        </button>
-      </div>
+      <Terminal size={13} className={`shrink-0 ${isActiveTerminal ? 'text-tx-active' : 'text-tx-faint'}`} />
+      <span className={`truncate ${isActiveTerminal ? 'text-tx-active font-medium' : 'text-tx-main'}`}>{title}</span>
+      <button
+        onClick={(e) => { e.stopPropagation(); onClose() }}
+        className="ml-auto p-0.5 text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity"
+        aria-label="Close terminal"
+      >
+        <X size={12} />
+      </button>
     </div>
   )
 })
