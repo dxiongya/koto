@@ -6,7 +6,7 @@ import {
   Pencil, Trash2, FilePlus, FolderInput, Settings, Zap, Archive, Layers, Folder,
   Link, Image, Video, Twitter, Monitor, Type
 } from 'lucide-react'
-import { useUIStore, collectTerminalIds, removeFromTree } from '../store/useUIStore'
+import { useUIStore, collectTerminalIds, removeFromTree, genTerminalPersistKey } from '../store/useUIStore'
 import { useContextMenu, type ContextMenuItem } from '../components/ContextMenu'
 import { getAppRegistry } from '../core/AppContext'
 import type { AppType, FileNode, CollectedItem } from '../../../shared/types'
@@ -844,7 +844,7 @@ const TerminalAppSection: React.FC<{
   const handleCreateInWorkspace = useCallback(async (workspaceId: string, cwd: string) => {
     const res = await window.api.terminal.create(cwd)
     if (res.ok) {
-      addSession({ id: res.data, title: `Terminal ${sessions.length + 1}`, cwd })
+      addSession({ id: res.data, persistKey: genTerminalPersistKey(), title: `Terminal ${sessions.length + 1}`, cwd })
       createTerminalInWorkspace(workspaceId, res.data)
       setCurrentApp('terminal.app')
     }

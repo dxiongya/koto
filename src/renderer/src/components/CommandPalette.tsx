@@ -4,7 +4,7 @@ import {
   Plus, PanelLeft, Moon, Sun, ArrowRight, Hash, Clock, HelpCircle,
   Link, Image, Video, Twitter, Monitor, Type,
 } from 'lucide-react'
-import { useUIStore } from '../store/useUIStore'
+import { useUIStore, genTerminalPersistKey } from '../store/useUIStore'
 import type { AppType } from '../../../shared/types'
 
 // ── Types ──
@@ -374,7 +374,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
             const cwd = store.codeProjectPath ?? undefined
             const res = await window.api.terminal.create(cwd)
             if (res.ok) {
-              store.addTerminalSession({ id: res.data, title: `Terminal ${store.terminalSessions.length + 1}`, cwd })
+              store.addTerminalSession({ id: res.data, persistKey: genTerminalPersistKey(), title: `Terminal ${store.terminalSessions.length + 1}`, cwd })
               store.setCurrentApp('terminal.app')
             }
           },
@@ -531,7 +531,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
           const cwd = store.codeProjectPath ?? undefined
           const res = await window.api.terminal.create(cwd)
           if (res.ok) {
-            store.addTerminalSession({ id: res.data, title: `Terminal ${store.terminalSessions.length + 1}`, cwd })
+            store.addTerminalSession({ id: res.data, persistKey: genTerminalPersistKey(), title: `Terminal ${store.terminalSessions.length + 1}`, cwd })
             store.setCurrentApp('terminal.app')
           }
         },

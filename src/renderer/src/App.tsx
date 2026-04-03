@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useUIStore } from './store/useUIStore'
+import { useUIStore, genTerminalPersistKey } from './store/useUIStore'
+import type { SplitNode } from './store/useUIStore'
 import { MainLayout } from './layouts/MainLayout'
 import { SettingsApp } from './apps/SettingsApp'
 import { ContextMenuProvider } from './components/ContextMenu'
@@ -52,22 +53,71 @@ export default function App() {
         // terminal.app — recreate PTY sessions with saved cwd + buffer
         if (c.terminalSessions?.length > 0) {
           const defaultCwd = c.codeProjectPath || undefined
+          type SavedSession = { persistKey?: string; title: string; cwd?: string }
+          const savedWorkspaces = c.terminalWorkspaces as { id: string; path: string; name: string; groups: { id: string; layout: SplitNode }[]; activeGroupId: string | null }[] | undefined
+
           Promise.all(
-            c.terminalSessions.map(async (saved: { title: string; cwd?: string }, idx: number) => {
+            (c.terminalSessions as SavedSession[]).map(async (saved) => {
               const cwd = saved.cwd || defaultCwd
+              const persistKey = saved.persistKey || genTerminalPersistKey()
               const res = await window.api.terminal.create(cwd)
               if (!res.ok) return null
+              // Load buffer using stable persistKey (not position index)
               let buffer: string | undefined
-              const bufferRes = await window.api.terminal.loadBuffer(`session-${idx}`)
+              const bufferRes = await window.api.terminal.loadBuffer(persistKey)
               if (bufferRes.ok) buffer = bufferRes.data
-              return { id: res.data, title: saved.title, cwd, _restoredBuffer: buffer }
+              return { id: res.data, persistKey, title: saved.title, cwd, _restoredBuffer: buffer }
             }),
           ).then((results) => {
             const sessions = results.filter(Boolean) as {
-              id: string; title: string; cwd?: string; _restoredBuffer?: string
+              id: string; persistKey: string; title: string; cwd?: string; _restoredBuffer?: string
             }[]
-            if (sessions.length > 0) {
-              // Group sessions by cwd into workspaces, each session = one group
+            if (sessions.length === 0) return
+
+            // Build persistKey → new PTY id map for remapping layout trees
+            const keyToId = new Map<string, string>()
+            sessions.forEach((s) => keyToId.set(s.persistKey, s.id))
+
+            // Remap terminal IDs in a SplitNode tree (old PTY id → new PTY id)
+            // The layout stores PTY ids which change on restart. We match via persistKey.
+            function remapLayout(node: SplitNode, oldIdToKey: Map<string, string>): SplitNode {
+              if (node.type === 'terminal') {
+                const key = oldIdToKey.get(node.terminalId)
+                const newId = key ? keyToId.get(key) : undefined
+                return newId ? { type: 'terminal', terminalId: newId } : node
+              }
+              return { ...node, children: node.children.map((ch) => remapLayout(ch, oldIdToKey)) }
+            }
+
+            let workspaces: typeof savedWorkspaces
+            if (savedWorkspaces?.length) {
+              // Build old-id → persistKey map from saved sessions (order-preserved)
+              const savedSessions = c.terminalSessions as SavedSession[]
+              const oldIdToKey = new Map<string, string>()
+
+              // Collect old terminal IDs from saved layout trees
+              const oldIds: string[] = []
+              function collectIds(node: SplitNode) {
+                if (node.type === 'terminal') oldIds.push(node.terminalId)
+                else node.children.forEach(collectIds)
+              }
+              savedWorkspaces.forEach((ws) => ws.groups.forEach((g) => collectIds(g.layout)))
+
+              // Map old IDs to persistKeys by position (sessions and layout share same order)
+              oldIds.forEach((oldId, i) => {
+                const key = savedSessions[i]?.persistKey
+                if (key) oldIdToKey.set(oldId, key)
+              })
+
+              workspaces = savedWorkspaces.map((ws) => ({
+                ...ws,
+                groups: ws.groups.map((g) => ({
+                  ...g,
+                  layout: remapLayout(g.layout, oldIdToKey),
+                })),
+              }))
+            } else {
+              // No saved workspaces — group by cwd
               const wsMap = new Map<string, typeof sessions>()
               for (const s of sessions) {
                 const key = s.cwd || 'default'
@@ -75,23 +125,25 @@ export default function App() {
                 list.push(s)
                 wsMap.set(key, list)
               }
-              const workspaces = Array.from(wsMap.entries()).map(([path, wsSessions]) => {
-                const name = path.split('/').filter(Boolean).pop() || path
+              workspaces = Array.from(wsMap.entries()).map(([wsPath, wsSessions]) => {
+                const name = wsPath.split('/').filter(Boolean).pop() || wsPath
                 const wsId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
                 const groups = wsSessions.map((s) => ({
                   id: `group-${s.id}-${Date.now()}`,
                   layout: { type: 'terminal' as const, terminalId: s.id },
                 }))
-                return { id: wsId, path, name, groups, activeGroupId: groups[groups.length - 1].id }
-              })
-
-              useUIStore.setState({
-                terminalSessions: sessions,
-                activeTerminalId: sessions[sessions.length - 1].id,
-                terminalWorkspaces: workspaces,
-                activeWorkspaceId: workspaces[workspaces.length - 1].id,
+                return { id: wsId, path: wsPath, name, groups, activeGroupId: groups[groups.length - 1].id }
               })
             }
+
+            const savedActiveWsId = c.activeWorkspaceId as string | undefined
+
+            useUIStore.setState({
+              terminalSessions: sessions,
+              activeTerminalId: sessions[sessions.length - 1].id,
+              terminalWorkspaces: workspaces,
+              activeWorkspaceId: savedActiveWsId && workspaces.some((ws) => ws.id === savedActiveWsId) ? savedActiveWsId : workspaces[workspaces.length - 1]?.id ?? null,
+            })
           })
         }
       }
@@ -107,41 +159,88 @@ export default function App() {
     })
   }, [])
 
-  // Periodically refresh terminal cwds
+  // Periodically refresh terminal cwds (only active workspace terminals, not all)
   useEffect(() => {
     const interval = setInterval(async () => {
-      const { terminalSessions } = useUIStore.getState()
+      const state = useUIStore.getState()
+      const { terminalSessions, terminalWorkspaces, activeWorkspaceId } = state
       if (terminalSessions.length === 0) return
+
+      // Only poll CWD for terminals in the active workspace (performance)
+      const activeWs = terminalWorkspaces.find((ws) => ws.id === activeWorkspaceId)
+      const visibleIds = new Set<string>()
+      if (activeWs) {
+        const collectIds = (node: SplitNode) => {
+          if (node.type === 'terminal') visibleIds.add(node.terminalId)
+          else node.children.forEach(collectIds)
+        }
+        activeWs.groups.forEach((g) => collectIds(g.layout))
+      }
+
+      let changed = false
       const updated = await Promise.all(
         terminalSessions.map(async (s) => {
+          if (!visibleIds.has(s.id)) return s // skip non-visible terminals
           try {
             const res = await window.api.terminal.getCwd(s.id)
-            if (res.ok && res.data) return { ...s, cwd: res.data }
+            if (res.ok && res.data && res.data !== s.cwd) {
+              changed = true
+              return { ...s, cwd: res.data }
+            }
           } catch {}
           return s
         }),
       )
-      useUIStore.setState({ terminalSessions: updated })
+      if (changed) useUIStore.setState({ terminalSessions: updated })
     }, 5000)
     return () => clearInterval(interval)
   }, [])
 
-  // Save terminal buffers + cwd before window unloads
+  // Save terminal state — called on beforeunload + periodic auto-save
   useEffect(() => {
-    const handleBeforeUnload = (): void => {
-      const { terminalSessions } = useUIStore.getState()
+    function saveTerminalState(sync: boolean): void {
+      const { terminalSessions, terminalWorkspaces, activeWorkspaceId, activeTerminalId } = useUIStore.getState()
+      if (terminalSessions.length === 0) return
       const refs = getTerminalRefs()
-      terminalSessions.forEach((session, idx) => {
+
+      // Serialize all xterm buffers keyed by stable persistKey
+      const buffers: { key: string; data: string }[] = []
+      terminalSessions.forEach((session) => {
         const ref = refs.get(session.id)
         const buffer = ref?.current?.serialize() || ''
-        if (buffer) window.api.terminal.saveBuffer(`session-${idx}`, buffer)
+        if (buffer) buffers.push({ key: session.persistKey, data: buffer })
       })
-      window.api.state.update({
-        terminalSessions: terminalSessions.map((t) => ({ title: t.title, cwd: t.cwd })),
-      })
+
+      const config = {
+        terminalSessions: terminalSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })),
+        terminalWorkspaces: terminalWorkspaces.map((ws) => ({
+          id: ws.id, path: ws.path, name: ws.name, groups: ws.groups, activeGroupId: ws.activeGroupId,
+        })),
+        activeWorkspaceId,
+        activeTerminalId,
+      }
+
+      if (sync) {
+        // Synchronous — guaranteed to complete before window closes
+        window.api.terminal.saveAllSync(buffers, config)
+      } else {
+        // Async — for periodic background saves
+        for (const b of buffers) window.api.terminal.saveBuffer(b.key, b.data)
+        window.api.state.update(config)
+      }
     }
+
+    // Periodic auto-save every 30s — protects against crashes
+    const autoSaveInterval = setInterval(() => saveTerminalState(false), 30_000)
+
+    // Sync save on window close
+    const handleBeforeUnload = (): void => saveTerminalState(true)
     window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+
+    return () => {
+      clearInterval(autoSaveInterval)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
   }, [])
 
   // ── Global keyboard shortcuts (renderer-side) ──

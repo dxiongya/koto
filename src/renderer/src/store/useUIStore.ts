@@ -11,10 +11,17 @@ export interface NavEntry {
 
 export interface TerminalSession {
   id: string
+  /** Stable key for persistence — survives PTY recreation across restarts */
+  persistKey: string
   title: string
   cwd?: string
   /** Transient: restored buffer content, not persisted */
   _restoredBuffer?: string
+}
+
+/** Generate a stable persist key for terminal buffer storage */
+export function genTerminalPersistKey(): string {
+  return `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 }
 
 /** A split tree node — either a single terminal or a directional split of children */
@@ -395,7 +402,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       terminalSessions: nextSessions,
       activeTerminalId: session.id,
     })
-    persistState({ terminalSessions: nextSessions.map((t) => ({ title: t.title, cwd: t.cwd })) })
+    persistState({ terminalSessions: nextSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })) })
   },
 
   removeTerminalSession: (id) => {
@@ -430,7 +437,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       activeTerminalId: newActiveId,
       terminalWorkspaces: nextWorkspaces,
     })
-    persistState({ terminalSessions: nextSessions.map((t) => ({ title: t.title, cwd: t.cwd })) })
+    persistState({ terminalSessions: nextSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })) })
   },
 
   setActiveTerminalId: (id) => set({ activeTerminalId: id }),
@@ -448,7 +455,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     const newWs: TerminalWorkspace = { id, path, name, groups: [] as TerminalWorkspace['groups'], activeGroupId: null }
     const nextWorkspaces = [...prev.terminalWorkspaces, newWs]
     set({ terminalWorkspaces: nextWorkspaces, activeWorkspaceId: id })
-    persistState({ terminalWorkspaces: nextWorkspaces.map((ws) => ({ id: ws.id, path: ws.path, name: ws.name })) })
+    persistState({ terminalWorkspaces: nextWorkspaces.map((ws) => ({ id: ws.id, path: ws.path, name: ws.name, groups: ws.groups, activeGroupId: ws.activeGroupId })) })
   },
 
   removeTerminalWorkspace: (id) => {
@@ -472,7 +479,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       activeTerminalId: newActiveTermId,
     })
     persistState({
-      terminalWorkspaces: nextWorkspaces.map((ws) => ({ id: ws.id, path: ws.path, name: ws.name })),
+      terminalWorkspaces: nextWorkspaces.map((ws) => ({ id: ws.id, path: ws.path, name: ws.name, groups: ws.groups, activeGroupId: ws.activeGroupId })),
       terminalSessions: nextSessions.map((t) => ({ title: t.title, cwd: t.cwd })),
     })
   },

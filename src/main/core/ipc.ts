@@ -156,12 +156,44 @@ export function setupIpcHandlers(): void {
       const filePath = path.join(getLiteHome(), 'terminals', `${sessionKey}.txt`)
       if (fs.existsSync(filePath)) {
         const data = fs.readFileSync(filePath, 'utf-8')
-        fs.unlinkSync(filePath) // clean up after loading
         return { ok: true, data }
       }
       return { ok: false, error: 'not found' }
     } catch {
       return { ok: false, error: 'read failed' }
+    }
+  })
+
+  // Synchronous save of all terminal buffers + state — used in beforeunload
+  ipcMain.on(IpcChannels.TERMINAL_SAVE_ALL_SYNC, (event, payload: { buffers: { key: string; data: string }[]; config: Record<string, unknown> }) => {
+    try {
+      const dir = path.join(getLiteHome(), 'terminals')
+      fs.mkdirSync(dir, { recursive: true })
+
+      // Clean up stale buffer files — only keep keys in current payload
+      const activeKeys = new Set(payload.buffers.map((b) => `${b.key}.txt`))
+      try {
+        for (const f of fs.readdirSync(dir)) {
+          if (f.endsWith('.txt') && !activeKeys.has(f)) {
+            fs.unlinkSync(path.join(dir, f))
+          }
+        }
+      } catch { /* ignore cleanup errors */ }
+
+      // Save current buffers
+      for (const { key, data } of payload.buffers) {
+        fs.writeFileSync(path.join(dir, `${key}.txt`), data, 'utf-8')
+      }
+
+      // Save config (state persistence)
+      const configPath = path.join(getLiteHome(), 'config.json')
+      let existing: Record<string, unknown> = {}
+      try { existing = JSON.parse(fs.readFileSync(configPath, 'utf-8')) } catch {}
+      Object.assign(existing, payload.config)
+      fs.writeFileSync(configPath, JSON.stringify(existing, null, 2), 'utf-8')
+      event.returnValue = { ok: true }
+    } catch (e) {
+      event.returnValue = { ok: false, error: String(e) }
     }
   })
 

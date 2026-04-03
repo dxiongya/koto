@@ -111,6 +111,9 @@ const api = {
         }
       }
     },
+    // Synchronous save — MUST complete before window closes
+    saveAllSync: (buffers: { key: string; data: string }[], config: Record<string, unknown>) =>
+      ipcRenderer.sendSync(IpcChannels.TERMINAL_SAVE_ALL_SYNC, { buffers, config }),
     // Keep legacy broadcast API for backward compat
     onData: (callback: (id: string, data: string) => void) => {
       const handler = (_: unknown, id: string, data: string): void => callback(id, data)
