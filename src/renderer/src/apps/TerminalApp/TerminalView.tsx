@@ -36,6 +36,10 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         termRef.current?.focus()
       },
       fit: () => {
+        const el = containerRef.current
+        if (!el) return
+        const { width, height } = el.getBoundingClientRect()
+        if (width < 2 || height < 2) return
         try {
           fitAddonRef.current?.fit()
           if (termRef.current) {
@@ -100,16 +104,21 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
       })
       themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
 
-      // Debounced resize observer — only send valid sizes to PTY
+      // Debounced resize observer — skip when container is hidden (display:none)
+      // CRITICAL: fitAddon.fit() changes xterm's internal cols/rows even if we don't
+      // send resize to PTY. If container is 0-size, xterm renders incoming data at
+      // 0 cols → permanent distortion. Only fit when container has real dimensions.
       let resizeRaf = 0
+      const container = containerRef.current!
       const resizeObserver = new ResizeObserver(() => {
         cancelAnimationFrame(resizeRaf)
         resizeRaf = requestAnimationFrame(() => {
+          // Skip fit if container is hidden (0 dimensions)
+          const { width, height } = container.getBoundingClientRect()
+          if (width < 2 || height < 2) return
           try {
             fitAddon.fit()
-            if (term.cols > 1 && term.rows > 1) {
-              window.api.terminal.resize(terminalId, term.cols, term.rows)
-            }
+            window.api.terminal.resize(terminalId, term.cols, term.rows)
           } catch {
             // ignore fit errors during transitions
           }
