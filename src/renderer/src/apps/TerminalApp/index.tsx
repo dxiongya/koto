@@ -14,13 +14,11 @@ export function getTerminalRefs(): Map<string, React.RefObject<TerminalViewHandl
 
 type DropZone = 'left' | 'right' | 'top' | 'bottom'
 
-// ── Drop state management via ref + targeted re-renders ──
-// Instead of context (which re-renders all consumers), use a simple pub/sub
+// ── Drop state management via module-level pub/sub (avoids Context re-renders) ──
 let _dropTarget: { terminalId: string; zone: DropZone } | null = null
 const _dropListeners = new Set<() => void>()
 
 function setGlobalDropTarget(v: { terminalId: string; zone: DropZone } | null) {
-  // Skip if same target and zone
   if (v?.terminalId === _dropTarget?.terminalId && v?.zone === _dropTarget?.zone) return
   _dropTarget = v
   _dropListeners.forEach((fn) => fn())
@@ -40,10 +38,37 @@ function useDropTargetFor(terminalId: string): DropZone | null {
   return zone
 }
 
-// Stable selectors — avoid subscribing to entire arrays
+// ── Layout rect computation ──
+// Converts a SplitNode tree into absolute position rects (percentages) for each terminal.
+// Tab bar height is handled in CSS, not here.
+interface LayoutRect { top: number; left: number; width: number; height: number }
+
+function computeLayoutRects(
+  node: SplitNode,
+  rect: LayoutRect = { top: 0, left: 0, width: 100, height: 100 },
+): Map<string, LayoutRect> {
+  const result = new Map<string, LayoutRect>()
+  if (node.type === 'terminal') {
+    result.set(node.terminalId, rect)
+    return result
+  }
+  const count = node.children.length
+  node.children.forEach((child, i) => {
+    const childRect = node.direction === 'horizontal'
+      ? { ...rect, left: rect.left + (rect.width / count) * i, width: rect.width / count }
+      : { ...rect, top: rect.top + (rect.height / count) * i, height: rect.height / count }
+    for (const [id, r] of computeLayoutRects(child, childRect)) {
+      result.set(id, r)
+    }
+  })
+  return result
+}
+
+// ── Stable selectors ──
 const selectShowCommandPalette = (s: { showCommandPalette: boolean }) => s.showCommandPalette
 const selectActiveTerminalId = (s: { activeTerminalId: string | null }) => s.activeTerminalId
 const selectHasTerminals = (s: { terminalSessions: { id: string }[] }) => s.terminalSessions.length > 0
+const selectSessionIds = (s: { terminalSessions: { id: string }[] }) => s.terminalSessions.map((t) => t.id)
 const selectActiveLayout = (s: {
   terminalWorkspaces: { id: string; groups: { id: string; layout: SplitNode }[]; activeGroupId: string | null }[]
   activeWorkspaceId: string | null
@@ -54,14 +79,26 @@ const selectActiveLayout = (s: {
   return g?.layout ?? null
 }
 
+// ── Main Component ──
+// Architecture (VS Code pattern):
+// 1. ALL xterm instances always mounted in a flat layer (never destroyed on tab switch)
+// 2. Layout tree computes position rects — each xterm positioned via CSS
+// 3. Terminals not in active group get display:none (xterm buffer stays in JS memory)
+
 export const TerminalApp: React.FC = () => {
   const showCommandPalette = useUIStore(selectShowCommandPalette)
   const activeTerminalId = useUIStore(selectActiveTerminalId)
   const hasTerminals = useUIStore(selectHasTerminals)
   const activeLayout = useUIStore(selectActiveLayout, (a, b) => a === b)
+  const sessionIds = useUIStore(selectSessionIds, (a, b) => a.length === b.length && a.every((v, i) => v === b[i]))
 
-  // ── H3: Keyboard navigation for split panes ──
-  // Cmd+Opt+←/→ = prev/next pane, Cmd+Opt+W = close pane
+  // Compute layout rects from the active split tree
+  const layoutRects = useMemo(
+    () => activeLayout ? computeLayoutRects(activeLayout) : new Map<string, LayoutRect>(),
+    [activeLayout],
+  )
+
+  // Keyboard navigation for split panes
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!e.metaKey || !e.altKey) return
@@ -69,10 +106,8 @@ export const TerminalApp: React.FC = () => {
       const ws = state.terminalWorkspaces.find((w) => w.id === state.activeWorkspaceId)
       const group = ws?.groups.find((g) => g.id === ws.activeGroupId)
       if (!group) return
-
       const ids = collectTerminalIds(group.layout)
       if (ids.length < 2 && e.key !== 'w') return
-
       const currentIdx = ids.indexOf(state.activeTerminalId ?? '')
 
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
@@ -104,16 +139,42 @@ export const TerminalApp: React.FC = () => {
   return (
     <div className={`flex-1 flex flex-col overflow-hidden ${blurClass}`} role="region" aria-label="Terminal">
       <div className="flex-1 overflow-hidden relative">
-        {activeLayout ? (
-          <div className="absolute inset-0">
-            <SplitTreeRenderer
+        {/* Persistent xterm instance layer — ALL terminals always mounted */}
+        {sessionIds.map((id) => (
+          <PersistentTerminalPane
+            key={id}
+            terminalId={id}
+            isActive={id === activeTerminalId}
+            layoutRect={layoutRects.get(id) ?? null}
+          />
+        ))}
+
+        {/* Layout chrome overlay — tab bars, split handles, drop zones */}
+        {activeLayout && layoutRects.size > 1 && (
+          <div className="absolute inset-0 z-10 pointer-events-none">
+            <LayoutChromeRenderer
               node={activeLayout}
               activeTerminalId={activeTerminalId}
             />
           </div>
-        ) : (
-          <FallbackTerminals activeTerminalId={activeTerminalId} />
         )}
+
+        {/* Single terminal tab bar (no split) */}
+        {activeLayout && layoutRects.size === 1 && (() => {
+          const termId = layoutRects.keys().next().value as string
+          return (
+            <div className="absolute inset-0 z-10 flex flex-col pointer-events-none">
+              <div className="pointer-events-auto">
+                <PaneTabBarMemo
+                  terminalId={termId}
+                  isActiveTerminal={termId === activeTerminalId}
+                  onActivate={() => useUIStore.getState().setActiveTerminalId(termId)}
+                  onClose={() => { window.api.terminal.close(termId); useUIStore.getState().removeTerminalSession(termId) }}
+                />
+              </div>
+            </div>
+          )
+        })()}
 
         {!hasTerminals && (
           <div className="flex items-center justify-center h-full text-tx-faint text-sm">
@@ -125,13 +186,165 @@ export const TerminalApp: React.FC = () => {
   )
 }
 
-/** Fallback when no layout tree — don't mount invisible xterm instances */
-const FallbackTerminals = memo(function FallbackTerminals(_props: { activeTerminalId: string | null }) {
-  // No layout = no visible terminals. Don't render hidden xterm instances.
-  return null
+// ── Persistent Terminal Pane ──
+// Always mounted. Positioned by layout rect. Hidden via display:none when not in active group.
+// xterm instance survives group/workspace switches — scrollback preserved.
+
+const PersistentTerminalPane = memo(function PersistentTerminalPane({
+  terminalId,
+  isActive,
+  layoutRect,
+}: {
+  terminalId: string
+  isActive: boolean
+  layoutRect: LayoutRect | null // null = not in active group → hidden
+}) {
+  const ref = useRef<TerminalViewHandle | null>(null)
+  const myDrop = useDropTargetFor(terminalId)
+
+  useEffect(() => {
+    terminalRefs.set(terminalId, ref)
+    return () => { terminalRefs.delete(terminalId) }
+  }, [terminalId])
+
+  // Auto-focus when becoming active
+  useEffect(() => {
+    if (isActive && layoutRect) {
+      const id = requestAnimationFrame(() => ref.current?.focus())
+      return () => cancelAnimationFrame(id)
+    }
+  }, [isActive, layoutRect])
+
+  const handleClick = useCallback(() => ref.current?.focus(), [])
+
+  // Drag-and-drop handlers
+  const paneRef = useRef<HTMLDivElement>(null)
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('application/x-terminal-drag')) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    if (paneRef.current) {
+      setGlobalDropTarget({ terminalId, zone: calcZoneFromEvent(paneRef.current, e) })
+    }
+  }, [terminalId])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    const related = e.relatedTarget as Node | null
+    if (!paneRef.current?.contains(related)) setGlobalDropTarget(null)
+  }, [])
+
+  const handleDropEvent = useCallback((e: React.DragEvent) => {
+    e.stopPropagation()
+    if (paneRef.current) handlePaneDrop(terminalId, calcZoneFromEvent(paneRef.current, e), e)
+  }, [terminalId])
+
+  const isVisible = !!layoutRect
+
+  const style: React.CSSProperties = isVisible
+    ? {
+        position: 'absolute',
+        top: `${layoutRect.top}%`,
+        left: `${layoutRect.left}%`,
+        width: `${layoutRect.width}%`,
+        height: `${layoutRect.height}%`,
+      }
+    : { display: 'none' } // Hidden but xterm stays alive in memory
+
+  return (
+    <div
+      ref={paneRef}
+      style={style}
+      className={isVisible ? 'flex flex-col' : undefined}
+      onDragOver={isVisible ? handleDragOver : undefined}
+      onDragLeave={isVisible ? handleDragLeave : undefined}
+      onDrop={isVisible ? handleDropEvent : undefined}
+    >
+      <div className="flex-1 relative" onClick={handleClick}>
+        <div style={{ position: 'absolute', inset: 0 }}>
+          <TerminalView ref={ref} terminalId={terminalId} />
+        </div>
+      </div>
+
+      {/* Per-pane drop preview */}
+      {myDrop && (
+        <div
+          className="absolute inset-0 z-50 flex pointer-events-none"
+          style={{ flexDirection: (myDrop === 'top' || myDrop === 'bottom') ? 'column' : 'row' }}
+        >
+          <div className={`flex-1 ${(myDrop === 'left' || myDrop === 'top') ? 'bg-accent-main/10 border-2 border-dashed border-accent-main/40 rounded-md m-1' : ''}`} />
+          <div className={`flex-1 ${(myDrop === 'right' || myDrop === 'bottom') ? 'bg-accent-main/10 border-2 border-dashed border-accent-main/40 rounded-md m-1' : ''}`} />
+        </div>
+      )}
+    </div>
+  )
 })
 
-// ── Drop handler (stable, reads from store at call time) ──
+// ── Layout Chrome Renderer ──
+// Renders tab bars + split handles as an overlay. No xterm instances here.
+
+const LayoutChromeRenderer = memo(function LayoutChromeRenderer({
+  node,
+  activeTerminalId,
+  rect = { top: 0, left: 0, width: 100, height: 100 },
+}: {
+  node: SplitNode
+  activeTerminalId: string | null
+  rect?: LayoutRect
+}) {
+  if (node.type === 'terminal') {
+    const style: React.CSSProperties = {
+      position: 'absolute',
+      top: `${rect.top}%`,
+      left: `${rect.left}%`,
+      width: `${rect.width}%`,
+      height: `${rect.height}%`,
+    }
+    return (
+      <div style={style} className="pointer-events-auto">
+        <PaneTabBarMemo
+          terminalId={node.terminalId}
+          isActiveTerminal={node.terminalId === activeTerminalId}
+          onActivate={() => useUIStore.getState().setActiveTerminalId(node.terminalId)}
+          onClose={() => {
+            window.api.terminal.close(node.terminalId)
+            useUIStore.getState().removeTerminalSession(node.terminalId)
+          }}
+        />
+      </div>
+    )
+  }
+
+  const count = node.children.length
+  return (
+    <>
+      {node.children.map((child, i) => {
+        const childRect = node.direction === 'horizontal'
+          ? { ...rect, left: rect.left + (rect.width / count) * i, width: rect.width / count }
+          : { ...rect, top: rect.top + (rect.height / count) * i, height: rect.height / count }
+        const key = child.type === 'terminal' ? child.terminalId : firstTerminalId(child) ?? i
+        return (
+          <React.Fragment key={key}>
+            {i > 0 && <SplitHandleOverlay direction={node.direction} rect={rect} index={i} count={count} />}
+            <LayoutChromeRenderer
+              node={child}
+              activeTerminalId={activeTerminalId}
+              rect={childRect}
+            />
+          </React.Fragment>
+        )
+      })}
+    </>
+  )
+})
+
+function firstTerminalId(node: SplitNode): string | undefined {
+  if (node.type === 'terminal') return node.terminalId
+  return node.children.length > 0 ? firstTerminalId(node.children[0]) : undefined
+}
+
+// ── Drop handler ──
 
 function handlePaneDrop(targetTermId: string, zone: DropZone, e: React.DragEvent) {
   e.preventDefault()
@@ -151,7 +364,6 @@ function handlePaneDrop(targetTermId: string, zone: DropZone, e: React.DragEvent
   const activeGroup = activeWorkspace.groups.find((g) => g.id === activeWorkspace.activeGroupId)
   const activeGroupIds = activeGroup ? collectTerminalIds(activeGroup.layout) : []
 
-  // Already in same group → rearrange within the tree
   if (activeGroupIds.includes(termId) && activeGroup) {
     const nextWorkspaces = state.terminalWorkspaces.map((ws) => {
       if (ws.id !== activeWorkspace.id) return ws
@@ -168,57 +380,8 @@ function handlePaneDrop(targetTermId: string, zone: DropZone, e: React.DragEvent
     return
   }
 
-  // New terminal → use store action
   state.splitTerminalInWorkspace(activeWorkspace.id, targetTermId, termId, dir)
 }
-
-// ── Tree Renderer ──
-
-const SplitTreeRenderer = memo(function SplitTreeRenderer({
-  node,
-  activeTerminalId,
-}: {
-  node: SplitNode
-  activeTerminalId: string | null
-}) {
-  if (node.type === 'terminal') {
-    return (
-      <TerminalLeafMemo
-        terminalId={node.terminalId}
-        isActive={node.terminalId === activeTerminalId}
-      />
-    )
-  }
-
-  const isVertical = node.direction === 'vertical'
-  return (
-    <div className={`w-full h-full flex ${isVertical ? 'flex-col' : 'flex-row'}`}>
-      {node.children.map((child, idx) => {
-        // Stable key: leaf → terminalId, split → first leaf's id (cheaper than full traversal)
-        const key = child.type === 'terminal' ? child.terminalId : firstTerminalId(child) ?? idx
-        return (
-          <React.Fragment key={key}>
-            {idx > 0 && <SplitHandle direction={node.direction} />}
-            <div className="flex-1 min-w-0 min-h-0">
-              <SplitTreeRenderer
-                node={child}
-                activeTerminalId={activeTerminalId}
-              />
-            </div>
-          </React.Fragment>
-        )
-      })}
-    </div>
-  )
-})
-
-/** O(depth) — walks left edge only, avoids full tree traversal of collectTerminalIds */
-function firstTerminalId(node: SplitNode): string | undefined {
-  if (node.type === 'terminal') return node.terminalId
-  return node.children.length > 0 ? firstTerminalId(node.children[0]) : undefined
-}
-
-// ── Terminal Leaf (with per-pane drop zone) ──
 
 function calcZoneFromEvent(el: HTMLElement, e: React.DragEvent): DropZone {
   const rect = el.getBoundingClientRect()
@@ -231,85 +394,6 @@ function calcZoneFromEvent(el: HTMLElement, e: React.DragEvent): DropZone {
   const dists = { top: relY, bottom: 1 - relY, left: relX, right: 1 - relX }
   return Object.entries(dists).sort((a, b) => a[1] - b[1])[0][0] as DropZone
 }
-
-const TerminalLeafMemo = memo(function TerminalLeaf({
-  terminalId,
-  isActive,
-}: {
-  terminalId: string
-  isActive: boolean
-}) {
-  const paneRef = useRef<HTMLDivElement>(null)
-  const myDrop = useDropTargetFor(terminalId)
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('application/x-terminal-drag')) return
-    e.preventDefault()
-    e.stopPropagation()
-    e.dataTransfer.dropEffect = 'move'
-    if (paneRef.current) {
-      setGlobalDropTarget({ terminalId, zone: calcZoneFromEvent(paneRef.current, e) })
-    }
-  }, [terminalId])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    const related = e.relatedTarget as Node | null
-    if (!paneRef.current?.contains(related)) {
-      setGlobalDropTarget(null)
-    }
-  }, [])
-
-  const handleDropEvent = useCallback((e: React.DragEvent) => {
-    e.stopPropagation()
-    if (paneRef.current) {
-      handlePaneDrop(terminalId, calcZoneFromEvent(paneRef.current, e), e)
-    }
-  }, [terminalId])
-
-  const handleActivate = useCallback(() => {
-    useUIStore.getState().setActiveTerminalId(terminalId)
-  }, [terminalId])
-
-  const handleClose = useCallback(() => {
-    window.api.terminal.close(terminalId)
-    useUIStore.getState().removeTerminalSession(terminalId)
-  }, [terminalId])
-
-  return (
-    <div
-      ref={paneRef}
-      className="w-full h-full flex flex-col relative"
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDropEvent}
-    >
-      <PaneTabBarMemo
-        terminalId={terminalId}
-        isActiveTerminal={isActive}
-        onActivate={handleActivate}
-        onClose={handleClose}
-      />
-      <div className="flex-1 relative min-h-0">
-        <TerminalPaneMemo
-          terminalId={terminalId}
-          isActive={isActive}
-          isVisible
-        />
-      </div>
-
-      {/* Per-pane drop preview */}
-      {myDrop && (
-        <div
-          className="absolute inset-0 z-50 flex pointer-events-none"
-          style={{ flexDirection: (myDrop === 'top' || myDrop === 'bottom') ? 'column' : 'row' }}
-        >
-          <div className={`flex-1 ${(myDrop === 'left' || myDrop === 'top') ? 'bg-accent-main/10 border-2 border-dashed border-accent-main/40 rounded-md m-1' : ''}`} />
-          <div className={`flex-1 ${(myDrop === 'right' || myDrop === 'bottom') ? 'bg-accent-main/10 border-2 border-dashed border-accent-main/40 rounded-md m-1' : ''}`} />
-        </div>
-      )}
-    </div>
-  )
-})
 
 // ── Tab Bar ──
 
@@ -343,7 +427,6 @@ const PaneTabBarMemo = memo(function PaneTabBar({
         ${isActiveTerminal ? 'bg-bg-active border-border-subtle' : 'bg-bg-sidebar border-border-subtle hover:bg-bg-hover'}`}
       onClick={onActivate}
     >
-      {/* Active indicator — matches sidebar pattern */}
       {isActiveTerminal && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-accent-main" />}
       <div
         draggable
@@ -366,63 +449,46 @@ const PaneTabBarMemo = memo(function PaneTabBar({
   )
 })
 
-// ── Split Handle ──
+// ── Split Handle Overlay ──
 
-const SplitHandle = memo(function SplitHandle({ direction }: { direction: 'horizontal' | 'vertical' }) {
+const SplitHandleOverlay = memo(function SplitHandleOverlay({
+  direction,
+  rect,
+  index,
+  count,
+}: {
+  direction: 'horizontal' | 'vertical'
+  rect: LayoutRect
+  index: number
+  count: number
+}) {
   const isVertical = direction === 'vertical'
+  const pos = index / count
+
+  const style: React.CSSProperties = isVertical
+    ? {
+        position: 'absolute',
+        top: `${rect.top + rect.height * pos}%`,
+        left: `${rect.left}%`,
+        width: `${rect.width}%`,
+        height: '1px',
+        cursor: 'row-resize',
+        zIndex: 20,
+      }
+    : {
+        position: 'absolute',
+        top: `${rect.top}%`,
+        left: `${rect.left + rect.width * pos}%`,
+        width: '1px',
+        height: `${rect.height}%`,
+        cursor: 'col-resize',
+        zIndex: 20,
+      }
+
   return (
     <div
-      className={`shrink-0
-        ${isVertical
-          ? 'h-px w-full bg-border-subtle cursor-row-resize hover:bg-border-strong'
-          : 'w-px h-full bg-border-subtle cursor-col-resize hover:bg-border-strong'
-        }`}
-      style={{ zIndex: 5 }}
+      style={style}
+      className="bg-border-subtle hover:bg-border-strong pointer-events-auto"
     />
-  )
-})
-
-// ── Terminal Pane ──
-
-const TerminalPaneMemo = memo(function TerminalPane({
-  terminalId,
-  isActive,
-  isVisible,
-  initialBuffer,
-}: {
-  terminalId: string
-  initialBuffer?: string
-  isActive: boolean
-  isVisible: boolean
-}) {
-  const ref = useRef<TerminalViewHandle | null>(null)
-
-  useEffect(() => {
-    terminalRefs.set(terminalId, ref)
-    return () => { terminalRefs.delete(terminalId) }
-  }, [terminalId])
-
-  // Auto-focus xterm when terminal becomes active
-  useEffect(() => {
-    if (isActive && isVisible) {
-      // Small delay to ensure xterm canvas is ready
-      const id = requestAnimationFrame(() => ref.current?.focus())
-      return () => cancelAnimationFrame(id)
-    }
-  }, [isActive, isVisible])
-
-  const style: React.CSSProperties = {
-    position: 'absolute',
-    inset: 0,
-    visibility: isVisible ? 'visible' : 'hidden',
-    zIndex: isVisible ? 1 : 0,
-  }
-
-  const handleClick = useCallback(() => ref.current?.focus(), [])
-
-  return (
-    <div style={style} onClick={handleClick}>
-      <TerminalView ref={ref} terminalId={terminalId} initialBuffer={initialBuffer} />
-    </div>
   )
 })
