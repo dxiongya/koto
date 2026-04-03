@@ -64,14 +64,20 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
       term.loadAddon(serializeAddon)
 
       term.open(containerRef.current)
-      fitAddon.fit()
 
       termRef.current = term
       fitAddonRef.current = fitAddon
       serializeAddonRef.current = serializeAddon
 
-      // Send initial size
-      window.api.terminal.resize(terminalId, term.cols, term.rows)
+      // Only fit + resize PTY if container has real dimensions.
+      // If display:none, skip — PTY keeps default 80x24.
+      // ResizeObserver will send correct size when container becomes visible.
+      try {
+        fitAddon.fit()
+        if (term.cols > 1 && term.rows > 1) {
+          window.api.terminal.resize(terminalId, term.cols, term.rows)
+        }
+      } catch { /* container not visible yet, ignore */ }
 
       // User input → PTY
       term.onData((data) => {
@@ -94,14 +100,16 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
       })
       themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
 
-      // Debounced resize observer
+      // Debounced resize observer — only send valid sizes to PTY
       let resizeRaf = 0
       const resizeObserver = new ResizeObserver(() => {
         cancelAnimationFrame(resizeRaf)
         resizeRaf = requestAnimationFrame(() => {
           try {
             fitAddon.fit()
-            window.api.terminal.resize(terminalId, term.cols, term.rows)
+            if (term.cols > 1 && term.rows > 1) {
+              window.api.terminal.resize(terminalId, term.cols, term.rows)
+            }
           } catch {
             // ignore fit errors during transitions
           }
