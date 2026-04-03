@@ -12,6 +12,7 @@ interface TerminalViewProps {
 
 export interface TerminalViewHandle {
   serialize: () => string | null
+  focus: () => void
 }
 
 export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
@@ -19,6 +20,8 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
     const containerRef = useRef<HTMLDivElement>(null)
     const termRef = useRef<Terminal | null>(null)
     const serializeAddonRef = useRef<SerializeAddon | null>(null)
+    // Store initialBuffer in ref so it doesn't trigger re-mount
+    const initialBufferRef = useRef(initialBuffer)
 
     useImperativeHandle(ref, () => ({
       serialize: () => {
@@ -28,6 +31,9 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         } catch {
           return null
         }
+      },
+      focus: () => {
+        termRef.current?.focus()
       },
     }))
 
@@ -56,8 +62,8 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
       serializeAddonRef.current = serializeAddon
 
       // Restore saved buffer if available
-      if (initialBuffer) {
-        term.write(initialBuffer)
+      if (initialBufferRef.current) {
+        term.write(initialBufferRef.current)
       }
 
       // Send initial size
@@ -68,38 +74,39 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         window.api.terminal.write(terminalId, data)
       })
 
-      // PTY output → terminal
-      const unsubData = window.api.terminal.onData((id, data) => {
-        if (id === terminalId) {
-          term.write(data)
-        }
+      // PTY output → terminal (per-ID multiplexed listener, O(1) dispatch)
+      const unsubData = window.api.terminal.onDataForId(terminalId, (data) => {
+        term.write(data)
       })
 
       // Handle exit
-      const unsubExit = window.api.terminal.onExit((id, exitCode) => {
-        if (id === terminalId) {
-          term.write(`\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`)
-        }
+      const unsubExit = window.api.terminal.onExitForId(terminalId, (exitCode) => {
+        term.write(`\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`)
       })
 
-      // Resize observer
+      // Debounced resize observer
+      let resizeRaf = 0
       const resizeObserver = new ResizeObserver(() => {
-        try {
-          fitAddon.fit()
-          window.api.terminal.resize(terminalId, term.cols, term.rows)
-        } catch {
-          // ignore fit errors during transitions
-        }
+        cancelAnimationFrame(resizeRaf)
+        resizeRaf = requestAnimationFrame(() => {
+          try {
+            fitAddon.fit()
+            window.api.terminal.resize(terminalId, term.cols, term.rows)
+          } catch {
+            // ignore fit errors during transitions
+          }
+        })
       })
       resizeObserver.observe(containerRef.current)
 
       return () => {
+        cancelAnimationFrame(resizeRaf)
         resizeObserver.disconnect()
         unsubData()
         unsubExit()
         term.dispose()
       }
-    }, [terminalId, initialBuffer])
+    }, [terminalId]) // Only re-mount when terminalId changes
 
     return <div ref={containerRef} className="w-full h-full" />
   },

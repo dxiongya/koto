@@ -6,7 +6,7 @@ import {
   Pencil, Trash2, FilePlus, FolderInput, Settings, Zap, Archive, Layers, Folder,
   Link, Image, Video, Twitter, Monitor, Type
 } from 'lucide-react'
-import { useUIStore } from '../store/useUIStore'
+import { useUIStore, collectTerminalIds, removeFromTree } from '../store/useUIStore'
 import { useContextMenu, type ContextMenuItem } from '../components/ContextMenu'
 import { getAppRegistry } from '../core/AppContext'
 import type { AppType, FileNode, CollectedItem } from '../../../shared/types'
@@ -789,14 +789,16 @@ const TerminalAppSection: React.FC<{
   renameTrigger: number
   onFocusSidebar?: () => void
 }> = ({ currentApp, expanded, onHeaderClick, renameTrigger, onFocusSidebar }) => {
+  // Data selectors — these trigger re-renders when values change
   const sessions = useUIStore((s) => s.terminalSessions)
   const activeTerminalId = useUIStore((s) => s.activeTerminalId)
+  const terminalWorkspaces = useUIStore((s) => s.terminalWorkspaces)
+  const activeWorkspaceId = useUIStore((s) => s.activeWorkspaceId)
+  // Action selectors — Zustand returns stable function refs, no extra re-renders
   const addSession = useUIStore((s) => s.addTerminalSession)
   const removeSession = useUIStore((s) => s.removeTerminalSession)
   const setActiveId = useUIStore((s) => s.setActiveTerminalId)
   const setCurrentApp = useUIStore((s) => s.setCurrentApp)
-  const terminalWorkspaces = useUIStore((s) => s.terminalWorkspaces)
-  const activeWorkspaceId = useUIStore((s) => s.activeWorkspaceId)
   const addTerminalWorkspace = useUIStore((s) => s.addTerminalWorkspace)
   const removeTerminalWorkspace = useUIStore((s) => s.removeTerminalWorkspace)
   const setActiveWorkspace = useUIStore((s) => s.setActiveWorkspace)
@@ -869,7 +871,7 @@ const TerminalAppSection: React.FC<{
     // Find the group containing this terminal and set it as active in the workspace
     const ws = useUIStore.getState().terminalWorkspaces.find((w) => w.id === workspaceId)
     if (ws) {
-      const group = ws.groups.find((g) => g.terminalIds.includes(id))
+      const group = ws.groups.find((g) => collectTerminalIds(g.layout).includes(id))
       if (group) {
         const nextWorkspaces = useUIStore.getState().terminalWorkspaces.map((w) =>
           w.id === workspaceId ? { ...w, activeGroupId: group.id } : w,
@@ -914,16 +916,18 @@ const TerminalAppSection: React.FC<{
       const state = useUIStore.getState()
       const nextWorkspaces = state.terminalWorkspaces.map((ws) => {
         if (ws.id === srcWorkspaceId) {
-          const groups = ws.groups.map((g) => ({
-            ...g,
-            terminalIds: g.terminalIds.filter((tid) => tid !== draggedId),
-          })).filter((g) => g.terminalIds.length > 0)
+          const groups = ws.groups
+            .map((g) => {
+              const cleaned = removeFromTree(g.layout, draggedId)
+              return cleaned ? { ...g, layout: cleaned } : null
+            })
+            .filter(Boolean) as typeof ws.groups
           const activeGroupStillExists = groups.some((g) => g.id === ws.activeGroupId)
           return { ...ws, groups, activeGroupId: activeGroupStillExists ? ws.activeGroupId : (groups[0]?.id ?? null) }
         }
         if (ws.id === targetWorkspaceId) {
           const newGroupId = `group-${draggedId}-${Date.now()}`
-          return { ...ws, groups: [...ws.groups, { id: newGroupId, terminalIds: [draggedId] }], activeGroupId: newGroupId }
+          return { ...ws, groups: [...ws.groups, { id: newGroupId, layout: { type: 'terminal' as const, terminalId: draggedId } }], activeGroupId: newGroupId }
         }
         return ws
       })
@@ -937,7 +941,7 @@ const TerminalAppSection: React.FC<{
     const ws = useUIStore.getState().terminalWorkspaces.find((w) => w.id === wsId)
     if (ws) {
       for (const g of ws.groups) {
-        for (const tid of g.terminalIds) {
+        for (const tid of collectTerminalIds(g.layout)) {
           window.api.terminal.close(tid)
         }
       }
@@ -992,6 +996,7 @@ const TerminalAppSection: React.FC<{
           <button
             onClick={(e) => handleClose(e, session.id)}
             className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 text-tx-faint hover:text-tx-main transition-opacity"
+            aria-label={`Close ${session.title}`}
           >
             <X size={12} />
           </button>
@@ -1015,24 +1020,26 @@ const TerminalAppSection: React.FC<{
           <button
             onClick={(e) => handleCloseWorkspace(e, ws.id)}
             className="ml-auto opacity-0 group-hover:opacity-100 p-0.5 text-tx-faint hover:text-tx-main transition-opacity"
+            aria-label={`Close workspace ${ws.name}`}
           >
             <X size={12} />
           </button>
         </div>
         {/* Terminals in this workspace */}
         {ws.groups.map((group) => {
-          if (group.terminalIds.length === 1) {
-            const s = sessions.find((ss) => ss.id === group.terminalIds[0])
+          const tids = collectTerminalIds(group.layout)
+          if (tids.length === 1) {
+            const s = sessions.find((ss) => ss.id === tids[0])
             if (!s) return null
             return renderTerminalRow(s, ws.id)
           }
           // Multi-terminal group: show with tree prefixes and visual grouping
           return (
             <div key={group.id} className="my-0.5 ml-[28px] border-l border-border-subtle/50 pl-1">
-              {group.terminalIds.map((tid, idx) => {
+              {tids.map((tid, idx) => {
                 const s = sessions.find((ss) => ss.id === tid)
                 if (!s) return null
-                const total = group.terminalIds.length
+                const total = tids.length
                 const prefix = idx === 0 ? '┌' : idx === total - 1 ? '└' : '├'
                 return renderTerminalRow(s, ws.id, prefix)
               })}

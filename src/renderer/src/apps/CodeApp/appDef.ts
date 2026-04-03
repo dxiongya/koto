@@ -11,7 +11,7 @@ export const codeAppDefinition: AppDefinition = {
     permissions: ['fs', 'state'],
     builtin: true,
   },
-  component: CodeApp as React.FC<{ api: any }>,
+  component: CodeApp,
   sidebar: {
     expandable: true,
   },

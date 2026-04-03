@@ -31,8 +31,8 @@ export interface AppSidebarConfig {
 
 export interface AppDefinition {
   manifest: AppManifest
-  /** Main content component */
-  component: React.FC<{ api: LiteAppAPI }>
+  /** Main content component — built-in apps may omit the api prop */
+  component: React.FC<{ api?: LiteAppAPI }>
   /** Sidebar configuration */
   sidebar?: AppSidebarConfig
   /** Called when app is registered — use to provide bus capabilities */

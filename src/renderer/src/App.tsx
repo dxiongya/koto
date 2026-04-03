@@ -67,9 +67,29 @@ export default function App() {
               id: string; title: string; cwd?: string; _restoredBuffer?: string
             }[]
             if (sessions.length > 0) {
+              // Group sessions by cwd into workspaces, each session = one group
+              const wsMap = new Map<string, typeof sessions>()
+              for (const s of sessions) {
+                const key = s.cwd || 'default'
+                const list = wsMap.get(key) || []
+                list.push(s)
+                wsMap.set(key, list)
+              }
+              const workspaces = Array.from(wsMap.entries()).map(([path, wsSessions]) => {
+                const name = path.split('/').filter(Boolean).pop() || path
+                const wsId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+                const groups = wsSessions.map((s) => ({
+                  id: `group-${s.id}-${Date.now()}`,
+                  layout: { type: 'terminal' as const, terminalId: s.id },
+                }))
+                return { id: wsId, path, name, groups, activeGroupId: groups[groups.length - 1].id }
+              })
+
               useUIStore.setState({
                 terminalSessions: sessions,
                 activeTerminalId: sessions[sessions.length - 1].id,
+                terminalWorkspaces: workspaces,
+                activeWorkspaceId: workspaces[workspaces.length - 1].id,
               })
             }
           })

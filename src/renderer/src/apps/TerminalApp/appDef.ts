@@ -11,7 +11,7 @@ export const terminalAppDefinition: AppDefinition = {
     permissions: ['fs', 'shell'],
     builtin: true,
   },
-  component: TerminalApp as React.FC<{ api: any }>,
+  component: TerminalApp,
   sidebar: {
     expandable: true,
   },

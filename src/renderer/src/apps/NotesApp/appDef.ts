@@ -11,7 +11,7 @@ export const notesAppDefinition: AppDefinition = {
     permissions: ['fs', 'state'],
     builtin: true,
   },
-  component: NotesApp as React.FC<{ api: any }>,
+  component: NotesApp,
   sidebar: {
     expandable: true,
   },

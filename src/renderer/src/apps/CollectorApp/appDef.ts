@@ -11,7 +11,7 @@ export const collectorAppDefinition: AppDefinition = {
     permissions: ['fs', 'state', 'network', 'ai'],
     builtin: true,
   },
-  component: CollectorApp as React.FC<{ api: any }>,
+  component: CollectorApp,
   sidebar: {
     expandable: true,
   },

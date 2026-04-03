@@ -2,6 +2,17 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { IpcChannels } from '../shared/types'
 
+// ── Terminal multiplexed dispatchers ──
+// One IPC listener → Map lookup → direct callback. O(1) per message instead of O(N).
+const terminalDataListeners = new Map<string, (data: string) => void>()
+const terminalExitListeners = new Map<string, (exitCode: number) => void>()
+const terminalDataDispatcher = (_: unknown, id: string, data: string): void => {
+  terminalDataListeners.get(id)?.(data)
+}
+const terminalExitDispatcher = (_: unknown, id: string, exitCode: number): void => {
+  terminalExitListeners.get(id)?.(exitCode)
+}
+
 const api = {
   lite: {
     getHome: () => ipcRenderer.invoke(IpcChannels.LITE_GET_HOME),
@@ -73,6 +84,34 @@ const api = {
       ipcRenderer.invoke(IpcChannels.TERMINAL_SAVE_BUFFER, sessionKey, buffer),
     loadBuffer: (sessionKey: string) =>
       ipcRenderer.invoke(IpcChannels.TERMINAL_LOAD_BUFFER, sessionKey),
+    // ── Multiplexed data/exit listeners ──
+    // Single IPC listener dispatches to per-terminal callbacks via Map.
+    // Eliminates O(N) listener registrations and MaxListenersExceededWarning.
+    onDataForId: (id: string, callback: (data: string) => void) => {
+      if (!terminalDataListeners.size) {
+        ipcRenderer.on(IpcChannels.TERMINAL_DATA, terminalDataDispatcher)
+      }
+      terminalDataListeners.set(id, callback)
+      return () => {
+        terminalDataListeners.delete(id)
+        if (!terminalDataListeners.size) {
+          ipcRenderer.removeListener(IpcChannels.TERMINAL_DATA, terminalDataDispatcher)
+        }
+      }
+    },
+    onExitForId: (id: string, callback: (exitCode: number) => void) => {
+      if (!terminalExitListeners.size) {
+        ipcRenderer.on(IpcChannels.TERMINAL_EXIT, terminalExitDispatcher)
+      }
+      terminalExitListeners.set(id, callback)
+      return () => {
+        terminalExitListeners.delete(id)
+        if (!terminalExitListeners.size) {
+          ipcRenderer.removeListener(IpcChannels.TERMINAL_EXIT, terminalExitDispatcher)
+        }
+      }
+    },
+    // Keep legacy broadcast API for backward compat
     onData: (callback: (id: string, data: string) => void) => {
       const handler = (_: unknown, id: string, data: string): void => callback(id, data)
       ipcRenderer.on(IpcChannels.TERMINAL_DATA, handler)

@@ -17,12 +17,67 @@ export interface TerminalSession {
   _restoredBuffer?: string
 }
 
+/** A split tree node — either a single terminal or a directional split of children */
+export type SplitNode =
+  | { type: 'terminal'; terminalId: string }
+  | { type: 'split'; direction: 'horizontal' | 'vertical'; children: SplitNode[] }
+
+/** Helpers for working with SplitNode trees */
+export function collectTerminalIds(node: SplitNode): string[] {
+  if (node.type === 'terminal') return [node.terminalId]
+  return node.children.flatMap(collectTerminalIds)
+}
+
+export function removeFromTree(node: SplitNode, termId: string): SplitNode | null {
+  if (node.type === 'terminal') return node.terminalId === termId ? null : node
+  const children = node.children.map((c) => removeFromTree(c, termId)).filter(Boolean) as SplitNode[]
+  if (children.length === 0) return null
+  if (children.length === 1) return children[0]
+  // Preserve reference if nothing changed
+  if (children.length === node.children.length && children.every((c, i) => c === node.children[i])) return node
+  return { ...node, children }
+}
+
+export function insertIntoTree(
+  node: SplitNode,
+  targetTermId: string,
+  newTermId: string,
+  direction: 'horizontal' | 'vertical',
+  position: 'before' | 'after',
+): SplitNode {
+  if (node.type === 'terminal') {
+    if (node.terminalId !== targetTermId) return node
+    const newNode: SplitNode = { type: 'terminal', terminalId: newTermId }
+    const children = position === 'before' ? [newNode, node] : [node, newNode]
+    return { type: 'split', direction, children }
+  }
+  // If this split has the target as a direct child and same direction, insert inline
+  if (node.direction === direction) {
+    const idx = node.children.findIndex(
+      (c) => c.type === 'terminal' && c.terminalId === targetTermId,
+    )
+    if (idx !== -1) {
+      const newChildren = [...node.children]
+      const insertIdx = position === 'before' ? idx : idx + 1
+      newChildren.splice(insertIdx, 0, { type: 'terminal', terminalId: newTermId })
+      return { ...node, children: newChildren }
+    }
+  }
+  // Recurse
+  return { ...node, children: node.children.map((c) => insertIntoTree(c, targetTermId, newTermId, direction, position)) }
+}
+
 export interface TerminalWorkspace {
   id: string
   path: string        // absolute folder path
   name: string        // display name (folder basename)
-  groups: { id: string; terminalIds: string[] }[]
+  groups: { id: string; layout: SplitNode }[]
   activeGroupId: string | null
+}
+
+/** Compat helper: extract flat terminalIds from a group's layout tree */
+function groupTerminalIds(group: { layout: SplitNode }): string[] {
+  return collectTerminalIds(group.layout)
 }
 
 interface UIState {
@@ -117,7 +172,7 @@ interface UIState {
   removeTerminalWorkspace: (id: string) => void
   setActiveWorkspace: (id: string) => void
   createTerminalInWorkspace: (workspaceId: string, sessionId: string) => void
-  splitTerminalInWorkspace: (workspaceId: string, existingTermId: string, newTermId: string) => void
+  splitTerminalInWorkspace: (workspaceId: string, existingTermId: string, newTermId: string, direction?: 'horizontal' | 'vertical') => void
 
   // recent files
   trackRecentFile: (filePath: string, app: AppType) => void
@@ -348,10 +403,14 @@ export const useUIStore = create<UIState>((set, get) => ({
     const nextSessions = prev.terminalSessions.filter((t) => t.id !== id)
     // Clean up from workspace groups
     const nextWorkspaces = prev.terminalWorkspaces.map((ws) => {
-      const nextGroups = ws.groups.map((g) => ({
-        ...g,
-        terminalIds: g.terminalIds.filter((tid) => tid !== id),
-      })).filter((g) => g.terminalIds.length > 0)
+      const nextGroups = ws.groups
+        .map((g) => {
+          const newLayout = removeFromTree(g.layout, id)
+          if (!newLayout) return null
+          // Preserve reference if layout unchanged
+          return newLayout === g.layout ? g : { ...g, layout: newLayout }
+        })
+        .filter(Boolean) as typeof ws.groups
       // Update activeGroupId if the active group was removed
       const activeGroupStillExists = nextGroups.some((g) => g.id === ws.activeGroupId)
       return {
@@ -386,7 +445,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     }
     const name = path.split('/').filter(Boolean).pop() || path
     const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const newWs: TerminalWorkspace = { id, path, name, groups: [], activeGroupId: null }
+    const newWs: TerminalWorkspace = { id, path, name, groups: [] as TerminalWorkspace['groups'], activeGroupId: null }
     const nextWorkspaces = [...prev.terminalWorkspaces, newWs]
     set({ terminalWorkspaces: nextWorkspaces, activeWorkspaceId: id })
     persistState({ terminalWorkspaces: nextWorkspaces.map((ws) => ({ id: ws.id, path: ws.path, name: ws.name })) })
@@ -397,7 +456,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     const ws = prev.terminalWorkspaces.find((w) => w.id === id)
     if (!ws) return
     // Close all terminals in this workspace
-    const termIdsToRemove = new Set(ws.groups.flatMap((g) => g.terminalIds))
+    const termIdsToRemove = new Set(ws.groups.flatMap((g) => groupTerminalIds(g)))
     const nextSessions = prev.terminalSessions.filter((t) => !termIdsToRemove.has(t.id))
     const nextWorkspaces = prev.terminalWorkspaces.filter((w) => w.id !== id)
     const newActiveWsId = prev.activeWorkspaceId === id
@@ -425,38 +484,37 @@ export const useUIStore = create<UIState>((set, get) => ({
     const newGroupId = `group-${sessionId}-${Date.now()}`
     const nextWorkspaces = prev.terminalWorkspaces.map((ws) => {
       if (ws.id !== workspaceId) return ws
-      const newGroup = { id: newGroupId, terminalIds: [sessionId] }
+      const newGroup = { id: newGroupId, layout: { type: 'terminal' as const, terminalId: sessionId } }
       return { ...ws, groups: [...ws.groups, newGroup], activeGroupId: newGroupId }
     })
     set({ terminalWorkspaces: nextWorkspaces, activeWorkspaceId: workspaceId })
   },
 
-  splitTerminalInWorkspace: (workspaceId, existingTermId, newTermId) => {
+  splitTerminalInWorkspace: (workspaceId, existingTermId, newTermId, direction) => {
     const prev = get()
+    const dir = direction ?? 'horizontal'
     const nextWorkspaces = prev.terminalWorkspaces.map((ws) => {
       if (ws.id !== workspaceId) return ws
       // Remove newTermId from any previous group in this workspace
-      let groups = ws.groups.map((g) => ({
-        ...g,
-        terminalIds: g.terminalIds.filter((tid) => tid !== newTermId),
-      })).filter((g) => g.terminalIds.length > 0)
-      // Find the group containing existingTermId and add newTermId after it
+      let groups = ws.groups.map((g) => {
+        const cleaned = removeFromTree(g.layout, newTermId)
+        return cleaned ? { ...g, layout: cleaned } : null
+      }).filter(Boolean) as typeof ws.groups
+      // Find the group containing existingTermId and insert newTermId
       groups = groups.map((g) => {
-        const idx = g.terminalIds.indexOf(existingTermId)
-        if (idx === -1) return g
-        const newIds = [...g.terminalIds]
-        newIds.splice(idx + 1, 0, newTermId)
-        return { ...g, terminalIds: newIds }
+        if (!collectTerminalIds(g.layout).includes(existingTermId)) return g
+        const newLayout = insertIntoTree(g.layout, existingTermId, newTermId, dir, 'after')
+        return { ...g, layout: newLayout }
       })
       return { ...ws, groups }
     })
     // Also remove newTermId from groups in other workspaces
     const finalWorkspaces = nextWorkspaces.map((ws) => {
       if (ws.id === workspaceId) return ws
-      const groups = ws.groups.map((g) => ({
-        ...g,
-        terminalIds: g.terminalIds.filter((tid) => tid !== newTermId),
-      })).filter((g) => g.terminalIds.length > 0)
+      const groups = ws.groups.map((g) => {
+        const cleaned = removeFromTree(g.layout, newTermId)
+        return cleaned ? { ...g, layout: cleaned } : null
+      }).filter(Boolean) as typeof ws.groups
       const activeGroupStillExists = groups.some((g) => g.id === ws.activeGroupId)
       return {
         ...ws,
