@@ -180,23 +180,33 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
 }: {
   terminalId: string
   isActive: boolean
-  layoutRect: LayoutRect | null // null = not in active group → hidden
+  layoutRect: LayoutRect | null
   showTabBar: boolean
 }) {
   const ref = useRef<TerminalViewHandle | null>(null)
   const myDrop = useDropTargetFor(terminalId)
+  const paneRef = useRef<HTMLDivElement>(null)
+
+  // Lazy mount: don't create xterm until container is first visible.
+  // This prevents xterm.open() on a display:none container (0-size → distorted output).
+  // Once mounted, stays mounted forever (scrollback preserved on group switch).
+  const [mounted, setMounted] = useState(!!layoutRect)
+  useEffect(() => {
+    if (layoutRect && !mounted) setMounted(true)
+  }, [layoutRect, mounted])
 
   useEffect(() => {
-    terminalRefs.set(terminalId, ref)
-    return () => { terminalRefs.delete(terminalId) }
-  }, [terminalId])
+    if (mounted) {
+      terminalRefs.set(terminalId, ref)
+      return () => { terminalRefs.delete(terminalId) }
+    }
+  }, [terminalId, mounted])
 
-  // Re-fit + focus when terminal becomes visible (display:none → visible)
+  // Re-fit + focus when hidden → visible
   const wasVisible = useRef(!!layoutRect)
   useEffect(() => {
     const isNowVisible = !!layoutRect
-    if (isNowVisible && !wasVisible.current) {
-      // Transitioning from hidden to visible — xterm needs re-fit
+    if (isNowVisible && !wasVisible.current && mounted) {
       requestAnimationFrame(() => {
         ref.current?.fit()
         if (isActive) ref.current?.focus()
@@ -205,12 +215,9 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
       requestAnimationFrame(() => ref.current?.focus())
     }
     wasVisible.current = isNowVisible
-  }, [isActive, layoutRect])
+  }, [isActive, layoutRect, mounted])
 
   const handleClick = useCallback(() => ref.current?.focus(), [])
-
-  // Drag-and-drop handlers
-  const paneRef = useRef<HTMLDivElement>(null)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes('application/x-terminal-drag')) return
@@ -232,7 +239,19 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
     if (paneRef.current) handlePaneDrop(terminalId, calcZoneFromEvent(paneRef.current, e), e)
   }, [terminalId])
 
+  const handleActivate = useCallback(() => {
+    useUIStore.getState().setActiveTerminalId(terminalId)
+  }, [terminalId])
+
+  const handleClose = useCallback(() => {
+    window.api.terminal.close(terminalId)
+    useUIStore.getState().removeTerminalSession(terminalId)
+  }, [terminalId])
+
   const isVisible = !!layoutRect
+
+  // Not yet mounted (never been visible) → render nothing
+  if (!mounted) return null
 
   const style: React.CSSProperties = isVisible
     ? {
@@ -242,16 +261,7 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
         width: `${layoutRect.width}%`,
         height: `${layoutRect.height}%`,
       }
-    : { display: 'none' } // Hidden but xterm stays alive in memory
-
-  const handleActivate = useCallback(() => {
-    useUIStore.getState().setActiveTerminalId(terminalId)
-  }, [terminalId])
-
-  const handleClose = useCallback(() => {
-    window.api.terminal.close(terminalId)
-    useUIStore.getState().removeTerminalSession(terminalId)
-  }, [terminalId])
+    : { display: 'none' }
 
   return (
     <div
