@@ -7,7 +7,6 @@ import { buildXtermTheme } from './xterm-theme'
 
 interface TerminalViewProps {
   terminalId: string
-  initialBuffer?: string
 }
 
 export interface TerminalViewHandle {
@@ -18,12 +17,11 @@ export interface TerminalViewHandle {
 }
 
 export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
-  ({ terminalId, initialBuffer }, ref) => {
+  ({ terminalId }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const termRef = useRef<Terminal | null>(null)
     const fitAddonRef = useRef<FitAddon | null>(null)
     const serializeAddonRef = useRef<SerializeAddon | null>(null)
-    const initialBufferRef = useRef(initialBuffer)
 
     useImperativeHandle(ref, () => ({
       serialize: () => {
@@ -71,11 +69,6 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
       termRef.current = term
       fitAddonRef.current = fitAddon
       serializeAddonRef.current = serializeAddon
-
-      // Restore saved buffer if available
-      if (initialBufferRef.current) {
-        term.write(initialBufferRef.current)
-      }
 
       // Send initial size
       window.api.terminal.resize(terminalId, term.cols, term.rows)

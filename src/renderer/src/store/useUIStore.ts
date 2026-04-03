@@ -15,8 +15,6 @@ export interface TerminalSession {
   persistKey: string
   title: string
   cwd?: string
-  /** Transient: restored buffer content, not persisted */
-  _restoredBuffer?: string
 }
 
 /** Generate a stable persist key for terminal buffer storage */

@@ -10,7 +10,7 @@ import type { FontId } from './themes'
 import { getAppRegistry } from './core/AppContext'
 import { AppAPIProvider } from './core/AppContext'
 import { registerBuiltinApps } from './core/builtinApps'
-import { getTerminalRefs, TerminalApp } from './apps/TerminalApp'
+import { TerminalApp } from './apps/TerminalApp'
 
 export default function App() {
   const currentApp = useUIStore((s) => s.currentApp)
@@ -62,15 +62,11 @@ export default function App() {
               const persistKey = saved.persistKey || genTerminalPersistKey()
               const res = await window.api.terminal.create(cwd)
               if (!res.ok) return null
-              // Load buffer using stable persistKey (not position index)
-              let buffer: string | undefined
-              const bufferRes = await window.api.terminal.loadBuffer(persistKey)
-              if (bufferRes.ok) buffer = bufferRes.data
-              return { id: res.data, persistKey, title: saved.title, cwd, _restoredBuffer: buffer }
+              return { id: res.data, persistKey, title: saved.title, cwd }
             }),
           ).then((results) => {
             const sessions = results.filter(Boolean) as {
-              id: string; persistKey: string; title: string; cwd?: string; _restoredBuffer?: string
+              id: string; persistKey: string; title: string; cwd?: string
             }[]
             if (sessions.length === 0) return
 
@@ -196,20 +192,13 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
-  // Save terminal state — called on beforeunload + periodic auto-save
+  // Save terminal state — sessions, workspaces, layout (no buffer serialization)
+  // Buffer restoration across restarts causes column-width distortion (xterm limitation).
+  // Same approach as VS Code: scrollback is lost on full quit, only CWD/layout persisted.
   useEffect(() => {
     function saveTerminalState(sync: boolean): void {
       const { terminalSessions, terminalWorkspaces, activeWorkspaceId, activeTerminalId } = useUIStore.getState()
       if (terminalSessions.length === 0) return
-      const refs = getTerminalRefs()
-
-      // Serialize all xterm buffers keyed by stable persistKey
-      const buffers: { key: string; data: string }[] = []
-      terminalSessions.forEach((session) => {
-        const ref = refs.get(session.id)
-        const buffer = ref?.current?.serialize() || ''
-        if (buffer) buffers.push({ key: session.persistKey, data: buffer })
-      })
 
       const config = {
         terminalSessions: terminalSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })),
@@ -221,11 +210,8 @@ export default function App() {
       }
 
       if (sync) {
-        // Synchronous — guaranteed to complete before window closes
-        window.api.terminal.saveAllSync(buffers, config)
+        window.api.terminal.saveAllSync([], config)
       } else {
-        // Async — for periodic background saves
-        for (const b of buffers) window.api.terminal.saveBuffer(b.key, b.data)
         window.api.state.update(config)
       }
     }
