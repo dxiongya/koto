@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, memo } from 'react'
 import { useUIStore, genTerminalPersistKey } from './store/useUIStore'
 import type { SplitNode } from './store/useUIStore'
 import { MainLayout } from './layouts/MainLayout'
@@ -10,7 +10,7 @@ import type { FontId } from './themes'
 import { getAppRegistry } from './core/AppContext'
 import { AppAPIProvider } from './core/AppContext'
 import { registerBuiltinApps } from './core/builtinApps'
-import { getTerminalRefs } from './apps/TerminalApp'
+import { getTerminalRefs, TerminalApp } from './apps/TerminalApp'
 
 export default function App() {
   const currentApp = useUIStore((s) => s.currentApp)
@@ -332,23 +332,53 @@ export default function App() {
   const registry = getAppRegistry()
   const registeredApp = registry.get(currentApp)
   const ActiveApp = currentApp === 'settings.app' ? SettingsApp : registeredApp?.definition.component
+  const isTerminalActive = currentApp === 'terminal.app'
+
+  // Resolve the non-terminal app component
+  const OtherApp = !isTerminalActive ? ActiveApp : null
 
   return (
     <>
       <MainLayout>
-        {ActiveApp ? (
+        {/* Terminal always mounted (hidden when inactive) to preserve xterm scrollback.
+            Same pattern as VS Code — terminal instances survive app switches. */}
+        <PersistentTerminal visible={isTerminalActive} />
+
+        {/* Other apps mount/unmount normally */}
+        {OtherApp ? (
           <AppAPIProvider appId={currentApp}>
-            <ActiveApp api={undefined as any} />
+            <OtherApp api={undefined as any} />
           </AppAPIProvider>
-        ) : (
+        ) : !isTerminalActive ? (
           <PlaceholderApp name={currentApp} />
-        )}
+        ) : null}
       </MainLayout>
       <ContextMenuProvider />
       <FileSwitcher />
     </>
   )
 }
+
+/** Terminal persists across app switches — xterm instances stay alive.
+ *  Uses display:none instead of unmounting to preserve scrollback + PTY state. */
+const PersistentTerminal = memo(function PersistentTerminal({ visible }: { visible: boolean }) {
+  const hasTerminals = useUIStore((s) => s.terminalSessions.length > 0)
+  // Don't mount at all until first terminal is created
+  const [everMounted, setEverMounted] = useState(false)
+  useEffect(() => {
+    if (hasTerminals) setEverMounted(true)
+  }, [hasTerminals])
+
+  if (!everMounted) return null
+
+  return (
+    <div style={{ display: visible ? 'contents' : 'none' }}>
+      <AppAPIProvider appId="terminal.app">
+        <TerminalApp />
+      </AppAPIProvider>
+    </div>
+  )
+})
 
 function PlaceholderApp({ name }: { name: string }) {
   return (
