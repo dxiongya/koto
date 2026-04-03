@@ -68,7 +68,7 @@ function computeLayoutRects(
 const selectShowCommandPalette = (s: { showCommandPalette: boolean }) => s.showCommandPalette
 const selectActiveTerminalId = (s: { activeTerminalId: string | null }) => s.activeTerminalId
 const selectHasTerminals = (s: { terminalSessions: { id: string }[] }) => s.terminalSessions.length > 0
-const selectSessionIds = (s: { terminalSessions: { id: string }[] }) => s.terminalSessions.map((t) => t.id)
+const selectSessions = (s: { terminalSessions: { id: string }[] }) => s.terminalSessions
 const selectActiveLayout = (s: {
   terminalWorkspaces: { id: string; groups: { id: string; layout: SplitNode }[]; activeGroupId: string | null }[]
   activeWorkspaceId: string | null
@@ -90,7 +90,8 @@ export const TerminalApp: React.FC = () => {
   const activeTerminalId = useUIStore(selectActiveTerminalId)
   const hasTerminals = useUIStore(selectHasTerminals)
   const activeLayout = useUIStore(selectActiveLayout, (a, b) => a === b)
-  const sessionIds = useUIStore(selectSessionIds, (a, b) => a.length === b.length && a.every((v, i) => v === b[i]))
+  const sessions = useUIStore(selectSessions)
+  const sessionIds = useMemo(() => sessions.map((t) => t.id), [sessions])
 
   // Compute layout rects from the active split tree
   const layoutRects = useMemo(
@@ -146,35 +147,16 @@ export const TerminalApp: React.FC = () => {
             terminalId={id}
             isActive={id === activeTerminalId}
             layoutRect={layoutRects.get(id) ?? null}
+            showTabBar={layoutRects.size > 0}
           />
         ))}
 
-        {/* Layout chrome overlay — tab bars, split handles, drop zones */}
+        {/* Split handles overlay */}
         {activeLayout && layoutRects.size > 1 && (
           <div className="absolute inset-0 z-10 pointer-events-none">
-            <LayoutChromeRenderer
-              node={activeLayout}
-              activeTerminalId={activeTerminalId}
-            />
+            <SplitHandlesRenderer node={activeLayout} />
           </div>
         )}
-
-        {/* Single terminal tab bar (no split) */}
-        {activeLayout && layoutRects.size === 1 && (() => {
-          const termId = layoutRects.keys().next().value as string
-          return (
-            <div className="absolute inset-0 z-10 flex flex-col pointer-events-none">
-              <div className="pointer-events-auto">
-                <PaneTabBarMemo
-                  terminalId={termId}
-                  isActiveTerminal={termId === activeTerminalId}
-                  onActivate={() => useUIStore.getState().setActiveTerminalId(termId)}
-                  onClose={() => { window.api.terminal.close(termId); useUIStore.getState().removeTerminalSession(termId) }}
-                />
-              </div>
-            </div>
-          )
-        })()}
 
         {!hasTerminals && (
           <div className="flex items-center justify-center h-full text-tx-faint text-sm">
@@ -194,10 +176,12 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
   terminalId,
   isActive,
   layoutRect,
+  showTabBar,
 }: {
   terminalId: string
   isActive: boolean
   layoutRect: LayoutRect | null // null = not in active group → hidden
+  showTabBar: boolean
 }) {
   const ref = useRef<TerminalViewHandle | null>(null)
   const myDrop = useDropTargetFor(terminalId)
@@ -207,12 +191,20 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
     return () => { terminalRefs.delete(terminalId) }
   }, [terminalId])
 
-  // Auto-focus when becoming active
+  // Re-fit + focus when terminal becomes visible (display:none → visible)
+  const wasVisible = useRef(!!layoutRect)
   useEffect(() => {
-    if (isActive && layoutRect) {
-      const id = requestAnimationFrame(() => ref.current?.focus())
-      return () => cancelAnimationFrame(id)
+    const isNowVisible = !!layoutRect
+    if (isNowVisible && !wasVisible.current) {
+      // Transitioning from hidden to visible — xterm needs re-fit
+      requestAnimationFrame(() => {
+        ref.current?.fit()
+        if (isActive) ref.current?.focus()
+      })
+    } else if (isActive && isNowVisible) {
+      requestAnimationFrame(() => ref.current?.focus())
     }
+    wasVisible.current = isNowVisible
   }, [isActive, layoutRect])
 
   const handleClick = useCallback(() => ref.current?.focus(), [])
@@ -252,6 +244,15 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
       }
     : { display: 'none' } // Hidden but xterm stays alive in memory
 
+  const handleActivate = useCallback(() => {
+    useUIStore.getState().setActiveTerminalId(terminalId)
+  }, [terminalId])
+
+  const handleClose = useCallback(() => {
+    window.api.terminal.close(terminalId)
+    useUIStore.getState().removeTerminalSession(terminalId)
+  }, [terminalId])
+
   return (
     <div
       ref={paneRef}
@@ -261,8 +262,16 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
       onDragLeave={isVisible ? handleDragLeave : undefined}
       onDrop={isVisible ? handleDropEvent : undefined}
     >
-      <div className="flex-1 relative" onClick={handleClick}>
-        <div style={{ position: 'absolute', inset: 0 }}>
+      {isVisible && showTabBar && (
+        <PaneTabBarMemo
+          terminalId={terminalId}
+          isActiveTerminal={isActive}
+          onActivate={handleActivate}
+          onClose={handleClose}
+        />
+      )}
+      <div className={isVisible ? 'flex-1 relative min-h-0' : undefined} onClick={handleClick}>
+        <div style={isVisible ? { position: 'absolute', inset: 0 } : undefined}>
           <TerminalView ref={ref} terminalId={terminalId} />
         </div>
       </div>
@@ -281,40 +290,17 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
   )
 })
 
-// ── Layout Chrome Renderer ──
-// Renders tab bars + split handles as an overlay. No xterm instances here.
+// ── Split Handles Renderer ──
+// Only renders split handles as positioned overlays. Tab bars are inside each PersistentTerminalPane.
 
-const LayoutChromeRenderer = memo(function LayoutChromeRenderer({
+const SplitHandlesRenderer = memo(function SplitHandlesRenderer({
   node,
-  activeTerminalId,
   rect = { top: 0, left: 0, width: 100, height: 100 },
 }: {
   node: SplitNode
-  activeTerminalId: string | null
   rect?: LayoutRect
 }) {
-  if (node.type === 'terminal') {
-    const style: React.CSSProperties = {
-      position: 'absolute',
-      top: `${rect.top}%`,
-      left: `${rect.left}%`,
-      width: `${rect.width}%`,
-      height: `${rect.height}%`,
-    }
-    return (
-      <div style={style} className="pointer-events-auto">
-        <PaneTabBarMemo
-          terminalId={node.terminalId}
-          isActiveTerminal={node.terminalId === activeTerminalId}
-          onActivate={() => useUIStore.getState().setActiveTerminalId(node.terminalId)}
-          onClose={() => {
-            window.api.terminal.close(node.terminalId)
-            useUIStore.getState().removeTerminalSession(node.terminalId)
-          }}
-        />
-      </div>
-    )
-  }
+  if (node.type === 'terminal') return null
 
   const count = node.children.length
   return (
@@ -327,11 +313,7 @@ const LayoutChromeRenderer = memo(function LayoutChromeRenderer({
         return (
           <React.Fragment key={key}>
             {i > 0 && <SplitHandleOverlay direction={node.direction} rect={rect} index={i} count={count} />}
-            <LayoutChromeRenderer
-              node={child}
-              activeTerminalId={activeTerminalId}
-              rect={childRect}
-            />
+            <SplitHandlesRenderer node={child} rect={childRect} />
           </React.Fragment>
         )
       })}

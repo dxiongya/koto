@@ -13,14 +13,16 @@ interface TerminalViewProps {
 export interface TerminalViewHandle {
   serialize: () => string | null
   focus: () => void
+  /** Re-fit terminal to container size — call after display:none → visible transition */
+  fit: () => void
 }
 
 export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
   ({ terminalId, initialBuffer }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const termRef = useRef<Terminal | null>(null)
+    const fitAddonRef = useRef<FitAddon | null>(null)
     const serializeAddonRef = useRef<SerializeAddon | null>(null)
-    // Store initialBuffer in ref so it doesn't trigger re-mount
     const initialBufferRef = useRef(initialBuffer)
 
     useImperativeHandle(ref, () => ({
@@ -34,6 +36,14 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
       },
       focus: () => {
         termRef.current?.focus()
+      },
+      fit: () => {
+        try {
+          fitAddonRef.current?.fit()
+          if (termRef.current) {
+            window.api.terminal.resize(terminalId, termRef.current.cols, termRef.current.rows)
+          }
+        } catch { /* ignore */ }
       },
     }))
 
@@ -59,6 +69,7 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
       fitAddon.fit()
 
       termRef.current = term
+      fitAddonRef.current = fitAddon
       serializeAddonRef.current = serializeAddon
 
       // Restore saved buffer if available
