@@ -427,6 +427,7 @@ const PaneTabBarMemo = memo(function PaneTabBar({
       className={`shrink-0 flex items-center gap-1.5 px-3 py-[4px] text-[13px] border-b cursor-pointer group select-none relative
         ${isActiveTerminal ? 'bg-bg-active border-border-subtle' : 'bg-bg-sidebar border-border-subtle hover:bg-bg-hover'}`}
       onClick={onActivate}
+      onDoubleClick={() => useUIStore.getState().unsplitTerminal(terminalId)}
     >
       {isActiveTerminal && <div className="absolute left-0 right-0 bottom-0 h-[1px] bg-status-success" />}
       <div

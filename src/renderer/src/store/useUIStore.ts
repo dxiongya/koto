@@ -178,6 +178,7 @@ interface UIState {
   setActiveWorkspace: (id: string) => void
   createTerminalInWorkspace: (workspaceId: string, sessionId: string) => void
   splitTerminalInWorkspace: (workspaceId: string, existingTermId: string, newTermId: string, direction?: 'horizontal' | 'vertical') => void
+  unsplitTerminal: (terminalId: string) => void
 
   // recent files
   trackRecentFile: (filePath: string, app: AppType) => void
@@ -531,6 +532,34 @@ export const useUIStore = create<UIState>((set, get) => ({
       terminalWorkspaces: finalWorkspaces,
       activeWorkspaceId: workspaceId,
       activeTerminalId: newTermId,
+    })
+  },
+
+  unsplitTerminal: (terminalId) => {
+    const prev = get()
+    const ws = prev.terminalWorkspaces.find((w) => w.id === prev.activeWorkspaceId)
+    if (!ws) return
+    // Find the group containing this terminal
+    const group = ws.groups.find((g) => collectTerminalIds(g.layout).includes(terminalId))
+    if (!group) return
+    // If terminal is alone in its group, nothing to unsplit
+    if (group.layout.type === 'terminal') return
+    // Remove terminal from its current group
+    const cleaned = removeFromTree(group.layout, terminalId)
+    // Create a new standalone group for this terminal
+    const newGroupId = `group-${terminalId}-${Date.now()}`
+    const newGroup = { id: newGroupId, layout: { type: 'terminal' as const, terminalId } }
+    const nextWorkspaces = prev.terminalWorkspaces.map((w) => {
+      if (w.id !== ws.id) return w
+      const groups = w.groups.map((g) => {
+        if (g.id !== group.id) return g
+        return cleaned ? { ...g, layout: cleaned } : null
+      }).filter(Boolean) as typeof w.groups
+      return { ...w, groups: [...groups, newGroup], activeGroupId: newGroupId }
+    })
+    set({
+      terminalWorkspaces: nextWorkspaces,
+      activeTerminalId: terminalId,
     })
   },
 
