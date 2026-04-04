@@ -21,6 +21,8 @@ interface PtySession {
   /** Ring buffer of raw PTY output for replay on restart */
   replayBuffer: string[]
   replaySize: number
+  /** True after PTY process exits — replay buffer still accessible */
+  exited?: boolean
 }
 
 export class PtyManager {
@@ -58,7 +60,9 @@ export class PtyManager {
     })
 
     proc.onExit(({ exitCode }) => {
-      this.sessions.delete(id)
+      // Keep session in map (preserves replay buffer for persistence).
+      // Mark as exited so write/resize skip it, but getReplayBuffer still works.
+      session.exited = true
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send(IpcChannels.TERMINAL_EXIT, id, exitCode)
       }
@@ -102,18 +106,20 @@ export class PtyManager {
   }
 
   write(id: string, data: string): void {
-    this.sessions.get(id)?.process.write(data)
+    const s = this.sessions.get(id)
+    if (s && !s.exited) s.process.write(data)
   }
 
   resize(id: string, cols: number, rows: number): void {
-    this.sessions.get(id)?.process.resize(cols, rows)
+    const s = this.sessions.get(id)
+    if (s && !s.exited) s.process.resize(cols, rows)
   }
 
   close(id: string): void {
     const session = this.sessions.get(id)
-    if (session) {
+    if (session && !session.exited) {
       session.process.kill()
-      this.sessions.delete(id)
+      // Don't delete — onExit marks as exited, replay buffer preserved
     }
   }
 
