@@ -257,7 +257,8 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   setCurrentApp: (app) => {
     set({ currentApp: app })
-    persistState({ lastApp: app })
+    // Write immediately (no debounce) — app can close at any time
+    window.api.state.update({ lastApp: app })
   },
 
   setShowCommandPalette: (show) => set({ showCommandPalette: show }),
