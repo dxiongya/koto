@@ -1,26 +1,14 @@
 import * as pty from 'node-pty'
-import * as path from 'path'
 import { execSync } from 'child_process'
-import { app, BrowserWindow } from 'electron'
+import { BrowserWindow } from 'electron'
 import { IpcChannels } from '../../shared/types'
 
-/** Get path to shell integration script bundled with the app */
-function getShellIntegrationPath(): string {
-  // In dev: resources/ next to package.json
-  // In production: process.resourcesPath
-  const resourcesPath = app.isPackaged
-    ? process.resourcesPath
-    : path.join(app.getAppPath(), 'resources')
-  return path.join(resourcesPath, 'shell-integration.zsh')
-}
-
-/** Strip env vars that prevent nested CLI tools (e.g. Claude Code) from launching */
+/** Build clean env that inherits user's full shell environment */
 function cleanEnv(): Record<string, string> {
   const env = { ...process.env } as Record<string, string>
+  // Remove vars that prevent nested CLI tools (e.g. Claude Code)
   delete env['CLAUDECODE']
   delete env['CLAUDE_CODE']
-  // Tell the shell to source our integration script after .zshrc
-  env['LITE_SHELL_INTEGRATION'] = getShellIntegrationPath()
   env['TERM_PROGRAM'] = 'lite'
   return env
 }
@@ -49,39 +37,18 @@ export class PtyManager {
         ? 'powershell.exe'
         : process.env.SHELL || '/bin/zsh'
 
-    // Launch as login shell with shell integration auto-sourced.
-    // Uses zsh's ENV mechanism: after .zshrc loads, source our integration script
-    // which adds autosuggestions, syntax highlighting, zoxide, etc.
-    const shellEnv = cleanEnv()
-    const args: string[] = []
-    if (process.platform !== 'win32') {
-      args.push('--login')
-      if (shell.includes('zsh')) {
-        // ZDOTDIR trick: we don't override it. Instead we use a tiny rcfile
-        // that sources after .zshrc by setting it in the ENV.
-        // Zsh doesn't have a post-rc hook, so we use precmd to source once.
-        shellEnv['__LITE_INTEGRATION'] = getShellIntegrationPath()
-      }
-    }
+    // Launch as login interactive shell — loads user's full config
+    // (.zshrc, .zprofile, oh-my-zsh, syntax highlighting, etc.)
+    const args = process.platform !== 'win32' ? ['--login', '-i'] : []
     const proc = pty.spawn(shell, args, {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,
       cwd,
-      env: shellEnv,
+      env: cleanEnv(),
     })
 
     const session: PtySession = { id, process: proc, initialCwd: cwd, replayBuffer: [], replaySize: 0 }
-
-    // Source integration script after shell initialization completes
-    if (shellEnv['__LITE_INTEGRATION']) {
-      // Small delay for .zshrc to finish loading, then source silently + clear
-      setTimeout(() => {
-        if (!session.exited) {
-          proc.write(` source "${shellEnv['__LITE_INTEGRATION']}" 2>/dev/null; clear\n`)
-        }
-      }, 300)
-    }
 
     proc.onData((data) => {
       // Record raw output for replay
