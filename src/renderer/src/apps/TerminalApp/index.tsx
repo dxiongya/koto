@@ -217,7 +217,10 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
     wasVisible.current = isNowVisible
   }, [isActive, layoutRect, mounted])
 
-  const handleClick = useCallback(() => ref.current?.focus(), [])
+  const handleClick = useCallback(() => {
+    useUIStore.getState().setActiveTerminalId(terminalId)
+    ref.current?.focus()
+  }, [terminalId])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (!e.dataTransfer.types.includes('application/x-terminal-drag')) return
@@ -280,7 +283,13 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
           onClose={handleClose}
         />
       )}
-      <div className={isVisible ? 'flex-1 relative min-h-0' : undefined} onClick={handleClick}>
+      <div
+        className={isVisible ? 'flex-1 relative min-h-0' : undefined}
+        onClick={handleClick}
+        onDragOver={isVisible ? handleDragOver : undefined}
+        onDragLeave={isVisible ? handleDragLeave : undefined}
+        onDrop={isVisible ? handleDropEvent : undefined}
+      >
         <div style={isVisible ? { position: 'absolute', inset: 0 } : undefined}>
           <TerminalView ref={ref} terminalId={terminalId} />
         </div>
@@ -419,7 +428,7 @@ const PaneTabBarMemo = memo(function PaneTabBar({
         ${isActiveTerminal ? 'bg-bg-active border-border-subtle' : 'bg-bg-sidebar border-border-subtle hover:bg-bg-hover'}`}
       onClick={onActivate}
     >
-      {isActiveTerminal && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-accent-main" />}
+      {isActiveTerminal && <div className="absolute left-0 right-0 bottom-0 h-[1px] bg-status-success" />}
       <div
         draggable
         onDragStart={handleDragStart}
