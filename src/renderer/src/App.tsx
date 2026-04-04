@@ -218,7 +218,7 @@ export default function App() {
       const { terminalSessions, terminalWorkspaces, activeWorkspaceId, activeTerminalId } = useUIStore.getState()
       if (terminalSessions.length === 0) return
       const config = {
-        terminalSessions: terminalSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })),
+        terminalSessions: terminalSessions.map((t) => ({ id: t.id, persistKey: t.persistKey, title: t.title, cwd: t.cwd })),
         terminalWorkspaces: terminalWorkspaces.map((ws) => ({
           id: ws.id, path: ws.path, name: ws.name, groups: ws.groups, activeGroupId: ws.activeGroupId,
         })),

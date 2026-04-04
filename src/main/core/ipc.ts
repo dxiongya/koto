@@ -170,27 +170,42 @@ export function setupIpcHandlers(): void {
   })
 
   // Synchronous save of all terminal buffers + state — used in beforeunload
+  // Config includes terminalSessions with {persistKey, id} so we can fetch
+  // the latest replay buffer directly from PtyManager (same process, no IPC needed).
   ipcMain.on(IpcChannels.TERMINAL_SAVE_ALL_SYNC, (event, payload: { buffers: { key: string; data: string }[]; config: Record<string, unknown> }) => {
     try {
       const dir = path.join(getLiteHome(), 'terminals')
       fs.mkdirSync(dir, { recursive: true })
 
-      // Clean up stale buffer files — only keep keys in current payload
-      const activeKeys = new Set(payload.buffers.map((b) => `${b.key}.txt`))
+      // Fetch latest replay buffers directly from PtyManager (same process, synchronous)
+      // Each session has {id (PTY id), persistKey (stable file key)}
+      const sessions = (payload.config.terminalSessions ?? []) as { id: string; persistKey: string }[]
+      const activeKeys = new Set<string>()
+
+      for (const session of sessions) {
+        activeKeys.add(`${session.persistKey}.txt`)
+        const buffer = ptyManager.getReplayBuffer(session.id)
+        if (buffer) {
+          fs.writeFileSync(path.join(dir, `${session.persistKey}.txt`), buffer, 'utf-8')
+        }
+      }
+
+      // Also save any buffers passed from renderer (fallback)
+      for (const { key, data } of payload.buffers) {
+        activeKeys.add(`${key}.txt`)
+        fs.writeFileSync(path.join(dir, `${key}.txt`), data, 'utf-8')
+      }
+
+      // Clean up stale buffer files
       try {
         for (const f of fs.readdirSync(dir)) {
           if (f.endsWith('.txt') && !activeKeys.has(f)) {
             fs.unlinkSync(path.join(dir, f))
           }
         }
-      } catch { /* ignore cleanup errors */ }
+      } catch { /* ignore */ }
 
-      // Save current buffers
-      for (const { key, data } of payload.buffers) {
-        fs.writeFileSync(path.join(dir, `${key}.txt`), data, 'utf-8')
-      }
-
-      // Save config (state persistence)
+      // Save config
       const configPath = path.join(getLiteHome(), 'config.json')
       let existing: Record<string, unknown> = {}
       try { existing = JSON.parse(fs.readFileSync(configPath, 'utf-8')) } catch {}
