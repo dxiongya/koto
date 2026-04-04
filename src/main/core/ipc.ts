@@ -186,7 +186,13 @@ export function setupIpcHandlers(): void {
         activeKeys.add(`${session.persistKey}.txt`)
         const buffer = ptyManager.getReplayBuffer(session.id)
         if (buffer) {
-          fs.writeFileSync(path.join(dir, `${session.persistKey}.txt`), buffer, 'utf-8')
+          // Only overwrite if new buffer has meaningful content,
+          // or if no previous file exists (first save)
+          const filePath = path.join(dir, `${session.persistKey}.txt`)
+          const prevExists = fs.existsSync(filePath)
+          if (buffer.length > 1024 || !prevExists) {
+            fs.writeFileSync(filePath, buffer, 'utf-8')
+          }
         }
       }
 

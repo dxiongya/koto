@@ -202,15 +202,16 @@ export default function App() {
     async function saveReplayBuffers(): Promise<void> {
       const { terminalSessions } = useUIStore.getState()
       if (terminalSessions.length === 0) return
-      const buffers: { key: string; data: string }[] = []
       for (const s of terminalSessions) {
         try {
           const res = await window.api.terminal.getReplayBuffer(s.id)
-          if (res.ok && res.data) buffers.push({ key: s.persistKey, data: res.data })
+          // Only save if buffer has meaningful content (>1KB).
+          // Prevents a freshly-created PTY (just a prompt) from
+          // overwriting a previously saved buffer with real content.
+          if (res.ok && res.data && res.data.length > 1024) {
+            window.api.terminal.saveBuffer(s.persistKey, res.data)
+          }
         } catch { /* ignore */ }
-      }
-      if (buffers.length > 0) {
-        for (const b of buffers) window.api.terminal.saveBuffer(b.key, b.data)
       }
     }
 
