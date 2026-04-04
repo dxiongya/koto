@@ -15,6 +15,8 @@ export interface TerminalSession {
   persistKey: string
   title: string
   cwd?: string
+  /** Transient: raw PTY output to replay on restore (adapts to current column width) */
+  _replayBuffer?: string
 }
 
 /** Generate a stable persist key for terminal buffer storage */

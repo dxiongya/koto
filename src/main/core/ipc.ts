@@ -140,6 +140,11 @@ export function setupIpcHandlers(): void {
     return { ok: true, data: cwd }
   })
 
+  ipcMain.handle(IpcChannels.TERMINAL_GET_REPLAY_BUFFER, (_, id: string) => {
+    const buffer = ptyManager.getReplayBuffer(id)
+    return { ok: true, data: buffer }
+  })
+
   ipcMain.handle(IpcChannels.TERMINAL_SAVE_BUFFER, (_, sessionKey: string, buffer: string) => {
     try {
       const dir = path.join(getLiteHome(), 'terminals')

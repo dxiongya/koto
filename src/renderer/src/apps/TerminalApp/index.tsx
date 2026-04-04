@@ -186,6 +186,10 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
   const ref = useRef<TerminalViewHandle | null>(null)
   const myDrop = useDropTargetFor(terminalId)
   const paneRef = useRef<HTMLDivElement>(null)
+  // Get replay buffer from session (one-time, for restore)
+  const replayBuffer = useUIStore(
+    useCallback((s) => s.terminalSessions.find((t) => t.id === terminalId)?._replayBuffer, [terminalId]),
+  )
 
   // Lazy mount: don't create xterm until container is first visible.
   // This prevents xterm.open() on a display:none container (0-size → distorted output).
@@ -291,7 +295,7 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
         onDrop={isVisible ? handleDropEvent : undefined}
       >
         <div style={isVisible ? { position: 'absolute', inset: 0 } : undefined}>
-          <TerminalView ref={ref} terminalId={terminalId} />
+          <TerminalView ref={ref} terminalId={terminalId} replayBuffer={replayBuffer} />
         </div>
       </div>
 

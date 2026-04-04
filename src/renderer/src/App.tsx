@@ -62,11 +62,15 @@ export default function App() {
               const persistKey = saved.persistKey || genTerminalPersistKey()
               const res = await window.api.terminal.create(cwd)
               if (!res.ok) return null
-              return { id: res.data, persistKey, title: saved.title, cwd }
+              // Load raw replay buffer (saved as raw PTY output, not xterm serialization)
+              let replayBuffer: string | undefined
+              const bufferRes = await window.api.terminal.loadBuffer(persistKey)
+              if (bufferRes.ok && bufferRes.data) replayBuffer = bufferRes.data
+              return { id: res.data, persistKey, title: saved.title, cwd, _replayBuffer: replayBuffer }
             }),
           ).then((results) => {
             const sessions = results.filter(Boolean) as {
-              id: string; persistKey: string; title: string; cwd?: string
+              id: string; persistKey: string; title: string; cwd?: string; _replayBuffer?: string
             }[]
             if (sessions.length === 0) return
 
@@ -192,14 +196,27 @@ export default function App() {
     return () => clearInterval(interval)
   }, [])
 
-  // Save terminal state — sessions, workspaces, layout (no buffer serialization)
-  // Buffer restoration across restarts causes column-width distortion (xterm limitation).
-  // Same approach as VS Code: scrollback is lost on full quit, only CWD/layout persisted.
+  // Save terminal state — sessions, workspaces, layout + raw replay buffers.
+  // Raw PTY output (not xterm serialization) adapts to new column width on replay.
   useEffect(() => {
-    function saveTerminalState(sync: boolean): void {
+    async function saveReplayBuffers(): Promise<void> {
+      const { terminalSessions } = useUIStore.getState()
+      if (terminalSessions.length === 0) return
+      const buffers: { key: string; data: string }[] = []
+      for (const s of terminalSessions) {
+        try {
+          const res = await window.api.terminal.getReplayBuffer(s.id)
+          if (res.ok && res.data) buffers.push({ key: s.persistKey, data: res.data })
+        } catch { /* ignore */ }
+      }
+      if (buffers.length > 0) {
+        for (const b of buffers) window.api.terminal.saveBuffer(b.key, b.data)
+      }
+    }
+
+    function saveConfig(sync: boolean): void {
       const { terminalSessions, terminalWorkspaces, activeWorkspaceId, activeTerminalId } = useUIStore.getState()
       if (terminalSessions.length === 0) return
-
       const config = {
         terminalSessions: terminalSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })),
         terminalWorkspaces: terminalWorkspaces.map((ws) => ({
@@ -208,7 +225,6 @@ export default function App() {
         activeWorkspaceId,
         activeTerminalId,
       }
-
       if (sync) {
         window.api.terminal.saveAllSync([], config)
       } else {
@@ -216,11 +232,17 @@ export default function App() {
       }
     }
 
-    // Periodic auto-save every 30s — protects against crashes
-    const autoSaveInterval = setInterval(() => saveTerminalState(false), 30_000)
+    // Periodic auto-save: replay buffers (async) + config
+    const autoSaveInterval = setInterval(() => {
+      saveReplayBuffers()
+      saveConfig(false)
+    }, 30_000)
 
-    // Sync save on window close
-    const handleBeforeUnload = (): void => saveTerminalState(true)
+    // Save replay buffers once on first mount
+    saveReplayBuffers()
+
+    // Sync config save on window close (replay buffers already saved periodically)
+    const handleBeforeUnload = (): void => saveConfig(true)
     window.addEventListener('beforeunload', handleBeforeUnload)
 
     return () => {

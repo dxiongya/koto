@@ -11,10 +11,16 @@ function cleanEnv(): Record<string, string> {
   return env
 }
 
+/** Max raw output to keep per terminal (128KB) */
+const MAX_REPLAY_BUFFER = 128 * 1024
+
 interface PtySession {
   id: string
   process: pty.IPty
   initialCwd: string
+  /** Ring buffer of raw PTY output for replay on restart */
+  replayBuffer: string[]
+  replaySize: number
 }
 
 export class PtyManager {
@@ -35,7 +41,17 @@ export class PtyManager {
       env: cleanEnv(),
     })
 
+    const session: PtySession = { id, process: proc, initialCwd: cwd, replayBuffer: [], replaySize: 0 }
+
     proc.onData((data) => {
+      // Record raw output for replay
+      session.replayBuffer.push(data)
+      session.replaySize += data.length
+      // Trim oldest chunks when over limit
+      while (session.replaySize > MAX_REPLAY_BUFFER && session.replayBuffer.length > 1) {
+        session.replaySize -= session.replayBuffer.shift()!.length
+      }
+
       for (const win of BrowserWindow.getAllWindows()) {
         win.webContents.send(IpcChannels.TERMINAL_DATA, id, data)
       }
@@ -48,8 +64,15 @@ export class PtyManager {
       }
     })
 
-    this.sessions.set(id, { id, process: proc, initialCwd: cwd })
+    this.sessions.set(id, session)
     return id
+  }
+
+  /** Get raw replay buffer for a terminal (for persistence across restarts) */
+  getReplayBuffer(id: string): string | null {
+    const session = this.sessions.get(id)
+    if (!session || session.replayBuffer.length === 0) return null
+    return session.replayBuffer.join('')
   }
 
   /** Get the current working directory of a PTY session */

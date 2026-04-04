@@ -48,6 +48,7 @@ export const IpcChannels = {
   TERMINAL_GET_CWD: 'terminal:getCwd',
   TERMINAL_SAVE_BUFFER: 'terminal:saveBuffer',
   TERMINAL_LOAD_BUFFER: 'terminal:loadBuffer',
+  TERMINAL_GET_REPLAY_BUFFER: 'terminal:getReplayBuffer',
   TERMINAL_SAVE_ALL_SYNC: 'terminal:saveAllSync',
   TERMINAL_DATA: 'terminal:data',
   TERMINAL_EXIT: 'terminal:exit',

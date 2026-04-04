@@ -7,6 +7,8 @@ import { buildXtermTheme } from './xterm-theme'
 
 interface TerminalViewProps {
   terminalId: string
+  /** Raw PTY output to replay after terminal is sized (from persistence) */
+  replayBuffer?: string
 }
 
 export interface TerminalViewHandle {
@@ -17,11 +19,13 @@ export interface TerminalViewHandle {
 }
 
 export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
-  ({ terminalId }, ref) => {
+  ({ terminalId, replayBuffer }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const termRef = useRef<Terminal | null>(null)
     const fitAddonRef = useRef<FitAddon | null>(null)
     const serializeAddonRef = useRef<SerializeAddon | null>(null)
+    const replayBufferRef = useRef(replayBuffer)
+    const replayedRef = useRef(false)
 
     useImperativeHandle(ref, () => ({
       serialize: () => {
@@ -113,12 +117,17 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
       const resizeObserver = new ResizeObserver(() => {
         cancelAnimationFrame(resizeRaf)
         resizeRaf = requestAnimationFrame(() => {
-          // Skip fit if container is hidden (0 dimensions)
           const { width, height } = container.getBoundingClientRect()
           if (width < 2 || height < 2) return
           try {
             fitAddon.fit()
             window.api.terminal.resize(terminalId, term.cols, term.rows)
+            // Replay raw PTY output after first successful fit (correct column width)
+            if (!replayedRef.current && replayBufferRef.current) {
+              replayedRef.current = true
+              term.write(replayBufferRef.current)
+              replayBufferRef.current = undefined // free memory
+            }
           } catch {
             // ignore fit errors during transitions
           }
