@@ -269,7 +269,15 @@ const AppsSection: React.FC = () => {
     const app = registry.get(id)
     if (!app) return
     registry.setEnabled(id, !app.enabled)
+    // Persist enabled apps list
+    const enabledIds = registry.getEnabled().map((a) => a.definition.manifest.id)
+    window.api.state.update({ enabledApps: enabledIds })
     forceUpdate((n) => n + 1)
+  }, [registry])
+
+  const persistAppOrder = useCallback(() => {
+    const orderedIds = registry.getAll().map((a) => a.definition.manifest.id)
+    window.api.state.update({ appOrder: orderedIds })
   }, [registry])
 
   const moveUp = useCallback((id: string) => {
@@ -279,8 +287,9 @@ const AppsSection: React.FC = () => {
     const ids = apps.map((a) => a.definition.manifest.id)
     ;[ids[idx - 1], ids[idx]] = [ids[idx], ids[idx - 1]]
     registry.reorder(ids)
+    persistAppOrder()
     forceUpdate((n) => n + 1)
-  }, [registry])
+  }, [registry, persistAppOrder])
 
   const moveDown = useCallback((id: string) => {
     const apps = registry.getAll()
@@ -289,6 +298,7 @@ const AppsSection: React.FC = () => {
     const ids = apps.map((a) => a.definition.manifest.id)
     ;[ids[idx], ids[idx + 1]] = [ids[idx + 1], ids[idx]]
     registry.reorder(ids)
+    persistAppOrder()
     forceUpdate((n) => n + 1)
   }, [registry])
 

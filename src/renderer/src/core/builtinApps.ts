@@ -15,15 +15,35 @@ const BUILTIN_APPS: Record<string, () => Promise<{ definition: AppDefinition }>>
 const DEFAULT_ENABLED = ['notes.app', 'collector.app']
 
 export async function registerBuiltinApps(registry: AppRegistry): Promise<void> {
+  // Load persisted enabled/order state
+  let savedEnabledApps: string[] | undefined
+  let savedAppOrder: string[] | undefined
+  try {
+    const configRes = await window.api.state.get()
+    if (configRes.ok) {
+      savedEnabledApps = configRes.data.enabledApps as string[] | undefined
+      savedAppOrder = configRes.data.appOrder as string[] | undefined
+    }
+  } catch { /* ignore */ }
+
+  const enabledSet = savedEnabledApps
+    ? new Set(savedEnabledApps)
+    : new Set(DEFAULT_ENABLED)
+
   // 1. Register built-in apps
   for (const [id, loader] of Object.entries(BUILTIN_APPS)) {
     try {
       const { definition } = await loader()
       registry.register(definition)
-      if (!DEFAULT_ENABLED.includes(id)) registry.setEnabled(id, false)
+      if (!enabledSet.has(id)) registry.setEnabled(id, false)
     } catch (e) {
       console.warn(`[Apps] Failed to register built-in ${id}:`, e)
     }
+  }
+
+  // Restore order if saved
+  if (savedAppOrder?.length) {
+    registry.reorder(savedAppOrder)
   }
 
   // 2. Discover third-party apps from {liteHome}/apps/
