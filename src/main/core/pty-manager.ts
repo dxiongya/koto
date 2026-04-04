@@ -35,7 +35,10 @@ export class PtyManager {
         ? 'powershell.exe'
         : process.env.SHELL || '/bin/zsh'
 
-    const proc = pty.spawn(shell, [], {
+    // Launch as login shell so .zshrc/.zprofile are sourced
+    // (loads syntax highlighting, custom prompts, PATH, etc.)
+    const args = process.platform !== 'win32' ? ['--login'] : []
+    const proc = pty.spawn(shell, args, {
       name: 'xterm-256color',
       cols: 80,
       rows: 24,
