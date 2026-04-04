@@ -160,7 +160,7 @@ export const TerminalApp: React.FC = () => {
 
         {/* Split handles overlay */}
         {activeLayout && layoutRects.size > 1 && (
-          <div className="absolute inset-0 z-10 pointer-events-none">
+          <div className="absolute inset-0 z-10 pointer-events-none" id="split-handles-container">
             <SplitHandlesRenderer node={activeLayout} />
           </div>
         )}
@@ -532,8 +532,8 @@ const SplitHandleOverlay = memo(function SplitHandleOverlay({
     e.stopPropagation()
     const startPos = isVertical ? e.clientY : e.clientX
 
-    // Get parent container size in pixels
-    const container = handleRef.current?.parentElement
+    // Use the split-handles-container (absolute inset-0) for size reference
+    const container = document.getElementById('split-handles-container')
     if (!container) return
     const containerRect = container.getBoundingClientRect()
     const totalPx = isVertical ? containerRect.height : containerRect.width
@@ -571,8 +571,8 @@ const SplitHandleOverlay = memo(function SplitHandleOverlay({
         top: `${rect.top + rect.height * offsetBefore}%`,
         left: `${rect.left}%`,
         width: `${rect.width}%`,
-        height: '4px',
-        marginTop: '-2px',
+        height: '8px',
+        marginTop: '-4px',
         cursor: 'row-resize',
         zIndex: 20,
       }
@@ -580,8 +580,8 @@ const SplitHandleOverlay = memo(function SplitHandleOverlay({
         position: 'absolute',
         top: `${rect.top}%`,
         left: `${rect.left + rect.width * offsetBefore}%`,
-        width: '4px',
-        marginLeft: '-2px',
+        width: '8px',
+        marginLeft: '-4px',
         height: `${rect.height}%`,
         cursor: 'col-resize',
         zIndex: 20,
