@@ -9,7 +9,8 @@ function cleanEnv(): Record<string, string> {
   // Remove vars that prevent nested CLI tools (e.g. Claude Code)
   delete env['CLAUDECODE']
   delete env['CLAUDE_CODE']
-  env['TERM_PROGRAM'] = 'lite'
+  // Don't override TERM_PROGRAM — user's .zshrc may conditionally load
+  // plugins (syntax highlighting, etc.) based on it matching iTerm.app
   return env
 }
 
