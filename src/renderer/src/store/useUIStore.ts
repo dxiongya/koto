@@ -27,7 +27,7 @@ export function genTerminalPersistKey(): string {
 /** A split tree node — either a single terminal or a directional split of children */
 export type SplitNode =
   | { type: 'terminal'; terminalId: string }
-  | { type: 'split'; direction: 'horizontal' | 'vertical'; children: SplitNode[] }
+  | { type: 'split'; direction: 'horizontal' | 'vertical'; children: SplitNode[]; sizes?: number[] }
 
 /** Helpers for working with SplitNode trees */
 export function collectTerminalIds(node: SplitNode): string[] {

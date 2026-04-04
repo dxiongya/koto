@@ -53,10 +53,17 @@ function computeLayoutRects(
     return result
   }
   const count = node.children.length
+  // Use custom sizes if available, otherwise equal split
+  const sizes = node.sizes?.length === count
+    ? node.sizes
+    : Array(count).fill(1 / count)
+  let offset = 0
   node.children.forEach((child, i) => {
+    const size = sizes[i]
     const childRect = node.direction === 'horizontal'
-      ? { ...rect, left: rect.left + (rect.width / count) * i, width: rect.width / count }
-      : { ...rect, top: rect.top + (rect.height / count) * i, height: rect.height / count }
+      ? { ...rect, left: rect.left + rect.width * offset, width: rect.width * size }
+      : { ...rect, top: rect.top + rect.height * offset, height: rect.height * size }
+    offset += size
     for (const [id, r] of computeLayoutRects(child, childRect)) {
       result.set(id, r)
     }
@@ -326,16 +333,29 @@ const SplitHandlesRenderer = memo(function SplitHandlesRenderer({
   if (node.type === 'terminal') return null
 
   const count = node.children.length
+  const sizes = node.sizes?.length === count ? node.sizes : Array(count).fill(1 / count)
+  let offset = 0
+
   return (
     <>
       {node.children.map((child, i) => {
+        const size = sizes[i]
         const childRect = node.direction === 'horizontal'
-          ? { ...rect, left: rect.left + (rect.width / count) * i, width: rect.width / count }
-          : { ...rect, top: rect.top + (rect.height / count) * i, height: rect.height / count }
+          ? { ...rect, left: rect.left + rect.width * offset, width: rect.width * size }
+          : { ...rect, top: rect.top + rect.height * offset, height: rect.height * size }
+        offset += size
         const key = child.type === 'terminal' ? child.terminalId : firstTerminalId(child) ?? i
         return (
           <React.Fragment key={key}>
-            {i > 0 && <SplitHandleOverlay direction={node.direction} rect={rect} index={i} count={count} />}
+            {i > 0 && (
+              <SplitHandleOverlay
+                direction={node.direction}
+                rect={rect}
+                splitNode={node}
+                index={i}
+                sizes={sizes}
+              />
+            )}
             <SplitHandlesRenderer node={child} rect={childRect} />
           </React.Fragment>
         )
@@ -455,37 +475,113 @@ const PaneTabBarMemo = memo(function PaneTabBar({
   )
 })
 
-// ── Split Handle Overlay ──
+// ── Split Handle Overlay (draggable resize) ──
+
+function updateSplitSizes(splitNode: SplitNode, newSizes: number[]): void {
+  const state = useUIStore.getState()
+  const ws = state.terminalWorkspaces.find((w) => w.id === state.activeWorkspaceId)
+  if (!ws) return
+  const group = ws.groups.find((g) => g.id === ws.activeGroupId)
+  if (!group) return
+
+  // Find and update the matching split node in the layout tree
+  function updateNode(node: SplitNode): SplitNode {
+    if (node === splitNode && node.type === 'split') {
+      return { ...node, sizes: newSizes }
+    }
+    if (node.type === 'split') {
+      const newChildren = node.children.map(updateNode)
+      if (newChildren.some((c, i) => c !== node.children[i])) {
+        return { ...node, children: newChildren }
+      }
+    }
+    return node
+  }
+
+  const newLayout = updateNode(group.layout)
+  if (newLayout !== group.layout) {
+    const nextWorkspaces = state.terminalWorkspaces.map((w) => {
+      if (w.id !== ws.id) return w
+      const groups = w.groups.map((g) => g.id === group.id ? { ...g, layout: newLayout } : g)
+      return { ...w, groups }
+    })
+    useUIStore.setState({ terminalWorkspaces: nextWorkspaces })
+  }
+}
 
 const SplitHandleOverlay = memo(function SplitHandleOverlay({
   direction,
   rect,
+  splitNode,
   index,
-  count,
+  sizes,
 }: {
   direction: 'horizontal' | 'vertical'
   rect: LayoutRect
+  splitNode: SplitNode
   index: number
-  count: number
+  sizes: number[]
 }) {
   const isVertical = direction === 'vertical'
-  const pos = index / count
+  // Position the handle at the boundary between sizes[index-1] and sizes[index]
+  const offsetBefore = sizes.slice(0, index).reduce((a, b) => a + b, 0)
+  const handleRef = useRef<HTMLDivElement>(null)
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startPos = isVertical ? e.clientY : e.clientX
+
+    // Get parent container size in pixels
+    const container = handleRef.current?.parentElement
+    if (!container) return
+    const containerRect = container.getBoundingClientRect()
+    const totalPx = isVertical ? containerRect.height : containerRect.width
+
+    const startSizes = [...sizes]
+    const minSize = 0.1 // 10% minimum
+
+    const handleMouseMove = (ev: MouseEvent) => {
+      const delta = ((isVertical ? ev.clientY : ev.clientX) - startPos) / totalPx
+      const newSizes = [...startSizes]
+      newSizes[index - 1] = Math.max(minSize, startSizes[index - 1] + delta)
+      newSizes[index] = Math.max(minSize, startSizes[index] - delta)
+      // Normalize to keep total = 1
+      const total = newSizes.reduce((a, b) => a + b, 0)
+      for (let i = 0; i < newSizes.length; i++) newSizes[i] /= total
+      updateSplitSizes(splitNode, newSizes)
+    }
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    document.body.style.cursor = isVertical ? 'row-resize' : 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [isVertical, sizes, splitNode, index])
 
   const style: React.CSSProperties = isVertical
     ? {
         position: 'absolute',
-        top: `${rect.top + rect.height * pos}%`,
+        top: `${rect.top + rect.height * offsetBefore}%`,
         left: `${rect.left}%`,
         width: `${rect.width}%`,
-        height: '1px',
+        height: '4px',
+        marginTop: '-2px',
         cursor: 'row-resize',
         zIndex: 20,
       }
     : {
         position: 'absolute',
         top: `${rect.top}%`,
-        left: `${rect.left + rect.width * pos}%`,
-        width: '1px',
+        left: `${rect.left + rect.width * offsetBefore}%`,
+        width: '4px',
+        marginLeft: '-2px',
         height: `${rect.height}%`,
         cursor: 'col-resize',
         zIndex: 20,
@@ -493,8 +589,12 @@ const SplitHandleOverlay = memo(function SplitHandleOverlay({
 
   return (
     <div
+      ref={handleRef}
       style={style}
-      className="bg-border-subtle hover:bg-border-strong pointer-events-auto"
-    />
+      className="pointer-events-auto group"
+      onMouseDown={handleMouseDown}
+    >
+      <div className={`${isVertical ? 'h-px w-full' : 'w-px h-full'} bg-border-subtle group-hover:bg-accent-main/50 mx-auto my-auto`} />
+    </div>
   )
 })
