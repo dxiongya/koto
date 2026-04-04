@@ -808,6 +808,7 @@ const TerminalAppSection: React.FC<{
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [collapsedWs, setCollapsedWs] = useState<Set<string>>(new Set())
 
   // Enter key rename trigger
   useEffect(() => {
@@ -1021,8 +1022,18 @@ const TerminalAppSection: React.FC<{
     useUIStore.getState().unsplitTerminal(termId)
   }, [])
 
+  const toggleWsCollapse = useCallback((wsId: string) => {
+    setCollapsedWs((prev) => {
+      const next = new Set(prev)
+      if (next.has(wsId)) next.delete(wsId)
+      else next.add(wsId)
+      return next
+    })
+  }, [])
+
   const renderWorkspace = (ws: typeof terminalWorkspaces[0]) => {
     const isActiveWs = ws.id === activeWorkspaceId
+    const isCollapsed = collapsedWs.has(ws.id)
     return (
       <div
         key={ws.id}
@@ -1031,10 +1042,16 @@ const TerminalAppSection: React.FC<{
       >
         {/* Workspace header */}
         <div
-          className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
+          className={`pl-[12px] py-[4px] pr-4 flex items-center gap-1 cursor-pointer text-[13px] tracking-wide relative group
             ${isActiveWs && currentApp === 'terminal.app' ? 'text-tx-active' : 'text-tx-main hover:bg-bg-hover'}`}
-          onClick={() => { setActiveWorkspace(ws.id); setCurrentApp('terminal.app') }}
+          onClick={() => { setActiveWorkspace(ws.id); setCurrentApp('terminal.app'); if (isCollapsed) toggleWsCollapse(ws.id) }}
         >
+          <button
+            onClick={(e) => { e.stopPropagation(); toggleWsCollapse(ws.id) }}
+            className="p-0.5 text-tx-faint hover:text-tx-muted shrink-0"
+          >
+            {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+          </button>
           <Folder size={13} className={`${isActiveWs ? 'text-tx-active' : 'text-tx-muted'} shrink-0`} />
           <span className={`truncate ${isActiveWs && currentApp === 'terminal.app' ? 'font-medium' : ''}`}>{ws.name}</span>
           <button
@@ -1045,8 +1062,8 @@ const TerminalAppSection: React.FC<{
             <X size={12} />
           </button>
         </div>
-        {/* Terminals in this workspace */}
-        {ws.groups.map((group) => {
+        {/* Terminals in this workspace (collapsible) */}
+        {!isCollapsed && ws.groups.map((group) => {
           const tids = collectTerminalIds(group.layout)
           if (tids.length === 1) {
             const s = sessions.find((ss) => ss.id === tids[0])
@@ -1067,13 +1084,13 @@ const TerminalAppSection: React.FC<{
           )
         })}
         {/* Add terminal to this workspace */}
-        <button
+        {!isCollapsed && <button
           type="button"
           onClick={() => handleCreateInWorkspace(ws.id, ws.path)}
           className="w-full text-left pl-[36px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset"
         >
           + new terminal
-        </button>
+        </button>}
       </div>
     )
   }
