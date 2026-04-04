@@ -965,7 +965,7 @@ const TerminalAppSection: React.FC<{
         onDragStart={(e) => handleDragStart(e, session.id, workspaceId)}
         onDragOver={(e) => handleDragOver(e, session.id)}
         onDragLeave={handleDragLeave}
-        onDrop={(e) => handleDrop(e, session.id, workspaceId)}
+        onDrop={(e) => { e.stopPropagation(); handleDrop(e, session.id, workspaceId) }}
         className={`${prefix ? 'pl-[8px]' : 'pl-[36px]'} py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
           ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}
@@ -1005,10 +1005,30 @@ const TerminalAppSection: React.FC<{
     )
   }
 
+  // Drop on workspace area (not on a specific terminal) → unsplit from group
+  const handleWorkspaceDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes('application/x-terminal-drag')) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }, [])
+
+  const handleWorkspaceDrop = useCallback((e: React.DragEvent, wsId: string) => {
+    e.preventDefault()
+    const raw = e.dataTransfer.getData('application/x-terminal-drag')
+    if (!raw) return
+    const { termId } = JSON.parse(raw) as { termId: string; workspaceId: string }
+    // Unsplit: remove from current split group → create standalone group
+    useUIStore.getState().unsplitTerminal(termId)
+  }, [])
+
   const renderWorkspace = (ws: typeof terminalWorkspaces[0]) => {
     const isActiveWs = ws.id === activeWorkspaceId
     return (
-      <div key={ws.id}>
+      <div
+        key={ws.id}
+        onDragOver={handleWorkspaceDragOver}
+        onDrop={(e) => handleWorkspaceDrop(e, ws.id)}
+      >
         {/* Workspace header */}
         <div
           className={`pl-[20px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
