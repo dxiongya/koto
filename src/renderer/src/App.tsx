@@ -143,6 +143,8 @@ export default function App() {
               activeTerminalId: sessions[sessions.length - 1].id,
               terminalWorkspaces: workspaces,
               activeWorkspaceId: savedActiveWsId && workspaces.some((ws) => ws.id === savedActiveWsId) ? savedActiveWsId : workspaces[workspaces.length - 1]?.id ?? null,
+              // Terminal sessions exist → always show terminal.app
+              currentApp: 'terminal.app',
             })
           })
         }
