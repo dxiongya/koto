@@ -125,8 +125,10 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
             // Replay raw PTY output after first successful fit (correct column width)
             if (!replayedRef.current && replayBufferRef.current) {
               replayedRef.current = true
-              term.write(replayBufferRef.current)
-              replayBufferRef.current = undefined // free memory
+              // Replay raw PTY output, then reset cursor state
+              // Replay buffer may contain hide-cursor sequences that persist
+              term.write(replayBufferRef.current + '\x1b[?25h')
+              replayBufferRef.current = undefined
             }
           } catch {
             // ignore fit errors during transitions
