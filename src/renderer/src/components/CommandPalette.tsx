@@ -6,6 +6,8 @@ import {
 } from 'lucide-react'
 import { useUIStore, genTerminalPersistKey } from '../store/useUIStore'
 import type { AppType } from '../../../shared/types'
+import type { AppSearchResult } from '../../../shared/app-interface'
+import { getAppBus } from '../core/AppContext'
 
 // ── Types ──
 
@@ -181,18 +183,17 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     setSearching(true)
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     searchTimerRef.current = setTimeout(async () => {
-      const bus = (await import('../core/AppContext')).getAppBus()
+      const bus = getAppBus()
 
       // Fan out to all registered search providers
       const providers = ['notes.search', 'collector.search']
+      const available = providers.filter((cap) => bus.has(cap))
       const results = await Promise.all(
-        providers
-          .filter((cap) => bus.has(cap))
-          .map((cap) => bus.request<any[]>(cap, { query: searchQuery }).catch(() => null)),
+        available.map((cap) => bus.request<AppSearchResult[]>(cap, { query: searchQuery }).catch(() => null)),
       )
 
       // Merge + sort by score
-      const allResults = results.flat().filter(Boolean) as import('../../../../shared/app-interface').AppSearchResult[]
+      const allResults = (results.flat().filter(Boolean) as AppSearchResult[])
       allResults.sort((a, b) => b.score - a.score)
 
       // Convert to PaletteItems
@@ -437,32 +438,26 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       },
     )
 
-    // Merge async content search results into default mode
-    if (searchResults.length > 0) all.push(...searchResults)
     return all
-  }, [isCommandMode, isContentMode, isLineMode, isHelpMode, searchResults, noteFiles, codeFiles, collectorItems, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
+  }, [isCommandMode, isContentMode, isLineMode, isHelpMode, noteFiles, codeFiles, collectorItems, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
 
   // ── Filter + sort ──
-  // Content search results (category 'Content Matches' / 'Collector') bypass fuzzyMatch
-  // because they're already validated by the backend search.
   const filtered = useMemo(() => {
     if (isContentMode || isLineMode || isHelpMode) return items
     if (!searchQuery) return items
-    // Bus search results bypass fuzzyMatch (already ranked by backend)
-    const busCategories = new Set(['Notes Results', 'Collector Results'])
-    return items
-      .filter((item) => busCategories.has(item.category) || fuzzyMatch(searchQuery, item.label))
+
+    // Start with fuzzy-matched static items
+    const fuzzyMatched = items
+      .filter((item) => fuzzyMatch(searchQuery, item.label))
       .sort((a, b) => {
-        // Bus results first (already sorted by score), then fuzzy matches
-        const isA = busCategories.has(a.category) ? 1 : 0
-        const isB = busCategories.has(b.category) ? 1 : 0
-        if (isA !== isB) return isB - isA
-        // Within same tier, use fuzzy score
         const scoreA = fuzzyScore(searchQuery, a.label) + (a.boost || 0) * 2
         const scoreB = fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 2
         return scoreB - scoreA
       })
-  }, [items, searchQuery, isContentMode, isLineMode, isHelpMode])
+
+    // Prepend Bus search results (already ranked by backend, bypass fuzzy filter)
+    return [...searchResults, ...fuzzyMatched]
+  }, [items, searchQuery, searchResults, isContentMode, isLineMode, isHelpMode])
 
   // ── Group by category ──
   const grouped = useMemo(() => {
