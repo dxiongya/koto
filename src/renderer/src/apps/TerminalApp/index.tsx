@@ -530,40 +530,54 @@ const SplitHandleOverlay = memo(function SplitHandleOverlay({
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    const startPos = isVertical ? e.clientY : e.clientX
+    const handle = handleRef.current
+    if (!handle) return
 
-    // Use the split-handles-container (absolute inset-0) for size reference
+    const startPos = isVertical ? e.clientY : e.clientX
     const container = document.getElementById('split-handles-container')
     if (!container) return
     const containerRect = container.getBoundingClientRect()
     const totalPx = isVertical ? containerRect.height : containerRect.width
 
     const startSizes = [...sizes]
-    const minSize = 0.1 // 10% minimum
+    const minSize = 0.1
+    let finalSizes = startSizes
 
+    // During drag: only move the handle element (pure CSS, no React re-render)
     const handleMouseMove = (ev: MouseEvent) => {
       const delta = ((isVertical ? ev.clientY : ev.clientX) - startPos) / totalPx
       const newSizes = [...startSizes]
       newSizes[index - 1] = Math.max(minSize, startSizes[index - 1] + delta)
       newSizes[index] = Math.max(minSize, startSizes[index] - delta)
-      // Normalize to keep total = 1
       const total = newSizes.reduce((a, b) => a + b, 0)
       for (let i = 0; i < newSizes.length; i++) newSizes[i] /= total
-      updateSplitSizes(splitNode, newSizes)
+      finalSizes = newSizes
+
+      // Move handle via CSS transform (no React update)
+      const newOffset = newSizes.slice(0, index).reduce((a, b) => a + b, 0)
+      if (isVertical) {
+        handle.style.top = `${rect.top + rect.height * newOffset}%`
+      } else {
+        handle.style.left = `${rect.left + rect.width * newOffset}%`
+      }
     }
 
+    // On release: commit sizes to store (single React update)
     const handleMouseUp = () => {
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
+      if (finalSizes !== startSizes) {
+        updateSplitSizes(splitNode, finalSizes)
+      }
     }
 
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
     document.body.style.cursor = isVertical ? 'row-resize' : 'col-resize'
     document.body.style.userSelect = 'none'
-  }, [isVertical, sizes, splitNode, index])
+  }, [isVertical, sizes, splitNode, index, rect])
 
   const style: React.CSSProperties = isVertical
     ? {
