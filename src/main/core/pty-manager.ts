@@ -1,5 +1,5 @@
 import * as pty from 'node-pty'
-import { execSync } from 'child_process'
+import { exec } from 'child_process'
 import { BrowserWindow } from 'electron'
 import { IpcChannels } from '../../shared/types'
 
@@ -85,30 +85,33 @@ export class PtyManager {
     return session.replayBuffer.join('')
   }
 
-  /** Get the current working directory of a PTY session */
-  getCwd(id: string): string | null {
+  /** Get the current working directory of a PTY session (async — never blocks main process) */
+  getCwd(id: string): Promise<string | null> {
     const session = this.sessions.get(id)
-    if (!session) return null
-    try {
-      const pid = session.process.pid
-      // macOS: use lsof to find cwd
-      if (process.platform === 'darwin') {
-        const out = execSync(`lsof -p ${pid} -Fn 2>/dev/null | grep '^n/' | grep cwd`, {
-          encoding: 'utf-8',
-          timeout: 2000,
+    if (!session || session.exited) return Promise.resolve(session?.initialCwd ?? null)
+
+    const pid = session.process.pid
+
+    if (process.platform === 'darwin') {
+      return new Promise((resolve) => {
+        exec(`lsof -p ${pid} -Fn 2>/dev/null | grep '^n/' | grep cwd`, { timeout: 1000 }, (err, stdout) => {
+          if (err || !stdout) { resolve(session.initialCwd); return }
+          const match = stdout.match(/^n(.+)$/m)
+          resolve(match ? match[1] : session.initialCwd)
         })
-        const match = out.match(/^n(.+)$/m)
-        if (match) return match[1]
-      }
-      // Linux: read /proc symlink
-      if (process.platform === 'linux') {
-        const fs = require('fs')
-        return fs.readlinkSync(`/proc/${pid}/cwd`)
-      }
-    } catch {
-      // fallback
+      })
     }
-    return session.initialCwd
+
+    if (process.platform === 'linux') {
+      return new Promise((resolve) => {
+        const fs = require('fs')
+        fs.readlink(`/proc/${pid}/cwd`, (err: Error | null, linkPath: string) => {
+          resolve(err ? session.initialCwd : linkPath)
+        })
+      })
+    }
+
+    return Promise.resolve(session.initialCwd)
   }
 
   write(id: string, data: string): void {
