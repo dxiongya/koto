@@ -157,25 +157,43 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
+  // ── App search shortcuts ──
+  // e.g. "n design" → search only notes.app for "design"
+  // Configurable per app, default: n=notes, c=collector, t=terminal
+  const APP_SHORTCUTS: Record<string, { appId: string; searchCap: string; label: string }> = {
+    'n': { appId: 'notes.app', searchCap: 'notes.search', label: 'Notes' },
+    'c': { appId: 'collector.app', searchCap: 'collector.search', label: 'Collector' },
+  }
+
   // ── Mode detection ──
-  // > = commands/system, # = content search (notes + collector), : = line, ? = help
+  // > = commands, # = all content search, : = line, ? = help
+  // <shortcut><space> = app-specific search (e.g. "n design")
   const isCommandMode = query.startsWith('>')
-  const isContentMode = query.startsWith('#')  // content + collector search
+  const isContentMode = query.startsWith('#')
   const isLineMode = query.startsWith(':')
   const isHelpMode = query.startsWith('?')
-  const searchQuery = (isCommandMode || isContentMode || isLineMode || isHelpMode)
-    ? query.slice(1).trim()
-    : query.trim()
 
-  // ── Unified Bus search — each app provides its own search via AppBus ──
-  // Notes → 'notes.search', Collector → 'collector.search', future apps → '*.search'
+  // Check for app shortcut: single char + space
+  const appShortcutMatch = !isCommandMode && !isContentMode && !isLineMode && !isHelpMode
+    && query.length >= 2 && query[1] === ' ' && APP_SHORTCUTS[query[0]]
+    ? APP_SHORTCUTS[query[0]]
+    : null
+
+  const searchQuery = appShortcutMatch
+    ? query.slice(2).trim()
+    : (isCommandMode || isContentMode || isLineMode || isHelpMode)
+      ? query.slice(1).trim()
+      : query.trim()
+
+  // ── Unified Bus search ──
 
   const SEARCH_ICON_MAP: Record<string, React.FC<{ size?: number; className?: string }>> = {
     'file-text': FileText, link: Link, image: Image, twitter: Twitter,
     archive: Archive, video: Video, monitor: Monitor, type: Type,
   }
 
-  const shouldSearch = (isContentMode && searchQuery.length >= 1) ||
+  const shouldSearch = (appShortcutMatch && searchQuery.length >= 1) ||
+    (isContentMode && searchQuery.length >= 1) ||
     (!isCommandMode && !isLineMode && !isHelpMode && searchQuery.length >= 2)
 
   useEffect(() => {
@@ -185,8 +203,10 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     searchTimerRef.current = setTimeout(async () => {
       const bus = getAppBus()
 
-      // Fan out to all registered search providers
-      const providers = ['notes.search', 'collector.search']
+      // If app shortcut active, only search that app. Otherwise fan out to all.
+      const providers = appShortcutMatch
+        ? [appShortcutMatch.searchCap]
+        : ['notes.search', 'collector.search']
       const available = providers.filter((cap) => bus.has(cap))
       const results = await Promise.all(
         available.map((cap) => bus.request<AppSearchResult[]>(cap, { query: searchQuery }).catch(() => null)),
@@ -227,7 +247,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       setSearching(false)
     }, 250)
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
-  }, [shouldSearch, searchQuery])
+  }, [shouldSearch, searchQuery, appShortcutMatch?.searchCap])
 
   // Recent files lookup
   const recentPathSet = useMemo(() => {
@@ -521,6 +541,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
   const placeholder = isCommandMode ? 'Type a command...'
     : isContentMode ? 'Search notes & collector content...'
+    : appShortcutMatch ? `Search ${appShortcutMatch.label}...`
     : isLineMode ? 'Type a line number...'
     : isHelpMode ? ''
     : 'Search files, apps, actions...'
@@ -547,17 +568,23 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
             className="flex-1 bg-transparent text-tx-main text-[13px] outline-none placeholder:text-tx-faint"
             spellCheck={false}
           />
-          {!isCommandMode && !isContentMode && !isLineMode && !isHelpMode && (
+          {!isCommandMode && !isContentMode && !isLineMode && !isHelpMode && !appShortcutMatch && (
             <div className="flex items-center gap-1.5">
-              <button type="button" aria-label="Command mode" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted focus-visible:ring-1 focus-visible:ring-accent-main/50"
+              <button type="button" aria-label="Command mode" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
                 onClick={() => { setQuery('>'); inputRef.current?.focus() }}>{'>'}</button>
-              <button type="button" aria-label="Search content" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted focus-visible:ring-1 focus-visible:ring-accent-main/50"
+              <button type="button" aria-label="Search content" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
                 onClick={() => { setQuery('#'); inputRef.current?.focus() }}>#</button>
-              <button type="button" aria-label="Go to line" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted focus-visible:ring-1 focus-visible:ring-accent-main/50"
+              {Object.entries(APP_SHORTCUTS).map(([key, { label }]) => (
+                <button key={key} type="button" aria-label={`Search ${label}`}
+                  className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
+                  onClick={() => { setQuery(`${key} `); inputRef.current?.focus() }}>{key}</button>
+              ))}
+              <button type="button" aria-label="Go to line" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
                 onClick={() => { setQuery(':'); inputRef.current?.focus() }}>:</button>
-              <button type="button" aria-label="Help" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted focus-visible:ring-1 focus-visible:ring-accent-main/50"
-                onClick={() => { setQuery('?'); inputRef.current?.focus() }}>?</button>
             </div>
+          )}
+          {appShortcutMatch && (
+            <span className="text-[10px] text-accent-main px-1.5 py-0.5">{appShortcutMatch.label}</span>
           )}
         </div>
 
