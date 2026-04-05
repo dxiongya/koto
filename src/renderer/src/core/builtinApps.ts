@@ -1,8 +1,9 @@
 /**
  * App Registration — registers built-in apps + discovers third-party apps.
  */
-import type { AppDefinition } from '../../../shared/app-interface'
+import type { AppDefinition, LiteAppAPI } from '../../../shared/app-interface'
 import type { AppRegistry } from './AppRegistry'
+import { getAppBus } from './AppContext'
 
 // Built-in apps — lazy loaded
 const BUILTIN_APPS: Record<string, () => Promise<{ definition: AppDefinition }>> = {
@@ -30,12 +31,34 @@ export async function registerBuiltinApps(registry: AppRegistry): Promise<void> 
     ? new Set(savedEnabledApps)
     : new Set(DEFAULT_ENABLED)
 
-  // 1. Register built-in apps
+  // 1. Register built-in apps + call onRegister to set up Bus providers
+  const bus = getAppBus()
   for (const [id, loader] of Object.entries(BUILTIN_APPS)) {
     try {
       const { definition } = await loader()
       registry.register(definition)
       if (!enabledSet.has(id)) registry.setEnabled(id, false)
+
+      // Call onRegister with a minimal API so apps can register Bus capabilities
+      if (definition.onRegister) {
+        let liteHome = ''
+        try { const r = await window.api.lite.getHome(); if (r.ok) liteHome = r.data } catch {}
+        const api: LiteAppAPI = {
+          id,
+          dataDir: liteHome ? `${liteHome}/apps/${id}/data` : '',
+          bus,
+          fs: {
+            readFile: async (p) => { const r = await window.api.fs.readFile(p); return r.ok ? r.data : '' },
+            writeFile: async (p, c) => { await window.api.fs.writeFile(p, c) },
+            readDir: async (p) => { const r = await window.api.fs.readDir(p); return r.ok ? r.data : [] },
+          },
+          state: { get: async () => null, set: async () => {} },
+          theme: { current: 'dark', isDark: true },
+          shell: { exec: async () => '' },
+          commands: { register: () => () => {} },
+        }
+        definition.onRegister(api)
+      }
     } catch (e) {
       console.warn(`[Apps] Failed to register built-in ${id}:`, e)
     }
