@@ -92,6 +92,20 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         window.api.terminal.write(terminalId, data)
       })
 
+      // Intercept paste — if from notes.app, prepend source file path
+      const handlePaste = (e: ClipboardEvent) => {
+        const sourceFile = e.clipboardData?.getData('text/x-lite-source')
+        if (sourceFile) {
+          e.preventDefault()
+          const text = e.clipboardData?.getData('text/plain') || ''
+          // Quote path if it has spaces, prepend as context comment
+          const quotedPath = sourceFile.includes(' ') ? `"${sourceFile}"` : sourceFile
+          const injected = `# from: ${quotedPath}\n${text}`
+          window.api.terminal.write(terminalId, injected)
+        }
+      }
+      containerRef.current?.addEventListener('paste', handlePaste)
+
       // PTY output → terminal (per-ID multiplexed listener, O(1) dispatch)
       const unsubData = window.api.terminal.onDataForId(terminalId, (data) => {
         term.write(data)
@@ -141,6 +155,7 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         cancelAnimationFrame(resizeRaf)
         resizeObserver.disconnect()
         themeObserver.disconnect()
+        containerRef.current?.removeEventListener('paste', handlePaste)
         unsubData()
         unsubExit()
         term.dispose()

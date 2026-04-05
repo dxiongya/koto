@@ -247,8 +247,16 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     setSearching(true)
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     searchTimerRef.current = setTimeout(async () => {
+      // Get liteHome from store or IPC fallback
+      let home = liteHome
+      if (!home) {
+        try {
+          const homeRes = await window.api.lite.getHome()
+          if (homeRes.ok) home = homeRes.data
+        } catch {}
+      }
       const dirs: string[] = []
-      if (liteHome) dirs.push(`${liteHome}/notes`)
+      if (home) dirs.push(`${home}/notes`)
       if (codeProjectPath) dirs.push(codeProjectPath)
       if (dirs.length === 0) { setSearchResults([]); setSearching(false); return }
 
@@ -257,9 +265,8 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
       const store = useUIStore.getState()
       const items: PaletteItem[] = res.data.map((match, i) => {
-        const isNote = liteHome && match.filePath.startsWith(`${liteHome}/notes`)
-        // Show relative path for notes
-        const relPath = isNote ? match.filePath.replace(`${liteHome}/notes/`, '') : match.fileName
+        const isNote = home && match.filePath.startsWith(`${home}/notes`)
+        const relPath = isNote ? match.filePath.replace(`${home}/notes/`, '') : match.fileName
         return {
           id: `search:${match.filePath}:${match.line}:${i}`,
           label: relPath,
