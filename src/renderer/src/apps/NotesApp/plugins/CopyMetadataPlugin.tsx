@@ -1,10 +1,11 @@
 /**
- * CopyMetadataPlugin — Attaches file path metadata to clipboard on copy.
+ * CopyMetadataPlugin — Stores source file path on copy for terminal paste.
  *
- * When text is copied from the notes editor, a custom MIME type
- * (text/x-lite-source) is added to the clipboard containing the
- * source file path. Terminal.app can detect this on paste and
- * prepend the file path as context.
+ * When text is copied from the notes editor, the source file path is stored
+ * in window.__liteClipboardSource. Terminal.app checks this on Cmd+V and
+ * prepends the file path as context. The variable is cleared after one paste.
+ *
+ * Other apps' paste behavior is unaffected — they don't check this variable.
  */
 import { useEffect } from 'react'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
@@ -17,11 +18,12 @@ export function CopyMetadataPlugin(): null {
     const root = editor.getRootElement()
     if (!root) return
 
-    const handleCopy = (e: ClipboardEvent) => {
+    const handleCopy = () => {
       const filePath = useUIStore.getState().appStates['notes.app']?.activeFilePath
-      if (!filePath || !e.clipboardData) return
-      // Attach source file path as custom MIME type
-      e.clipboardData.setData('text/x-lite-source', filePath)
+      if (filePath) {
+        // Store source path globally — terminal paste handler reads this
+        ;(window as any).__liteClipboardSource = filePath
+      }
     }
 
     root.addEventListener('copy', handleCopy)

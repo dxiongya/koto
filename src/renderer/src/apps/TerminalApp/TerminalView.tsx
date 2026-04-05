@@ -92,19 +92,26 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         window.api.terminal.write(terminalId, data)
       })
 
-      // Intercept paste — if from notes.app, prepend source file path
-      const handlePaste = (e: ClipboardEvent) => {
-        const sourceFile = e.clipboardData?.getData('text/x-lite-source')
-        if (sourceFile) {
-          e.preventDefault()
-          const text = e.clipboardData?.getData('text/plain') || ''
-          // Quote path if it has spaces, prepend as context comment
-          const quotedPath = sourceFile.includes(' ') ? `"${sourceFile}"` : sourceFile
-          const injected = `# from: ${quotedPath}\n${text}`
-          window.api.terminal.write(terminalId, injected)
+      // Intercept Cmd+V — check for notes.app source metadata
+      // CopyMetadataPlugin stores the last copied source path in a global
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.type === 'keydown' && e.metaKey && e.key === 'v') {
+          const sourceFile = (window as any).__liteClipboardSource as string | undefined
+          if (sourceFile) {
+            // Notes copy detected — read clipboard text and prepend source path
+            navigator.clipboard.readText().then((text) => {
+              if (text) {
+                const quotedPath = sourceFile.includes(' ') ? `"${sourceFile}"` : sourceFile
+                window.api.terminal.write(terminalId, `# from: ${quotedPath}\n${text}`)
+              }
+              // Clear after use — next paste from other sources won't have metadata
+              ;(window as any).__liteClipboardSource = undefined
+            })
+            return false // Prevent xterm default paste
+          }
         }
-      }
-      containerRef.current?.addEventListener('paste', handlePaste)
+        return true // Let xterm handle normally
+      })
 
       // PTY output → terminal (per-ID multiplexed listener, O(1) dispatch)
       const unsubData = window.api.terminal.onDataForId(terminalId, (data) => {
@@ -155,7 +162,6 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         cancelAnimationFrame(resizeRaf)
         resizeObserver.disconnect()
         themeObserver.disconnect()
-        containerRef.current?.removeEventListener('paste', handlePaste)
         unsubData()
         unsubExit()
         term.dispose()

@@ -238,8 +238,10 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     link: Link, image: Image, video: Video, tweet: Twitter, screenshot: Monitor, text: Type,
   }
 
-  // 1 char minimum — Chinese/CJK characters are meaningful even at 1 char
-  const shouldContentSearch = isContentMode && searchQuery.length >= 1
+  // Content search: triggers in # mode OR default mode (2+ chars)
+  // # mode = dedicated content search, default mode = unified (file names + content)
+  const shouldContentSearch = (isContentMode && searchQuery.length >= 1) ||
+    (!isCommandMode && !isLineMode && !isHelpMode && searchQuery.length >= 2)
 
   // Content search (notes + code files) — only in # mode
   useEffect(() => {
