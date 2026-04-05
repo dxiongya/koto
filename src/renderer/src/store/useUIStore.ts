@@ -98,6 +98,7 @@ interface UIState {
   // Navigation
   currentApp: AppType
   showCommandPalette: boolean
+  showContextPanel: boolean
 
   // Sidebar
   sidebarOpen: boolean
@@ -148,6 +149,7 @@ interface UIState {
   setCurrentApp: (app: AppType) => void
   setShowCommandPalette: (show: boolean) => void
   toggleCommandPalette: () => void
+  setShowContextPanel: (show: boolean) => void
   setTheme: (themeId: string) => void
   toggleTheme: () => void
   setFontFamily: (fontId: FontId) => void
@@ -233,6 +235,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   liteHome: null,
   currentApp: 'notes.app',
   showCommandPalette: false,
+  showContextPanel: false,
   sidebarOpen: true,
   appStates: defaultAppStates(),
   notesExpandedGroups: [],
@@ -263,6 +266,7 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   setShowCommandPalette: (show) => set({ showCommandPalette: show }),
   toggleCommandPalette: () => set((s) => ({ showCommandPalette: !s.showCommandPalette })),
+  setShowContextPanel: (show) => set({ showContextPanel: show }),
 
   setTheme: (themeId) => {
     const theme = builtinThemes[themeId]

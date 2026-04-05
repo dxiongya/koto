@@ -5,6 +5,7 @@ import { MainLayout } from './layouts/MainLayout'
 import { SettingsApp } from './apps/SettingsApp'
 import { ContextMenuProvider } from './components/ContextMenu'
 import { FileSwitcher } from './components/FileSwitcher'
+import { ContextPanel } from './components/ContextPanel'
 import { builtinThemes, applyTheme, applyFont } from './themes'
 import type { FontId } from './themes'
 import { getAppRegistry } from './core/AppContext'
@@ -257,6 +258,13 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const store = useUIStore.getState()
 
+      // Cmd+Shift+K — Context Panel (inject notes/collector into terminal)
+      if (e.metaKey && e.key === 'k' && e.shiftKey) {
+        e.preventDefault()
+        store.setShowContextPanel(!store.showContextPanel)
+        return
+      }
+
       // Cmd+K / Cmd+P — Command Palette (file search)
       if (e.metaKey && (e.key === 'k' || e.key === 'p') && !e.shiftKey) {
         e.preventDefault()
@@ -364,6 +372,7 @@ export default function App() {
       </MainLayout>
       <ContextMenuProvider />
       <FileSwitcher />
+      <ContextPanel />
     </>
   )
 }
