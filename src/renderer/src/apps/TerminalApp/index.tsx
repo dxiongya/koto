@@ -345,15 +345,16 @@ const SplitHandlesRenderer = memo(function SplitHandlesRenderer({
           : { ...rect, top: rect.top + rect.height * offset, height: rect.height * size }
         offset += size
         const key = child.type === 'terminal' ? child.terminalId : firstTerminalId(child) ?? i
+        const offsetBeforeThis = sizes.slice(0, i).reduce((a, b) => a + b, 0)
         return (
           <React.Fragment key={key}>
             {i > 0 && (
               <SplitHandleOverlay
                 direction={node.direction}
                 rect={rect}
-                splitNode={node}
+                nodeRef={node}
                 index={i}
-                sizes={sizes}
+                offsetPct={offsetBeforeThis}
               />
             )}
             <SplitHandlesRenderer node={child} rect={childRect} />
@@ -475,140 +476,107 @@ const PaneTabBarMemo = memo(function PaneTabBar({
   )
 })
 
-// ── Split Handle Overlay (draggable resize) ──
+// ── Split Handle (vanilla DOM — no React state during drag) ──
 
-function updateSplitSizes(splitNode: SplitNode, newSizes: number[]): void {
-  const state = useUIStore.getState()
-  const ws = state.terminalWorkspaces.find((w) => w.id === state.activeWorkspaceId)
-  if (!ws) return
-  const group = ws.groups.find((g) => g.id === ws.activeGroupId)
-  if (!group) return
-
-  // Find and update the matching split node in the layout tree
-  function updateNode(node: SplitNode): SplitNode {
-    if (node === splitNode && node.type === 'split') {
-      return { ...node, sizes: newSizes }
-    }
-    if (node.type === 'split') {
-      const newChildren = node.children.map(updateNode)
-      if (newChildren.some((c, i) => c !== node.children[i])) {
-        return { ...node, children: newChildren }
-      }
-    }
-    return node
-  }
-
-  const newLayout = updateNode(group.layout)
-  if (newLayout !== group.layout) {
-    const nextWorkspaces = state.terminalWorkspaces.map((w) => {
-      if (w.id !== ws.id) return w
-      const groups = w.groups.map((g) => g.id === group.id ? { ...g, layout: newLayout } : g)
-      return { ...w, groups }
-    })
-    useUIStore.setState({ terminalWorkspaces: nextWorkspaces })
-  }
-}
-
-const SplitHandleOverlay = memo(function SplitHandleOverlay({
+function SplitHandleOverlay({
   direction,
   rect,
-  splitNode,
+  nodeRef,
   index,
-  sizes,
+  offsetPct,
 }: {
   direction: 'horizontal' | 'vertical'
   rect: LayoutRect
-  splitNode: SplitNode
+  nodeRef: SplitNode  // captured at render time for mouseup commit
   index: number
-  sizes: number[]
+  offsetPct: number   // pre-computed offset percentage
 }) {
   const isVertical = direction === 'vertical'
-  // Position the handle at the boundary between sizes[index-1] and sizes[index]
-  const offsetBefore = sizes.slice(0, index).reduce((a, b) => a + b, 0)
-  const handleRef = useRef<HTMLDivElement>(null)
+  const ref = useRef<HTMLDivElement>(null)
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const handle = handleRef.current
+  useEffect(() => {
+    const handle = ref.current
     if (!handle) return
 
-    const startPos = isVertical ? e.clientY : e.clientX
-    const container = document.getElementById('split-handles-container')
-    if (!container) return
-    const containerRect = container.getBoundingClientRect()
-    const totalPx = isVertical ? containerRect.height : containerRect.width
+    const onMouseDown = (e: MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
 
-    const startSizes = [...sizes]
-    const minSize = 0.1
-    let finalSizes = startSizes
+      const container = document.getElementById('split-handles-container')
+      if (!container) return
+      const cRect = container.getBoundingClientRect()
+      const totalPx = isVertical ? cRect.height : cRect.width
+      const startPos = isVertical ? e.clientY : e.clientX
 
-    // During drag: only move the handle element (pure CSS, no React re-render)
-    const handleMouseMove = (ev: MouseEvent) => {
-      const delta = ((isVertical ? ev.clientY : ev.clientX) - startPos) / totalPx
-      const newSizes = [...startSizes]
-      newSizes[index - 1] = Math.max(minSize, startSizes[index - 1] + delta)
-      newSizes[index] = Math.max(minSize, startSizes[index] - delta)
-      const total = newSizes.reduce((a, b) => a + b, 0)
-      for (let i = 0; i < newSizes.length; i++) newSizes[i] /= total
-      finalSizes = newSizes
+      // Read current sizes from the node at drag start
+      const node = nodeRef
+      if (node.type !== 'split') return
+      const count = node.children.length
+      const startSizes = node.sizes?.length === count ? [...node.sizes] : Array(count).fill(1 / count)
+      let finalSizes = startSizes
 
-      // Move handle via CSS transform (no React update)
-      const newOffset = newSizes.slice(0, index).reduce((a, b) => a + b, 0)
-      if (isVertical) {
-        handle.style.top = `${rect.top + rect.height * newOffset}%`
-      } else {
-        handle.style.left = `${rect.left + rect.width * newOffset}%`
+      const onMouseMove = (ev: MouseEvent) => {
+        const delta = ((isVertical ? ev.clientY : ev.clientX) - startPos) / totalPx
+        const ns = [...startSizes]
+        ns[index - 1] = Math.max(0.1, startSizes[index - 1] + delta)
+        ns[index] = Math.max(0.1, startSizes[index] - delta)
+        const total = ns.reduce((a, b) => a + b, 0)
+        for (let i = 0; i < ns.length; i++) ns[i] /= total
+        finalSizes = ns
+        // CSS-only position update
+        const newOff = ns.slice(0, index).reduce((a, b) => a + b, 0)
+        if (isVertical) handle.style.top = `${rect.top + rect.height * newOff}%`
+        else handle.style.left = `${rect.left + rect.width * newOff}%`
       }
+
+      const onMouseUp = () => {
+        document.removeEventListener('mousemove', onMouseMove)
+        document.removeEventListener('mouseup', onMouseUp)
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+        // Single store update on release
+        if (finalSizes !== startSizes) {
+          const state = useUIStore.getState()
+          const ws = state.terminalWorkspaces.find((w) => w.id === state.activeWorkspaceId)
+          if (!ws) return
+          const group = ws.groups.find((g) => g.id === ws.activeGroupId)
+          if (!group) return
+          function updateNode(n: SplitNode): SplitNode {
+            if (n === node && n.type === 'split') return { ...n, sizes: finalSizes }
+            if (n.type === 'split') {
+              const ch = n.children.map(updateNode)
+              return ch.some((c, i) => c !== n.children[i]) ? { ...n, children: ch } : n
+            }
+            return n
+          }
+          const newLayout = updateNode(group.layout)
+          if (newLayout !== group.layout) {
+            useUIStore.setState({
+              terminalWorkspaces: state.terminalWorkspaces.map((w) =>
+                w.id !== ws.id ? w : { ...w, groups: w.groups.map((g) => g.id === group.id ? { ...g, layout: newLayout } : g) }
+              ),
+            })
+          }
+        }
+      }
+
+      document.addEventListener('mousemove', onMouseMove)
+      document.addEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = isVertical ? 'row-resize' : 'col-resize'
+      document.body.style.userSelect = 'none'
     }
 
-    // On release: commit sizes to store (single React update)
-    const handleMouseUp = () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      if (finalSizes !== startSizes) {
-        updateSplitSizes(splitNode, finalSizes)
-      }
-    }
-
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-    document.body.style.cursor = isVertical ? 'row-resize' : 'col-resize'
-    document.body.style.userSelect = 'none'
-  }, [isVertical, sizes, splitNode, index, rect])
+    handle.addEventListener('mousedown', onMouseDown)
+    return () => handle.removeEventListener('mousedown', onMouseDown)
+  }) // No deps — re-attaches on every render to capture latest nodeRef
 
   const style: React.CSSProperties = isVertical
-    ? {
-        position: 'absolute',
-        top: `${rect.top + rect.height * offsetBefore}%`,
-        left: `${rect.left}%`,
-        width: `${rect.width}%`,
-        height: '8px',
-        marginTop: '-4px',
-        cursor: 'row-resize',
-        zIndex: 20,
-      }
-    : {
-        position: 'absolute',
-        top: `${rect.top}%`,
-        left: `${rect.left + rect.width * offsetBefore}%`,
-        width: '8px',
-        marginLeft: '-4px',
-        height: `${rect.height}%`,
-        cursor: 'col-resize',
-        zIndex: 20,
-      }
+    ? { position: 'absolute', top: `${rect.top + rect.height * offsetPct}%`, left: `${rect.left}%`, width: `${rect.width}%`, height: '8px', marginTop: '-4px', cursor: 'row-resize', zIndex: 20 }
+    : { position: 'absolute', top: `${rect.top}%`, left: `${rect.left + rect.width * offsetPct}%`, width: '8px', marginLeft: '-4px', height: `${rect.height}%`, cursor: 'col-resize', zIndex: 20 }
 
   return (
-    <div
-      ref={handleRef}
-      style={style}
-      className="pointer-events-auto group"
-      onMouseDown={handleMouseDown}
-    >
+    <div ref={ref} style={style} className="pointer-events-auto group">
       <div className={`${isVertical ? 'h-px w-full' : 'w-px h-full'} bg-border-subtle group-hover:bg-accent-main/50 mx-auto my-auto`} />
     </div>
   )
-})
+}
