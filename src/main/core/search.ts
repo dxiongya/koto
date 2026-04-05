@@ -62,7 +62,7 @@ export function searchFilesContent(
   dirs: string[],
   maxResults: number,
 ): SearchMatch[] {
-  if (!query || query.length < 2) return []
+  if (!query) return []
 
   const lowerQuery = query.toLowerCase()
   const results: SearchMatch[] = []

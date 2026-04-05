@@ -221,18 +221,16 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
   useEffect(() => { inputRef.current?.focus() }, [])
 
   // ── Mode detection ──
+  // > = commands/system, # = content search (notes + collector), : = line, ? = help
   const isCommandMode = query.startsWith('>')
-  const isSearchMode = query.startsWith('#')
-  const isCollectorSearch = query.startsWith('collector:')
+  const isContentMode = query.startsWith('#')  // content + collector search
   const isLineMode = query.startsWith(':')
   const isHelpMode = query.startsWith('?')
-  const searchQuery = isCollectorSearch
-    ? query.slice('collector:'.length).trim()
-    : isCommandMode || isSearchMode || isLineMode || isHelpMode
-      ? query.slice(1).trim()
-      : query.trim()
+  const searchQuery = (isCommandMode || isContentMode || isLineMode || isHelpMode)
+    ? query.slice(1).trim()
+    : query.trim()
 
-  // ── Unified search: content + collector (any 2+ char query, no prefix needed) ──
+  // ── Content + Collector search (triggered by # prefix, 2+ chars) ──
   const [collectorResults, setCollectorResults] = useState<PaletteItem[]>([])
   const collectorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -240,11 +238,12 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     link: Link, image: Image, video: Video, tweet: Twitter, screenshot: Monitor, text: Type,
   }
 
-  const shouldSearch = !isCommandMode && !isLineMode && !isHelpMode && searchQuery.length >= 2
+  // 1 char minimum — Chinese/CJK characters are meaningful even at 1 char
+  const shouldContentSearch = isContentMode && searchQuery.length >= 1
 
-  // Content search (notes + code files)
+  // Content search (notes + code files) — only in # mode
   useEffect(() => {
-    if (!shouldSearch) { setSearchResults([]); setSearching(false); return }
+    if (!shouldContentSearch) { setSearchResults([]); setSearching(false); return }
     setSearching(true)
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     searchTimerRef.current = setTimeout(async () => {
@@ -253,15 +252,17 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       if (codeProjectPath) dirs.push(codeProjectPath)
       if (dirs.length === 0) { setSearchResults([]); setSearching(false); return }
 
-      const res = await window.api.search.content(searchQuery, dirs, 15)
+      const res = await window.api.search.content(searchQuery, dirs, 20)
       if (!res.ok) { setSearchResults([]); setSearching(false); return }
 
       const store = useUIStore.getState()
       const items: PaletteItem[] = res.data.map((match, i) => {
         const isNote = liteHome && match.filePath.startsWith(`${liteHome}/notes`)
+        // Show relative path for notes
+        const relPath = isNote ? match.filePath.replace(`${liteHome}/notes/`, '') : match.fileName
         return {
           id: `search:${match.filePath}:${match.line}:${i}`,
-          label: match.fileName,
+          label: relPath,
           hint: `L${match.line}`,
           detail: match.content,
           icon: isNote ? FileText : FileCode,
@@ -275,6 +276,10 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
                 [app]: { ...store.appStates[app], activeFilePath: match.filePath },
               },
             })
+            // Dispatch line-jump event for editors that support it
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('lite:goto-line', { detail: { line: match.line } }))
+            }, 100)
           },
         }
       })
@@ -282,11 +287,11 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       setSearching(false)
     }, 300)
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
-  }, [shouldSearch, searchQuery, liteHome, codeProjectPath])
+  }, [shouldContentSearch, searchQuery, liteHome, codeProjectPath])
 
-  // Collector search
+  // Collector search — also in # mode
   useEffect(() => {
-    if (!shouldSearch) { setCollectorResults([]); return }
+    if (!shouldContentSearch) { setCollectorResults([]); return }
     if (collectorTimerRef.current) clearTimeout(collectorTimerRef.current)
     collectorTimerRef.current = setTimeout(async () => {
       const res = await window.api.collector.search(searchQuery)
@@ -317,7 +322,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       setCollectorResults(items)
     }, 300)
     return () => { if (collectorTimerRef.current) clearTimeout(collectorTimerRef.current) }
-  }, [shouldSearch, searchQuery])
+  }, [shouldContentSearch, searchQuery])
 
   // Recent files lookup
   const recentPathSet = useMemo(() => {
@@ -331,8 +336,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     const store = useUIStore.getState()
 
     if (isHelpMode) return HELP_ITEMS
-    if (isSearchMode) return searchResults
-    if (isCollectorSearch) return collectorResults
+    if (isContentMode) return [...searchResults, ...collectorResults]
     if (isLineMode) {
       // ":42" → go to line (only meaningful in code.app / notes.app)
       const lineNum = parseInt(searchQuery, 10)
@@ -530,11 +534,11 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     )
 
     return all
-  }, [isCommandMode, isSearchMode, isCollectorSearch, isLineMode, isHelpMode, searchResults, collectorResults, noteFiles, codeFiles, collectorItems, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
+  }, [isCommandMode, isContentMode, isContentMode, isLineMode, isHelpMode, searchResults, collectorResults, noteFiles, codeFiles, collectorItems, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
 
   // ── Filter + sort ──
   const filtered = useMemo(() => {
-    if (isSearchMode || isCollectorSearch || isLineMode || isHelpMode) return items
+    if (isContentMode || isLineMode || isHelpMode) return items
     if (!searchQuery) return items
     return items
       .filter((item) => fuzzyMatch(searchQuery, item.label))
@@ -543,7 +547,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
         const scoreB = fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 2
         return scoreB - scoreA
       })
-  }, [items, searchQuery, isSearchMode, isCollectorSearch, isLineMode, isHelpMode])
+  }, [items, searchQuery, isContentMode, isContentMode, isLineMode, isHelpMode])
 
   // ── Group by category ──
   const grouped = useMemo(() => {
@@ -566,7 +570,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       if (catItems?.length) groups.push({ category: cat, items: catItems.slice(0, 10) })
     }
     return groups
-  }, [filtered, isSearchMode, isCollectorSearch, isHelpMode, isLineMode, searchQuery])
+  }, [filtered, isContentMode, isContentMode, isHelpMode, isLineMode, searchQuery])
 
   const flatItems = useMemo(() => grouped.flatMap((g) => g.items), [grouped])
 
@@ -606,14 +610,12 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
   }, [selectedIndex])
 
   const placeholder = isCommandMode ? 'Type a command...'
-    : isSearchMode ? 'Search file contents...'
-    : isCollectorSearch ? 'Search collected items...'
+    : isContentMode ? 'Search notes & collector content...'
     : isLineMode ? 'Type a line number...'
     : isHelpMode ? ''
     : 'Search files, apps, actions...'
 
-  const modeIcon = isSearchMode ? Hash
-    : isCollectorSearch ? Archive
+  const modeIcon = isContentMode ? Hash
     : isLineMode ? ArrowRight
     : isHelpMode ? HelpCircle
     : Search
@@ -626,7 +628,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       <div className="fixed top-[12%] left-1/2 -translate-x-1/2 w-[90%] max-w-[520px] bg-bg-popover rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-border-strong overflow-hidden z-[101] flex flex-col">
         {/* Input */}
         <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border-subtle">
-          <ModeIcon size={15} className={isCommandMode || isSearchMode || isCollectorSearch || isLineMode ? 'text-accent-main shrink-0' : 'text-tx-faint shrink-0'} />
+          <ModeIcon size={15} className={isCommandMode || isContentMode || isLineMode ? 'text-accent-main shrink-0' : 'text-tx-faint shrink-0'} />
           <input
             ref={inputRef}
             value={query}
@@ -635,7 +637,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
             className="flex-1 bg-transparent text-tx-main text-[13px] outline-none placeholder:text-tx-faint"
             spellCheck={false}
           />
-          {!isCommandMode && !isSearchMode && !isCollectorSearch && !isLineMode && !isHelpMode && (
+          {!isCommandMode && !isContentMode && !isLineMode && !isHelpMode && (
             <div className="flex items-center gap-1.5">
               <button type="button" aria-label="Command mode" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted focus-visible:ring-1 focus-visible:ring-accent-main/50"
                 onClick={() => { setQuery('>'); inputRef.current?.focus() }}>{'>'}</button>
@@ -655,7 +657,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
             <div className="px-4 py-6 text-center text-tx-faint text-[13px]">Searching...</div>
           ) : grouped.length === 0 ? (
             <div className="px-4 py-6 text-center text-tx-faint text-[13px]">
-              {isSearchMode && searchQuery.length < 2 ? 'Type at least 2 characters...' : 'No results found'}
+              {isContentMode && searchQuery.length < 2 ? 'Type at least 2 characters...' : 'No results found'}
             </div>
           ) : (
             grouped.map((group) => (
@@ -680,14 +682,16 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-[13px] truncate">
-                            <HighlightMatch text={item.label} query={isSearchMode || isCollectorSearch || isLineMode || isHelpMode ? '' : searchQuery} />
+                            <HighlightMatch text={item.label} query={isContentMode || isLineMode || isHelpMode ? '' : searchQuery} />
                           </span>
                           {item.hint && (
                             <span className="text-[11px] text-tx-faint truncate max-w-[140px] shrink-0">{item.hint}</span>
                           )}
                         </div>
                         {item.detail && (
-                          <div className="text-[11px] text-tx-faint truncate mt-0.5">{item.detail}</div>
+                          <div className="text-[11px] text-tx-faint truncate mt-0.5">
+                            <HighlightMatch text={item.detail} query={isContentMode ? searchQuery : ''} />
+                          </div>
                         )}
                       </div>
                       {item.shortcut && (
