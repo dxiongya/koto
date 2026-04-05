@@ -485,17 +485,20 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
   }, [isCommandMode, isContentMode, isLineMode, isHelpMode, searchResults, collectorResults, noteFiles, codeFiles, collectorItems, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
 
   // ── Filter + sort ──
+  // Content search results (category 'Content Matches' / 'Collector') bypass fuzzyMatch
+  // because they're already validated by the backend search.
   const filtered = useMemo(() => {
     if (isContentMode || isLineMode || isHelpMode) return items
     if (!searchQuery) return items
+    const backendCategories = new Set(['Content Matches', 'Collector'])
     return items
-      .filter((item) => fuzzyMatch(searchQuery, item.label))
+      .filter((item) => backendCategories.has(item.category) || fuzzyMatch(searchQuery, item.label))
       .sort((a, b) => {
-        const scoreA = fuzzyScore(searchQuery, a.label) + (a.boost || 0) * 2
-        const scoreB = fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 2
+        const scoreA = backendCategories.has(a.category) ? 200 : fuzzyScore(searchQuery, a.label) + (a.boost || 0) * 2
+        const scoreB = backendCategories.has(b.category) ? 200 : fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 2
         return scoreB - scoreA
       })
-  }, [items, searchQuery, isContentMode, isContentMode, isLineMode, isHelpMode])
+  }, [items, searchQuery, isContentMode, isLineMode, isHelpMode])
 
   // ── Group by category ──
   const grouped = useMemo(() => {
