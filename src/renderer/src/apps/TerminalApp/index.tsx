@@ -476,107 +476,27 @@ const PaneTabBarMemo = memo(function PaneTabBar({
   )
 })
 
-// ── Split Handle (vanilla DOM — no React state during drag) ──
+// ── Split Handle (simple, no drag for now — visual only) ──
 
 function SplitHandleOverlay({
   direction,
   rect,
-  nodeRef,
   index,
   offsetPct,
 }: {
   direction: 'horizontal' | 'vertical'
   rect: LayoutRect
-  nodeRef: SplitNode  // captured at render time for mouseup commit
+  nodeRef: SplitNode
   index: number
-  offsetPct: number   // pre-computed offset percentage
+  offsetPct: number
 }) {
   const isVertical = direction === 'vertical'
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handle = ref.current
-    if (!handle) return
-
-    const onMouseDown = (e: MouseEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-
-      const container = document.getElementById('split-handles-container')
-      if (!container) return
-      const cRect = container.getBoundingClientRect()
-      const totalPx = isVertical ? cRect.height : cRect.width
-      const startPos = isVertical ? e.clientY : e.clientX
-
-      // Read current sizes from the node at drag start
-      const node = nodeRef
-      if (node.type !== 'split') return
-      const count = node.children.length
-      const startSizes = node.sizes?.length === count ? [...node.sizes] : Array(count).fill(1 / count)
-      let finalSizes = startSizes
-
-      const onMouseMove = (ev: MouseEvent) => {
-        const delta = ((isVertical ? ev.clientY : ev.clientX) - startPos) / totalPx
-        const ns = [...startSizes]
-        ns[index - 1] = Math.max(0.1, startSizes[index - 1] + delta)
-        ns[index] = Math.max(0.1, startSizes[index] - delta)
-        const total = ns.reduce((a, b) => a + b, 0)
-        for (let i = 0; i < ns.length; i++) ns[i] /= total
-        finalSizes = ns
-        // CSS-only position update
-        const newOff = ns.slice(0, index).reduce((a, b) => a + b, 0)
-        if (isVertical) handle.style.top = `${rect.top + rect.height * newOff}%`
-        else handle.style.left = `${rect.left + rect.width * newOff}%`
-      }
-
-      const onMouseUp = () => {
-        document.removeEventListener('mousemove', onMouseMove)
-        document.removeEventListener('mouseup', onMouseUp)
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-        // Single store update on release
-        if (finalSizes !== startSizes) {
-          const state = useUIStore.getState()
-          const ws = state.terminalWorkspaces.find((w) => w.id === state.activeWorkspaceId)
-          if (!ws) return
-          const group = ws.groups.find((g) => g.id === ws.activeGroupId)
-          if (!group) return
-          function updateNode(n: SplitNode): SplitNode {
-            if (n === node && n.type === 'split') return { ...n, sizes: finalSizes }
-            if (n.type === 'split') {
-              const ch = n.children.map(updateNode)
-              return ch.some((c, i) => c !== n.children[i]) ? { ...n, children: ch } : n
-            }
-            return n
-          }
-          const newLayout = updateNode(group.layout)
-          if (newLayout !== group.layout) {
-            useUIStore.setState({
-              terminalWorkspaces: state.terminalWorkspaces.map((w) =>
-                w.id !== ws.id ? w : { ...w, groups: w.groups.map((g) => g.id === group.id ? { ...g, layout: newLayout } : g) }
-              ),
-            })
-          }
-        }
-      }
-
-      document.addEventListener('mousemove', onMouseMove)
-      document.addEventListener('mouseup', onMouseUp)
-      document.body.style.cursor = isVertical ? 'row-resize' : 'col-resize'
-      document.body.style.userSelect = 'none'
-    }
-
-    handle.addEventListener('mousedown', onMouseDown)
-    return () => handle.removeEventListener('mousedown', onMouseDown)
-  }) // No deps — re-attaches on every render to capture latest nodeRef
 
   const style: React.CSSProperties = isVertical
-    ? { position: 'absolute', top: `${rect.top + rect.height * offsetPct}%`, left: `${rect.left}%`, width: `${rect.width}%`, height: '8px', marginTop: '-4px', cursor: 'row-resize', zIndex: 20 }
-    : { position: 'absolute', top: `${rect.top}%`, left: `${rect.left + rect.width * offsetPct}%`, width: '8px', marginLeft: '-4px', height: `${rect.height}%`, cursor: 'col-resize', zIndex: 20 }
+    ? { position: 'absolute', top: `${rect.top + rect.height * offsetPct}%`, left: `${rect.left}%`, width: `${rect.width}%`, height: '1px', zIndex: 20 }
+    : { position: 'absolute', top: `${rect.top}%`, left: `${rect.left + rect.width * offsetPct}%`, width: '1px', height: `${rect.height}%`, zIndex: 20 }
 
   return (
-    <div ref={ref} style={style} className="pointer-events-auto group">
-      <div className={`${isVertical ? 'h-px w-full' : 'w-px h-full'} bg-border-subtle group-hover:bg-accent-main/50 mx-auto my-auto`} />
-    </div>
+    <div style={style} className="bg-border-subtle pointer-events-auto" />
   )
 }
