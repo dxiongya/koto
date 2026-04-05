@@ -165,108 +165,68 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     ? query.slice(1).trim()
     : query.trim()
 
-  // ── Content + Collector search (triggered by # prefix, 2+ chars) ──
-  const [collectorResults, setCollectorResults] = useState<PaletteItem[]>([])
-  const collectorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // ── Unified Bus search — each app provides its own search via AppBus ──
+  // Notes → 'notes.search', Collector → 'collector.search', future apps → '*.search'
 
-  const COLLECTOR_TYPE_ICONS: Record<string, React.FC<{ size?: number; className?: string }>> = {
-    link: Link, image: Image, video: Video, tweet: Twitter, screenshot: Monitor, text: Type,
+  const SEARCH_ICON_MAP: Record<string, React.FC<{ size?: number; className?: string }>> = {
+    'file-text': FileText, link: Link, image: Image, twitter: Twitter,
+    archive: Archive, video: Video, monitor: Monitor, type: Type,
   }
 
-  // Content search: triggers in # mode OR default mode (2+ chars)
-  // # mode = dedicated content search, default mode = unified (file names + content)
-  const shouldContentSearch = (isContentMode && searchQuery.length >= 1) ||
+  const shouldSearch = (isContentMode && searchQuery.length >= 1) ||
     (!isCommandMode && !isLineMode && !isHelpMode && searchQuery.length >= 2)
 
-  // Content search (notes + code files) — only in # mode
   useEffect(() => {
-    if (!shouldContentSearch) { setSearchResults([]); setSearching(false); return }
+    if (!shouldSearch) { setSearchResults([]); setSearching(false); return }
     setSearching(true)
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     searchTimerRef.current = setTimeout(async () => {
-      // Get liteHome from store or IPC fallback
-      let home = liteHome
-      if (!home) {
-        try {
-          const homeRes = await window.api.lite.getHome()
-          if (homeRes.ok) home = homeRes.data
-        } catch {}
-      }
-      const dirs: string[] = []
-      if (home) dirs.push(`${home}/notes`)
-      if (codeProjectPath) dirs.push(codeProjectPath)
-      if (dirs.length === 0) { setSearchResults([]); setSearching(false); return }
+      const bus = (await import('../core/AppContext')).getAppBus()
 
-      const res = await window.api.search.content(searchQuery, dirs, 20)
-      if (!res.ok) { setSearchResults([]); setSearching(false); return }
+      // Fan out to all registered search providers
+      const providers = ['notes.search', 'collector.search']
+      const results = await Promise.all(
+        providers
+          .filter((cap) => bus.has(cap))
+          .map((cap) => bus.request<any[]>(cap, { query: searchQuery }).catch(() => null)),
+      )
 
-      const store = useUIStore.getState()
-      const items: PaletteItem[] = res.data.map((match, i) => {
-        const isNote = home && match.filePath.startsWith(`${home}/notes`)
-        const relPath = isNote ? match.filePath.replace(`${home}/notes/`, '') : match.fileName
-        return {
-          id: `search:${match.filePath}:${match.line}:${i}`,
-          label: relPath,
-          hint: `L${match.line}`,
-          detail: match.content,
-          icon: isNote ? FileText : FileCode,
-          category: 'Content Matches',
-          action: () => {
-            const app: AppType = isNote ? 'notes.app' : 'code.app'
+      // Merge + sort by score
+      const allResults = results.flat().filter(Boolean) as import('../../../../shared/app-interface').AppSearchResult[]
+      allResults.sort((a, b) => b.score - a.score)
+
+      // Convert to PaletteItems
+      const items: PaletteItem[] = allResults.map((r) => ({
+        id: r.id,
+        label: r.title,
+        hint: r.subtitle,
+        detail: r.snippet,
+        icon: SEARCH_ICON_MAP[r.icon || ''] || Archive,
+        category: r.source === 'notes.app' ? 'Notes Results' : 'Collector Results',
+        action: () => {
+          const store = useUIStore.getState()
+          if (r.action.type === 'open-file') {
+            const app: AppType = r.source === 'notes.app' ? 'notes.app' : 'code.app'
             store.setCurrentApp(app)
             useUIStore.setState({
-              appStates: {
-                ...store.appStates,
-                [app]: { ...store.appStates[app], activeFilePath: match.filePath },
-              },
+              appStates: { ...store.appStates, [app]: { ...store.appStates[app], activeFilePath: r.action.path } },
             })
-            // Dispatch line-jump event for editors that support it
-            setTimeout(() => {
-              window.dispatchEvent(new CustomEvent('lite:goto-line', { detail: { line: match.line } }))
-            }, 100)
-          },
-        }
-      })
+            if (r.action.line) {
+              setTimeout(() => window.dispatchEvent(new CustomEvent('lite:goto-line', { detail: { line: r.action.line } })), 100)
+            }
+          } else if (r.action.type === 'open-url') {
+            window.open(r.action.url, '_blank')
+          } else if (r.action.type === 'navigate') {
+            store.setCurrentApp(r.action.app as AppType)
+          }
+        },
+      }))
+
       setSearchResults(items)
       setSearching(false)
-    }, 300)
+    }, 250)
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
-  }, [shouldContentSearch, searchQuery, liteHome, codeProjectPath])
-
-  // Collector search — also in # mode
-  useEffect(() => {
-    if (!shouldContentSearch) { setCollectorResults([]); return }
-    if (collectorTimerRef.current) clearTimeout(collectorTimerRef.current)
-    collectorTimerRef.current = setTimeout(async () => {
-      const res = await window.api.collector.search(searchQuery)
-      if (!res.ok) { setCollectorResults([]); return }
-
-      const items: PaletteItem[] = res.data.slice(0, 10).map((r: { item: Record<string, unknown>; score: number; source: string }, i: number) => {
-        const item = r.item as { id: string; type: string; title: string; url?: string; meta?: Record<string, unknown> }
-        const domain = item.url ? (() => { try { return new URL(item.url).hostname.replace('www.', '') } catch { return '' } })() : ''
-        return {
-          id: `collector:${item.id}:${i}`,
-          label: item.title,
-          hint: domain || item.type.toUpperCase(),
-          detail: (item.meta?.ocrText as string)?.slice(0, 60) || (item.meta?.description as string)?.slice(0, 60) || undefined,
-          icon: COLLECTOR_TYPE_ICONS[item.type] || Archive,
-          category: 'Collector',
-          action: () => {
-            const store = useUIStore.getState()
-            store.setCurrentApp('collector.app')
-            useUIStore.setState({
-              appStates: {
-                ...store.appStates,
-                'collector.app': { ...store.appStates['collector.app'], activeFilePath: 'all' },
-              },
-            })
-          },
-        }
-      })
-      setCollectorResults(items)
-    }, 300)
-    return () => { if (collectorTimerRef.current) clearTimeout(collectorTimerRef.current) }
-  }, [shouldContentSearch, searchQuery])
+  }, [shouldSearch, searchQuery])
 
   // Recent files lookup
   const recentPathSet = useMemo(() => {
@@ -280,7 +240,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     const store = useUIStore.getState()
 
     if (isHelpMode) return HELP_ITEMS
-    if (isContentMode) return [...searchResults, ...collectorResults]
+    if (isContentMode) return searchResults
     if (isLineMode) {
       // ":42" → go to line (only meaningful in code.app / notes.app)
       const lineNum = parseInt(searchQuery, 10)
@@ -479,10 +439,8 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
     // Merge async content search results into default mode
     if (searchResults.length > 0) all.push(...searchResults)
-    if (collectorResults.length > 0) all.push(...collectorResults)
-
     return all
-  }, [isCommandMode, isContentMode, isLineMode, isHelpMode, searchResults, collectorResults, noteFiles, codeFiles, collectorItems, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
+  }, [isCommandMode, isContentMode, isLineMode, isHelpMode, searchResults, noteFiles, codeFiles, collectorItems, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
 
   // ── Filter + sort ──
   // Content search results (category 'Content Matches' / 'Collector') bypass fuzzyMatch
@@ -490,14 +448,18 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
   const filtered = useMemo(() => {
     if (isContentMode || isLineMode || isHelpMode) return items
     if (!searchQuery) return items
-    const asyncCategories = new Set(['Content Matches', 'Collector'])
+    // Bus search results bypass fuzzyMatch (already ranked by backend)
+    const busCategories = new Set(['Notes Results', 'Collector Results'])
     return items
-      .filter((item) => asyncCategories.has(item.category) || fuzzyMatch(searchQuery, item.label))
+      .filter((item) => busCategories.has(item.category) || fuzzyMatch(searchQuery, item.label))
       .sort((a, b) => {
-        // Content matches first, then collector search, then fuzzy matches
-        const catScore = (cat: string) => cat === 'Content Matches' ? 300 : cat === 'Collector' ? 250 : 0
-        const scoreA = catScore(a.category) || fuzzyScore(searchQuery, a.label) + (a.boost || 0) * 2
-        const scoreB = catScore(b.category) || fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 2
+        // Bus results first (already sorted by score), then fuzzy matches
+        const isA = busCategories.has(a.category) ? 1 : 0
+        const isB = busCategories.has(b.category) ? 1 : 0
+        if (isA !== isB) return isB - isA
+        // Within same tier, use fuzzy score
+        const scoreA = fuzzyScore(searchQuery, a.label) + (a.boost || 0) * 2
+        const scoreB = fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 2
         return scoreB - scoreA
       })
   }, [items, searchQuery, isContentMode, isLineMode, isHelpMode])
@@ -509,7 +471,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       ? ['Help']
       : isLineMode
         ? ['Navigation']
-        : ['Recent', 'Content Matches', 'Collector', 'Actions', 'Apps', 'Notes', 'Code', 'Collector Items', 'Terminals', 'Navigation']
+        : ['Notes Results', 'Collector Results', 'Recent', 'Actions', 'Apps', 'Notes', 'Code', 'Collector Items', 'Terminals', 'Navigation']
     const map = new Map<string, PaletteItem[]>()
     for (const item of filtered) {
       const arr = map.get(item.category) || []
@@ -643,7 +605,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
                         </div>
                         {item.detail && (
                           <div className="text-[11px] text-tx-faint truncate mt-0.5">
-                            <HighlightMatch text={item.detail} query={isContentMode ? searchQuery : ''} />
+                            <HighlightMatch text={item.detail} query={searchQuery} />
                           </div>
                         )}
                       </div>

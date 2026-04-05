@@ -41,6 +41,29 @@ export interface AppDefinition {
   onUnregister?: () => void
 }
 
+// ── Search Result (standard interface for app-provided search) ──
+
+export interface AppSearchResult {
+  /** Unique ID */
+  id: string
+  /** Display title */
+  title: string
+  /** Secondary info (path, domain, etc.) */
+  subtitle?: string
+  /** Content preview / matched snippet */
+  snippet?: string
+  /** Relevance score (0-100, higher = more relevant) */
+  score: number
+  /** Source app ID */
+  source: string
+  /** Icon name (lucide) */
+  icon?: string
+  /** Action data — file path, URL, etc. */
+  action: { type: 'open-file'; path: string; line?: number }
+    | { type: 'open-url'; url: string }
+    | { type: 'navigate'; app: string; state?: Record<string, unknown> }
+}
+
 // ── App Bus ──
 
 export interface AppBus {

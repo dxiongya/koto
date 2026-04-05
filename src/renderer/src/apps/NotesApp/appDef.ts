@@ -1,4 +1,4 @@
-import type { AppDefinition } from '../../../../shared/app-interface'
+import type { AppDefinition, AppSearchResult } from '../../../../shared/app-interface'
 import { NotesApp } from './index'
 
 export const notesAppDefinition: AppDefinition = {
@@ -16,11 +16,31 @@ export const notesAppDefinition: AppDefinition = {
     expandable: true,
   },
   onRegister: (api) => {
-    // Provide capabilities on the bus
+    const getLiteHome = () => api.dataDir.replace('/apps/notes.app/data', '')
+
+    // List notes files
     api.bus.provide('notes.list', async () => {
-      const liteHome = api.dataDir.replace('/apps/notes.app/data', '')
-      const res = await api.fs.readDir(`${liteHome}/notes`)
+      const res = await api.fs.readDir(`${getLiteHome()}/notes`)
       return res
+    })
+
+    // Search notes content — returns AppSearchResult[]
+    api.bus.provide('notes.search', async (params: any) => {
+      const query = params?.query
+      if (!query) return []
+      const liteHome = getLiteHome()
+      const res = await window.api.search.content(query, [`${liteHome}/notes`], 20)
+      if (!res.ok) return []
+      return res.data.map((match: any, i: number): AppSearchResult => ({
+        id: `notes-${match.filePath}-${match.line}-${i}`,
+        title: match.filePath.replace(`${liteHome}/notes/`, ''),
+        subtitle: `L${match.line}`,
+        snippet: match.content,
+        score: Math.max(10, 80 - i * 3), // position-based scoring
+        source: 'notes.app',
+        icon: 'file-text',
+        action: { type: 'open-file', path: match.filePath, line: match.line },
+      }))
     })
   },
 }
