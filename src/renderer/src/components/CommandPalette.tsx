@@ -440,8 +440,8 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       })
     }
 
-    // Collector items (in global search)
-    if (collectorItems.length > 0) {
+    // Collector items (static list — subject to fuzzyMatch filtering)
+    if (collectorItems.length > 0 && !searchQuery) {
       const CTYPE_ICONS: Record<string, typeof Link> = { link: Link, image: Image, video: Video, tweet: Twitter, screenshot: Monitor, text: Type }
       for (const ci of collectorItems) {
         all.push({
@@ -449,7 +449,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
           label: ci.title,
           hint: 'collector',
           icon: CTYPE_ICONS[ci.type] || Archive,
-          category: 'Collector',
+          category: 'Collector Items',
           boost: currentApp === 'collector.app' ? 5 : 0,
           action: () => {
             store.setCurrentApp('collector.app')
@@ -490,12 +490,14 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
   const filtered = useMemo(() => {
     if (isContentMode || isLineMode || isHelpMode) return items
     if (!searchQuery) return items
-    const backendCategories = new Set(['Content Matches', 'Collector'])
+    const asyncCategories = new Set(['Content Matches', 'Collector'])
     return items
-      .filter((item) => backendCategories.has(item.category) || fuzzyMatch(searchQuery, item.label))
+      .filter((item) => asyncCategories.has(item.category) || fuzzyMatch(searchQuery, item.label))
       .sort((a, b) => {
-        const scoreA = backendCategories.has(a.category) ? 200 : fuzzyScore(searchQuery, a.label) + (a.boost || 0) * 2
-        const scoreB = backendCategories.has(b.category) ? 200 : fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 2
+        // Content matches first, then collector search, then fuzzy matches
+        const catScore = (cat: string) => cat === 'Content Matches' ? 300 : cat === 'Collector' ? 250 : 0
+        const scoreA = catScore(a.category) || fuzzyScore(searchQuery, a.label) + (a.boost || 0) * 2
+        const scoreB = catScore(b.category) || fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 2
         return scoreB - scoreA
       })
   }, [items, searchQuery, isContentMode, isLineMode, isHelpMode])
@@ -507,7 +509,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       ? ['Help']
       : isLineMode
         ? ['Navigation']
-        : ['Recent', 'Actions', 'Apps', 'Notes', 'Code', 'Collector', 'Content Matches', 'Terminals', 'Navigation']
+        : ['Recent', 'Content Matches', 'Collector', 'Actions', 'Apps', 'Notes', 'Code', 'Collector Items', 'Terminals', 'Navigation']
     const map = new Map<string, PaletteItem[]>()
     for (const item of filtered) {
       const arr = map.get(item.category) || []
