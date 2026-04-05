@@ -22,35 +22,7 @@ interface ContextItem {
 
 // ── Fuzzy match ──
 
-function fuzzyMatch(query: string, text: string): boolean {
-  const q = query.toLowerCase()
-  const t = text.toLowerCase()
-  let qi = 0
-  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
-    if (t[ti] === q[qi]) qi++
-  }
-  return qi === q.length
-}
-
-function fuzzyScore(query: string, text: string): number {
-  const q = query.toLowerCase()
-  const t = text.toLowerCase()
-  let score = 0, qi = 0, lastMatch = -1
-  if (t.includes(q)) score += 50
-  if (t === q) score += 100
-  if (t.startsWith(q)) score += 30
-  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
-    if (t[ti] === q[qi]) {
-      score += 10
-      if (lastMatch === ti - 1) score += 5
-      if (ti === 0 || '/.-_ '.includes(t[ti - 1])) score += 8
-      lastMatch = ti
-      qi++
-    }
-  }
-  if (qi === q.length) score += Math.max(0, 20 - t.length)
-  return qi === q.length ? score : 0
-}
+import { fuzzyMatch, fuzzyScore } from '../utils/fuzzySearch'
 
 function HighlightMatch({ text, query }: { text: string; query: string }) {
   if (!query) return <>{text}</>
