@@ -163,6 +163,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
   const APP_SHORTCUTS: Record<string, { appId: string; searchCap: string; label: string }> = {
     'n': { appId: 'notes.app', searchCap: 'notes.search', label: 'Notes' },
     'c': { appId: 'collector.app', searchCap: 'collector.search', label: 'Collector' },
+    't': { appId: 'terminal.app', searchCap: 'terminal.search', label: 'Terminal' },
   }
 
   // ── Mode detection ──
@@ -189,7 +190,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
   const SEARCH_ICON_MAP: Record<string, React.FC<{ size?: number; className?: string }>> = {
     'file-text': FileText, link: Link, image: Image, twitter: Twitter,
-    archive: Archive, video: Video, monitor: Monitor, type: Type,
+    archive: Archive, video: Video, monitor: Monitor, type: Type, terminal: Terminal,
   }
 
   const shouldSearch = (appShortcutMatch && searchQuery.length >= 1) ||
@@ -206,7 +207,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       // If app shortcut active, only search that app. Otherwise fan out to all.
       const providers = appShortcutMatch
         ? [appShortcutMatch.searchCap]
-        : ['notes.search', 'collector.search']
+        : ['notes.search', 'collector.search', 'terminal.search']
       const available = providers.filter((cap) => bus.has(cap))
       const results = await Promise.all(
         available.map((cap) => bus.request<AppSearchResult[]>(cap, { query: searchQuery }).catch(() => null)),
@@ -223,7 +224,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
         hint: r.subtitle,
         detail: r.snippet,
         icon: SEARCH_ICON_MAP[r.icon || ''] || Archive,
-        category: r.source === 'notes.app' ? 'Notes Results' : 'Collector Results',
+        category: r.source === 'notes.app' ? 'Notes Results' : r.source === 'terminal.app' ? 'Terminal Results' : 'Collector Results',
         action: () => {
           const store = useUIStore.getState()
           if (r.action.type === 'open-file') {
@@ -239,6 +240,10 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
             window.open(r.action.url, '_blank')
           } else if (r.action.type === 'navigate') {
             store.setCurrentApp(r.action.app as AppType)
+            // Apply extra state (e.g. activeTerminalId for terminal.app)
+            if (r.action.state) {
+              useUIStore.setState(r.action.state)
+            }
           }
         },
       }))
@@ -486,7 +491,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       ? ['Help']
       : isLineMode
         ? ['Navigation']
-        : ['Notes Results', 'Collector Results', 'Recent', 'Actions', 'Apps', 'Notes', 'Code', 'Collector Items', 'Terminals', 'Navigation']
+        : ['Notes Results', 'Collector Results', 'Terminal Results', 'Recent', 'Actions', 'Apps', 'Notes', 'Code', 'Collector Items', 'Terminals', 'Navigation']
     const map = new Map<string, PaletteItem[]>()
     for (const item of filtered) {
       const arr = map.get(item.category) || []
