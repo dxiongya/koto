@@ -239,7 +239,8 @@ function ContextPanelInner({ onClose }: { onClose: () => void }) {
       const c = await item.injectContent()
       text = c ?? item.injectPath
     } else {
-      text = item.injectPath
+      // Escape spaces in paths for shell compatibility
+      text = item.injectPath.includes(' ') ? `"${item.injectPath}"` : item.injectPath
     }
 
     window.api.terminal.write(activeTerminalId, text)

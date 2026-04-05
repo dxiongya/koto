@@ -232,13 +232,19 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       ? query.slice(1).trim()
       : query.trim()
 
-  // ── Content search with debounce ──
+  // ── Unified search: content + collector (any 2+ char query, no prefix needed) ──
+  const [collectorResults, setCollectorResults] = useState<PaletteItem[]>([])
+  const collectorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const COLLECTOR_TYPE_ICONS: Record<string, React.FC<{ size?: number; className?: string }>> = {
+    link: Link, image: Image, video: Video, tweet: Twitter, screenshot: Monitor, text: Type,
+  }
+
+  const shouldSearch = !isCommandMode && !isLineMode && !isHelpMode && searchQuery.length >= 2
+
+  // Content search (notes + code files)
   useEffect(() => {
-    if (!isSearchMode || searchQuery.length < 2) {
-      setSearchResults([])
-      setSearching(false)
-      return
-    }
+    if (!shouldSearch) { setSearchResults([]); setSearching(false); return }
     setSearching(true)
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     searchTimerRef.current = setTimeout(async () => {
@@ -247,7 +253,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       if (codeProjectPath) dirs.push(codeProjectPath)
       if (dirs.length === 0) { setSearchResults([]); setSearching(false); return }
 
-      const res = await window.api.search.content(searchQuery, dirs, 30)
+      const res = await window.api.search.content(searchQuery, dirs, 15)
       if (!res.ok) { setSearchResults([]); setSearching(false); return }
 
       const store = useUIStore.getState()
@@ -259,7 +265,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
           hint: `L${match.line}`,
           detail: match.content,
           icon: isNote ? FileText : FileCode,
-          category: 'Search Results',
+          category: 'Content Matches',
           action: () => {
             const app: AppType = isNote ? 'notes.app' : 'code.app'
             store.setCurrentApp(app)
@@ -274,32 +280,19 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       })
       setSearchResults(items)
       setSearching(false)
-      setSelectedIndex(0)
     }, 300)
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
-  }, [isSearchMode, searchQuery, liteHome, codeProjectPath])
+  }, [shouldSearch, searchQuery, liteHome, codeProjectPath])
 
-  // ── Collector search with debounce ──
-  const [collectorResults, setCollectorResults] = useState<PaletteItem[]>([])
-  const collectorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const COLLECTOR_TYPE_ICONS: Record<string, React.FC<{ size?: number; className?: string }>> = {
-    link: Link, image: Image, video: Video, tweet: Twitter, screenshot: Monitor, text: Type,
-  }
-
+  // Collector search
   useEffect(() => {
-    if (!isCollectorSearch || searchQuery.length < 2) {
-      setCollectorResults([])
-      setSearching(false)
-      return
-    }
-    setSearching(true)
+    if (!shouldSearch) { setCollectorResults([]); return }
     if (collectorTimerRef.current) clearTimeout(collectorTimerRef.current)
     collectorTimerRef.current = setTimeout(async () => {
       const res = await window.api.collector.search(searchQuery)
-      if (!res.ok) { setCollectorResults([]); setSearching(false); return }
+      if (!res.ok) { setCollectorResults([]); return }
 
-      const items: PaletteItem[] = res.data.map((r: { item: Record<string, unknown>; score: number; source: string }, i: number) => {
+      const items: PaletteItem[] = res.data.slice(0, 10).map((r: { item: Record<string, unknown>; score: number; source: string }, i: number) => {
         const item = r.item as { id: string; type: string; title: string; url?: string; meta?: Record<string, unknown> }
         const domain = item.url ? (() => { try { return new URL(item.url).hostname.replace('www.', '') } catch { return '' } })() : ''
         return {
@@ -308,7 +301,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
           hint: domain || item.type.toUpperCase(),
           detail: (item.meta?.ocrText as string)?.slice(0, 60) || (item.meta?.description as string)?.slice(0, 60) || undefined,
           icon: COLLECTOR_TYPE_ICONS[item.type] || Archive,
-          category: r.source === 'semantic' ? '✨ Semantic Results' : 'Search Results',
+          category: 'Collector',
           action: () => {
             const store = useUIStore.getState()
             store.setCurrentApp('collector.app')
@@ -322,11 +315,9 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
         }
       })
       setCollectorResults(items)
-      setSearching(false)
-      setSelectedIndex(0)
     }, 300)
     return () => { if (collectorTimerRef.current) clearTimeout(collectorTimerRef.current) }
-  }, [isCollectorSearch, searchQuery])
+  }, [shouldSearch, searchQuery])
 
   // Recent files lookup
   const recentPathSet = useMemo(() => {
@@ -557,15 +548,11 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
   // ── Group by category ──
   const grouped = useMemo(() => {
     const groups: { category: string; items: PaletteItem[] }[] = []
-    const categoryOrder = isSearchMode
-      ? ['Search Results']
-      : isCollectorSearch
-        ? ['✨ Semantic Results', 'Search Results']
-        : isHelpMode
-          ? ['Help']
-          : isLineMode
-            ? ['Navigation']
-            : ['Recent', 'Actions', 'Apps', 'Notes', 'Code', 'Collector', 'Terminals', 'Navigation']
+    const categoryOrder = isHelpMode
+      ? ['Help']
+      : isLineMode
+        ? ['Navigation']
+        : ['Recent', 'Actions', 'Apps', 'Notes', 'Code', 'Collector', 'Content Matches', 'Terminals', 'Navigation']
     const map = new Map<string, PaletteItem[]>()
     for (const item of filtered) {
       const arr = map.get(item.category) || []
