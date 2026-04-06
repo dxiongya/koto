@@ -1234,13 +1234,19 @@ const MCPServersSection: React.FC = () => {
 const AppToolsSection: React.FC = () => {
   const [tools, setTools] = useState<{ name: string; description: string; appId: string; enabled: boolean }[]>([])
   const [disabledTools, setDisabledTools] = useState<Set<string>>(new Set())
+  const [serverRunning, setServerRunning] = useState(false)
+  const [serverPort, setServerPort] = useState<number | null>(null)
+  const [serverLoading, setServerLoading] = useState(false)
 
   useEffect(() => {
-    // Load disabled tools from config
+    // Load disabled tools + server status
     window.api.state.get().then((res) => {
       if (res.ok && res.data.disabledBusTools) {
         setDisabledTools(new Set(res.data.disabledBusTools as string[]))
       }
+    })
+    window.api.bus.serverStatus().then((res: any) => {
+      if (res.ok) { setServerRunning(res.data.running); setServerPort(res.data.port) }
     })
     // Load available tools from Bus
     const loadTools = async () => {
@@ -1277,11 +1283,51 @@ const AppToolsSection: React.FC = () => {
     return Array.from(map.entries())
   }, [tools])
 
+  const toggleServer = async () => {
+    setServerLoading(true)
+    if (serverRunning) {
+      await window.api.bus.stopServer()
+      setServerRunning(false)
+      setServerPort(null)
+    } else {
+      const res = await window.api.bus.startServer()
+      if (res.ok) { setServerRunning(true); setServerPort(res.data.port) }
+    }
+    setServerLoading(false)
+  }
+
   return (
     <section className="mb-10">
       <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">App Tools for AI</h2>
+
+      {/* MCP Server toggle */}
+      <div className="flex items-center gap-3 mb-4 p-3 rounded-lg border border-border-subtle bg-bg-hover/50">
+        <button
+          onClick={toggleServer}
+          disabled={serverLoading}
+          className={`w-10 h-5 rounded-full relative transition-colors shrink-0 ${serverRunning ? 'bg-status-success' : 'bg-bg-hover border border-border-subtle'}`}
+        >
+          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${serverRunning ? 'left-5' : 'left-0.5'}`} />
+        </button>
+        <div className="flex-1">
+          <div className="text-[13px] text-tx-main font-medium">MCP Server</div>
+          <div className="text-[11px] text-tx-faint">
+            {serverRunning
+              ? <span>Running on <code className="text-accent-main">http://127.0.0.1:{serverPort}/sse</code></span>
+              : 'Start to expose tools to Claude Code and other AI clients'}
+          </div>
+        </div>
+      </div>
+
+      {serverRunning && (
+        <div className="mb-4 p-3 rounded-lg border border-border-subtle text-[11px] text-tx-faint font-mono bg-bg-app">
+          <div className="text-tx-muted text-[10px] uppercase tracking-wider mb-1">Claude Code config:</div>
+          <div className="select-all">{`"lite": { "url": "http://127.0.0.1:${serverPort}/sse" }`}</div>
+        </div>
+      )}
+
       <p className="text-tx-faint text-[12px] mb-4">
-        These tools are automatically available to AI from your installed apps. Toggle to control which tools AI can use.
+        Toggle which app tools are exposed to AI.
       </p>
       {grouped.length === 0 && (
         <p className="text-tx-faint text-[13px]">No app tools registered yet.</p>

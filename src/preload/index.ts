@@ -146,6 +146,9 @@ const api = {
       })
     },
     notifyToolsReady: () => ipcRenderer.invoke(IpcChannels.BUS_TOOLS_READY),
+    startServer: (port?: number) => ipcRenderer.invoke(IpcChannels.MCP_SERVER_START, port),
+    stopServer: () => ipcRenderer.invoke(IpcChannels.MCP_SERVER_STOP),
+    serverStatus: () => ipcRenderer.invoke(IpcChannels.MCP_SERVER_STATUS),
     onCallTool: (callback: (name: string, params: Record<string, unknown>) => Promise<unknown>) => {
       ipcRenderer.on(IpcChannels.BUS_CALL_TOOL, async (event, name: string, params: Record<string, unknown>, requestId: string) => {
         try {

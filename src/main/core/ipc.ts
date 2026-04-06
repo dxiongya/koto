@@ -44,6 +44,36 @@ export function setupIpcHandlers(): void {
     return { ok: true }
   })
 
+  // ── MCP Server (expose Bus tools to external AI) ──
+  ipcMain.handle(IpcChannels.MCP_SERVER_START, async (_, port?: number) => {
+    try {
+      const { startMCPServer } = await import('./mcp-server')
+      const result = await startMCPServer(port || 3899)
+      return { ok: true, data: result }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.MCP_SERVER_STOP, async () => {
+    try {
+      const { stopMCPServer } = await import('./mcp-server')
+      await stopMCPServer()
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.MCP_SERVER_STATUS, async () => {
+    try {
+      const { isMCPServerRunning, getMCPServerPort } = await import('./mcp-server')
+      return { ok: true, data: { running: isMCPServerRunning(), port: getMCPServerPort() } }
+    } catch {
+      return { ok: true, data: { running: false, port: null } }
+    }
+  })
+
   // ── Lite Home ──
 
   ipcMain.handle(IpcChannels.LITE_GET_HOME, () => {
