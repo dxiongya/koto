@@ -55,12 +55,16 @@ export class PtyManager {
       // Record raw output for replay
       session.replayBuffer.push(data)
       session.replaySize += data.length
-      // Trim oldest chunks when over limit
-      while (session.replaySize > MAX_REPLAY_BUFFER && session.replayBuffer.length > 1) {
-        session.replaySize -= session.replayBuffer.shift()!.length
+      // Trim oldest chunks (batch trim for performance)
+      if (session.replaySize > MAX_REPLAY_BUFFER) {
+        while (session.replaySize > MAX_REPLAY_BUFFER * 0.8 && session.replayBuffer.length > 1) {
+          session.replaySize -= session.replayBuffer.shift()!.length
+        }
       }
 
-      for (const win of BrowserWindow.getAllWindows()) {
+      // Send to focused window only (avoid iterating all windows)
+      const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0]
+      if (win && !win.isDestroyed()) {
         win.webContents.send(IpcChannels.TERMINAL_DATA, id, data)
       }
     })

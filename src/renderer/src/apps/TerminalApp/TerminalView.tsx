@@ -1,20 +1,19 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import '@xterm/xterm/css/xterm.css'
 import { buildXtermTheme } from './xterm-theme'
 
 interface TerminalViewProps {
   terminalId: string
-  /** Raw PTY output to replay after terminal is sized (from persistence) */
   replayBuffer?: string
 }
 
 export interface TerminalViewHandle {
   serialize: () => string | null
   focus: () => void
-  /** Re-fit terminal to container size — call after display:none → visible transition */
   fit: () => void
 }
 
@@ -30,15 +29,9 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
     useImperativeHandle(ref, () => ({
       serialize: () => {
         if (!termRef.current || !serializeAddonRef.current) return null
-        try {
-          return serializeAddonRef.current.serialize()
-        } catch {
-          return null
-        }
+        try { return serializeAddonRef.current.serialize() } catch { return null }
       },
-      focus: () => {
-        termRef.current?.focus()
-      },
+      focus: () => { termRef.current?.focus() },
       fit: () => {
         const el = containerRef.current
         if (!el) return
@@ -62,8 +55,11 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         fontFamily: "'SF Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, monospace",
         cursorBlink: true,
         cursorStyle: 'bar',
-        allowTransparency: true,
+        // NO allowTransparency — it disables WebGL renderer
         scrollback: 5000,
+        // Performance: faster rendering
+        fastScrollModifier: 'alt',
+        smoothScrollDuration: 0, // disable smooth scroll for speed
       })
 
       const fitAddon = new FitAddon()
@@ -73,66 +69,68 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
 
       term.open(containerRef.current)
 
+      // Enable WebGL renderer — 5-10x faster than canvas 2D
+      try {
+        const webglAddon = new WebglAddon()
+        webglAddon.onContextLoss(() => {
+          webglAddon.dispose() // fallback to canvas on context loss
+        })
+        term.loadAddon(webglAddon)
+      } catch {
+        // WebGL not available, canvas fallback is fine
+      }
+
       termRef.current = term
       fitAddonRef.current = fitAddon
       serializeAddonRef.current = serializeAddon
 
-      // Only fit + resize PTY if container has real dimensions.
-      // If display:none, skip — PTY keeps default 80x24.
-      // ResizeObserver will send correct size when container becomes visible.
+      // Initial fit
       try {
         fitAddon.fit()
         if (term.cols > 1 && term.rows > 1) {
           window.api.terminal.resize(terminalId, term.cols, term.rows)
         }
-      } catch { /* container not visible yet, ignore */ }
+      } catch { /* container not visible yet */ }
 
       // User input → PTY
       term.onData((data) => {
         window.api.terminal.write(terminalId, data)
       })
 
-      // Intercept Cmd+V — check for notes.app source metadata
-      // CopyMetadataPlugin stores the last copied source path in a global
+      // Intercept Cmd+V for notes metadata
       term.attachCustomKeyEventHandler((e) => {
         if (e.type === 'keydown' && e.metaKey && e.key === 'v') {
           const sourceFile = (window as any).__liteClipboardSource as string | undefined
           if (sourceFile) {
-            // Notes copy detected — read clipboard text and prepend source path
             navigator.clipboard.readText().then((text) => {
               if (text) {
                 const quotedPath = sourceFile.includes(' ') ? `"${sourceFile}"` : sourceFile
                 window.api.terminal.write(terminalId, `# from: ${quotedPath}\n${text}`)
               }
-              // Clear after use — next paste from other sources won't have metadata
               ;(window as any).__liteClipboardSource = undefined
             })
-            return false // Prevent xterm default paste
+            return false
           }
         }
-        return true // Let xterm handle normally
+        return true
       })
 
-      // PTY output → terminal (per-ID multiplexed listener, O(1) dispatch)
+      // PTY output → terminal (per-ID multiplexed, O(1) dispatch)
       const unsubData = window.api.terminal.onDataForId(terminalId, (data) => {
         term.write(data)
       })
 
-      // Handle exit
       const unsubExit = window.api.terminal.onExitForId(terminalId, (exitCode) => {
         term.write(`\r\n\x1b[90m[Process exited with code ${exitCode}]\x1b[0m\r\n`)
       })
 
-      // Sync xterm theme when app theme changes (CSS custom properties on :root)
+      // Theme sync on app theme change
       const themeObserver = new MutationObserver(() => {
         term.options.theme = buildXtermTheme()
       })
       themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
 
-      // Debounced resize observer — skip when container is hidden (display:none)
-      // CRITICAL: fitAddon.fit() changes xterm's internal cols/rows even if we don't
-      // send resize to PTY. If container is 0-size, xterm renders incoming data at
-      // 0 cols → permanent distortion. Only fit when container has real dimensions.
+      // Resize observer — skip hidden containers
       let resizeRaf = 0
       const container = containerRef.current!
       const resizeObserver = new ResizeObserver(() => {
@@ -143,20 +141,16 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
           try {
             fitAddon.fit()
             window.api.terminal.resize(terminalId, term.cols, term.rows)
-            // Replay raw PTY output after first successful fit (correct column width)
+            // Replay buffer after first successful fit
             if (!replayedRef.current && replayBufferRef.current) {
               replayedRef.current = true
-              // Replay raw PTY output, then reset cursor state
-              // Replay buffer may contain hide-cursor sequences that persist
               term.write(replayBufferRef.current + '\x1b[?25h')
               replayBufferRef.current = undefined
             }
-          } catch {
-            // ignore fit errors during transitions
-          }
+          } catch { /* ignore */ }
         })
       })
-      resizeObserver.observe(containerRef.current)
+      resizeObserver.observe(container)
 
       return () => {
         cancelAnimationFrame(resizeRaf)
@@ -166,7 +160,7 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         unsubExit()
         term.dispose()
       }
-    }, [terminalId]) // Only re-mount when terminalId changes
+    }, [terminalId])
 
     return <div ref={containerRef} className="w-full h-full" />
   },
