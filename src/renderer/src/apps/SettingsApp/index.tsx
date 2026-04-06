@@ -1229,6 +1229,94 @@ const MCPServersSection: React.FC = () => {
   )
 }
 
+// ── App Tools for AI Section ──
+
+const AppToolsSection: React.FC = () => {
+  const [tools, setTools] = useState<{ name: string; description: string; appId: string; enabled: boolean }[]>([])
+  const [disabledTools, setDisabledTools] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    // Load disabled tools from config
+    window.api.state.get().then((res) => {
+      if (res.ok && res.data.disabledBusTools) {
+        setDisabledTools(new Set(res.data.disabledBusTools as string[]))
+      }
+    })
+    // Load available tools from Bus
+    const loadTools = async () => {
+      const bus = (await import('../../core/AppContext')).getAppBus()
+      const busTools = bus.getTools()
+      setTools(busTools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        appId: t.appId,
+        enabled: true,
+      })))
+    }
+    loadTools()
+  }, [])
+
+  const toggleTool = (name: string) => {
+    setDisabledTools((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      window.api.state.update({ disabledBusTools: Array.from(next) })
+      return next
+    })
+  }
+
+  // Group by app
+  const grouped = useMemo(() => {
+    const map = new Map<string, typeof tools>()
+    for (const t of tools) {
+      const list = map.get(t.appId) || []
+      list.push(t)
+      map.set(t.appId, list)
+    }
+    return Array.from(map.entries())
+  }, [tools])
+
+  return (
+    <section className="mb-10">
+      <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">App Tools for AI</h2>
+      <p className="text-tx-faint text-[12px] mb-4">
+        These tools are automatically available to AI from your installed apps. Toggle to control which tools AI can use.
+      </p>
+      {grouped.length === 0 && (
+        <p className="text-tx-faint text-[13px]">No app tools registered yet.</p>
+      )}
+      {grouped.map(([appId, appTools]) => (
+        <div key={appId} className="mb-4">
+          <h3 className="text-tx-muted text-[11px] font-medium uppercase tracking-wider mb-2">{appId}</h3>
+          <div className="space-y-1">
+            {appTools.map((tool) => {
+              const isEnabled = !disabledTools.has(tool.name)
+              return (
+                <div
+                  key={tool.name}
+                  className="flex items-center gap-3 py-1.5 px-2 rounded hover:bg-bg-hover"
+                >
+                  <button
+                    onClick={() => toggleTool(tool.name)}
+                    className={`w-8 h-4 rounded-full relative transition-colors shrink-0 ${isEnabled ? 'bg-accent-main' : 'bg-bg-hover border border-border-subtle'}`}
+                  >
+                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${isEnabled ? 'left-4' : 'left-0.5'}`} />
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] text-tx-main font-mono">{tool.name}</div>
+                    <div className="text-[11px] text-tx-faint truncate">{tool.description}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </section>
+  )
+}
+
 // ── Skills Section ──
 
 type SkillsView = 'list' | 'new' | 'import'
@@ -1512,6 +1600,9 @@ const SettingsApp: React.FC = () => {
 
         {/* ── MCP Servers ── */}
         <MCPServersSection />
+
+        {/* ── App Tools for AI ── */}
+        <AppToolsSection />
 
         {/* ── Skills ── */}
         <SkillsSection />

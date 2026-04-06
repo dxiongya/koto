@@ -302,8 +302,15 @@ let _cachedBusTools: ToolHandler[] = []
 
 /** Refresh Bus tools from renderer (call after app registration) */
 export async function refreshBusTools(): Promise<void> {
+  // Load disabled tools from config
+  let disabledSet = new Set<string>()
+  try {
+    const config = (await import('./lite-home')).loadConfig()
+    if (config.disabledBusTools) disabledSet = new Set(config.disabledBusTools as string[])
+  } catch {}
+
   const tools = await listBusTools()
-  _cachedBusTools = tools.map((t) => ({
+  _cachedBusTools = tools.filter((t) => !disabledSet.has(t.name)).map((t) => ({
     definition: {
       name: t.name,
       description: `[${t.appId}] ${t.description}`,
