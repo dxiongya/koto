@@ -121,5 +121,32 @@ export const collectorAppDefinition: AppDefinition = {
         return res.ok ? res.data : []
       },
     })
+
+    api.bus.provideTool({
+      name: 'collector.addGroup',
+      appId: 'collector.app',
+      description: 'Create a new collector group.',
+      parameters: {
+        name: { type: 'string', description: 'Group name', required: true },
+      },
+      handler: async (params) => {
+        const res = await window.api.collector.addGroup(params.name as string)
+        return res.ok ? { groups: res.data, success: true } : { success: false, error: res.error }
+      },
+    })
+
+    api.bus.provideTool({
+      name: 'collector.renameGroup',
+      appId: 'collector.app',
+      description: 'Rename a collector group.',
+      parameters: {
+        oldName: { type: 'string', description: 'Current group name', required: true },
+        newName: { type: 'string', description: 'New group name', required: true },
+      },
+      handler: async (params) => {
+        const res = await window.api.collector.renameGroup(params.oldName as string, params.newName as string)
+        return res.ok ? { groups: res.data, success: true } : { success: false, error: res.error }
+      },
+    })
   },
 }
