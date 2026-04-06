@@ -142,12 +142,7 @@ app.whenReady().then(() => {
     })
   }
 
-  // Refresh Bus tools when renderer signals apps are registered
-  ipcMain.handle(IpcChannels.BUS_TOOLS_READY, async () => {
-    await refreshBusTools()
-    console.log(`[Bus] App tools refreshed for AI`)
-    return { ok: true }
-  })
+  // Note: BUS_TOOLS_READY handler is in setupIpcHandlers (ipc.ts)
 
   // Start automation scheduler
   automationScheduler.start()

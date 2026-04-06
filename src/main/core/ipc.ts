@@ -36,6 +36,14 @@ function decodeHtmlEntities(str: string): string {
 }
 
 export function setupIpcHandlers(): void {
+  // ── Bus Tools Bridge ──
+  ipcMain.handle(IpcChannels.BUS_TOOLS_READY, async () => {
+    const { refreshBusTools } = await import('./ai-tools')
+    await refreshBusTools()
+    console.log('[Bus] App tools refreshed for AI')
+    return { ok: true }
+  })
+
   // ── Lite Home ──
 
   ipcMain.handle(IpcChannels.LITE_GET_HOME, () => {
