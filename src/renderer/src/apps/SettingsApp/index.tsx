@@ -1630,38 +1630,46 @@ const SettingsApp: React.FC = () => {
     if (match) setTheme(match.id)
   }
 
+  const TABS = [
+    { id: 'general', label: 'General' },
+    { id: 'ai', label: 'AI' },
+    { id: 'automation', label: 'Automation' },
+  ] as const
+  type TabId = typeof TABS[number]['id']
+  const [activeTab, setActiveTab] = useState<TabId>('general')
+
   return (
-    <div className={`flex-1 overflow-y-auto ${blurClass}`}>
-      <div className="max-w-[560px] mx-auto py-12 px-6">
-        <h1 className="text-tx-main text-lg font-semibold mb-8">Settings</h1>
+    <div className={`flex-1 flex flex-col overflow-hidden ${blurClass}`}>
+      {/* Tab bar */}
+      <div className="shrink-0 border-b border-border-subtle">
+        <div className="max-w-[560px] mx-auto px-6 pt-8 pb-0">
+          <h1 className="text-tx-main text-lg font-semibold mb-4">Settings</h1>
+          <div className="flex gap-0">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-2 text-[13px] border-b-2 transition-colors -mb-px
+                  ${activeTab === tab.id
+                    ? 'text-tx-active border-accent-main font-medium'
+                    : 'text-tx-muted border-transparent hover:text-tx-main hover:border-border-strong'
+                  }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
-        {/* ── Embedding (Gemini) ── */}
-        <EmbeddingSection />
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-[560px] mx-auto py-8 px-6">
 
-        {/* ── AI Providers ── */}
-        <AISettingsSection />
-
-        {/* ── AI Usage Stats ── */}
-        <AIUsageSection />
-
-        {/* ── MCP Servers ── */}
-        <MCPServersSection />
-
-        {/* ── App Tools for AI ── */}
-        <AppToolsSection />
-
-        {/* ── Skills ── */}
-        <SkillsSection />
-
-        {/* ── Automations ── */}
-        <AutomationSection />
-
-        {/* ── Apps ── */}
-        <AppsSection />
-
-        {/* ── Theme ── */}
-        <section className="mb-10">
-          <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Theme</h2>
+        {activeTab === 'general' && (<>
+          {/* ── Theme ── */}
+          <section className="mb-10">
+            <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Theme</h2>
 
           {/* Group selector */}
           <div className="grid grid-cols-2 gap-3 mb-4">
@@ -1768,6 +1776,25 @@ const SettingsApp: React.FC = () => {
             ))}
           </div>
         </section>
+
+          {/* ── Apps ── */}
+          <AppsSection />
+        </>)}
+
+        {activeTab === 'ai' && (<>
+          <EmbeddingSection />
+          <AISettingsSection />
+          <AIUsageSection />
+          <MCPServersSection />
+          <AppToolsSection />
+        </>)}
+
+        {activeTab === 'automation' && (<>
+          <SkillsSection />
+          <AutomationSection />
+        </>)}
+
+        </div>
       </div>
     </div>
   )
