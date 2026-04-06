@@ -76,8 +76,8 @@ export async function startMCPServer(port: number = 3899): Promise<{ port: numbe
   cachedTools = await listBusTools()
   console.log(`[MCP Server] ${cachedTools.length} tools available`)
 
-  // SSE transport state (legacy clients)
-  const sseTransports = new Map<string, SSEServerTransport>()
+  // Each SSE client gets its own server+transport pair
+  const sseTransports = new Map<string, { transport: SSEServerTransport; server: Server }>()
 
   httpServer = http.createServer(async (req, res) => {
     // CORS
@@ -90,29 +90,47 @@ export async function startMCPServer(port: number = 3899): Promise<{ port: numbe
 
     // ── Streamable HTTP transport (modern, /mcp endpoint) ──
     if (url.pathname === '/mcp') {
-      const server = createMCPServer()
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
-      res.on('close', () => { transport.close(); server.close() })
-      await server.connect(transport)
-      await transport.handleRequest(req, res)
+      try {
+        const srv = createMCPServer()
+        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
+        res.on('close', () => { transport.close(); srv.close() })
+        await srv.connect(transport)
+        await transport.handleRequest(req, res)
+      } catch (e) {
+        console.error('[MCP Server] Streamable HTTP error:', e)
+        if (!res.headersSent) { res.writeHead(500); res.end('Internal error') }
+      }
       return
     }
 
-    // ── SSE transport (legacy, /sse + /message endpoints) ──
+    // ── SSE transport (/sse + /message) ──
     if (url.pathname === '/sse') {
-      const server = createMCPServer()
-      const transport = new SSEServerTransport('/message', res)
-      sseTransports.set(transport.sessionId, transport)
-      res.on('close', () => { sseTransports.delete(transport.sessionId); server.close() })
-      await server.connect(transport)
+      try {
+        const srv = createMCPServer()
+        const transport = new SSEServerTransport('/message', res)
+        sseTransports.set(transport.sessionId, { transport, server: srv })
+        res.on('close', () => {
+          sseTransports.delete(transport.sessionId)
+          srv.close().catch(() => {})
+        })
+        await srv.connect(transport)
+        console.log(`[MCP Server] SSE client connected: ${transport.sessionId}`)
+      } catch (e) {
+        console.error('[MCP Server] SSE error:', e)
+      }
       return
     }
 
     if (url.pathname === '/message') {
       const sessionId = url.searchParams.get('sessionId')
-      const transport = sessionId ? sseTransports.get(sessionId) : undefined
-      if (transport) {
-        await transport.handlePostMessage(req, res)
+      const entry = sessionId ? sseTransports.get(sessionId) : undefined
+      if (entry) {
+        try {
+          await entry.transport.handlePostMessage(req, res)
+        } catch (e) {
+          console.error('[MCP Server] Message error:', e)
+          if (!res.headersSent) { res.writeHead(500); res.end('Error') }
+        }
       } else {
         res.writeHead(404)
         res.end('Session not found')
