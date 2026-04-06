@@ -114,8 +114,8 @@ export async function startMCPServer(port: number = 3899): Promise<{ port: numbe
   return new Promise((resolve, reject) => {
     httpServer!.listen(port, '127.0.0.1', () => {
       activePort = port
-      console.log(`[MCP Server] Running on http://127.0.0.1:${port}`)
-      console.log(`[MCP Server] SSE endpoint: http://127.0.0.1:${port}/sse`)
+      console.log(`[MCP Server] Running on http://lite.localhost:${port}`)
+      console.log(`[MCP Server] SSE endpoint: http://lite.localhost:${port}/sse`)
       resolve({ port })
     })
     httpServer!.on('error', (e) => {

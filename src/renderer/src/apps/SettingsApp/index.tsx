@@ -1313,7 +1313,7 @@ const AppToolsSection: React.FC = () => {
           <div className="text-[13px] text-tx-main font-medium">MCP Server</div>
           <div className="text-[11px] text-tx-faint">
             {serverRunning
-              ? <span>Running on <code className="text-accent-main">http://127.0.0.1:{serverPort}/sse</code></span>
+              ? <span>Running on <code className="text-accent-main">http://lite.localhost:{serverPort}/sse</code></span>
               : 'Start to expose tools to Claude Code and other AI clients'}
           </div>
         </div>
@@ -1322,7 +1322,7 @@ const AppToolsSection: React.FC = () => {
       {serverRunning && (
         <div className="mb-4 p-3 rounded-lg border border-border-subtle text-[11px] text-tx-faint font-mono bg-bg-app">
           <div className="text-tx-muted text-[10px] uppercase tracking-wider mb-1">Claude Code config:</div>
-          <div className="select-all">{`"lite": { "url": "http://127.0.0.1:${serverPort}/sse" }`}</div>
+          <div className="select-all">{`"lite": { "url": "http://lite.localhost:${serverPort}/sse" }`}</div>
         </div>
       )}
 
