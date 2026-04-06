@@ -220,6 +220,7 @@ const PersistentTerminalPane = memo(function PersistentTerminalPane({
     if (isNowVisible && !wasVisible.current && mounted) {
       requestAnimationFrame(() => {
         ref.current?.fit()
+        ref.current?.refresh() // Fix garbled display after display:none
         if (isActive) ref.current?.focus()
       })
     } else if (isActive && isNowVisible) {

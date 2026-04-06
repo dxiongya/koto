@@ -15,6 +15,8 @@ export interface TerminalViewHandle {
   serialize: () => string | null
   focus: () => void
   fit: () => void
+  /** Force re-render all visible content (fixes garbled display after display:none) */
+  refresh: () => void
 }
 
 export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
@@ -32,6 +34,11 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         try { return serializeAddonRef.current.serialize() } catch { return null }
       },
       focus: () => { termRef.current?.focus() },
+      refresh: () => {
+        if (termRef.current) {
+          termRef.current.refresh(0, termRef.current.rows - 1)
+        }
+      },
       fit: () => {
         const el = containerRef.current
         if (!el) return
