@@ -10,6 +10,7 @@ import { loadSkills } from './skills-loader'
 import { createAutomation, listAutomations } from './automation-store'
 import type { AIToolDefinition, AutomationInterval } from '../../shared/types'
 import { mcpManager } from './mcp-manager'
+import { listBusTools, callBusTool } from './bus-bridge'
 
 const MAX_RESULT_LENGTH = 8000
 
@@ -296,6 +297,31 @@ export const BUILTIN_TOOLS: Record<string, ToolHandler> = {
 }
 
 /** Get all tools: built-in + MCP */
+// Cache Bus tools (refreshed periodically or on demand)
+let _cachedBusTools: ToolHandler[] = []
+
+/** Refresh Bus tools from renderer (call after app registration) */
+export async function refreshBusTools(): Promise<void> {
+  const tools = await listBusTools()
+  _cachedBusTools = tools.map((t) => ({
+    definition: {
+      name: t.name,
+      description: `[${t.appId}] ${t.description}`,
+      parameters: {
+        type: 'object',
+        properties: Object.fromEntries(
+          Object.entries(t.parameters).map(([k, v]) => [k, { type: v.type, description: v.description, ...(v.enum ? { enum: v.enum } : {}) }]),
+        ),
+        required: Object.entries(t.parameters).filter(([, v]) => v.required).map(([k]) => k),
+      },
+    },
+    execute: async (input) => {
+      const result = await callBusTool(t.name, input)
+      return typeof result === 'string' ? result : JSON.stringify(result, null, 2)
+    },
+  }))
+}
+
 function getAllToolHandlers(): ToolHandler[] {
   const builtIn = Object.values(BUILTIN_TOOLS)
 
@@ -308,7 +334,7 @@ function getAllToolHandlers(): ToolHandler[] {
     execute: (input) => mcpManager.callTool(t.serverId, t.name, input),
   }))
 
-  return [...builtIn, ...mcpTools]
+  return [...builtIn, ..._cachedBusTools, ...mcpTools]
 }
 
 /** Get tool definitions formatted for Anthropic API */
@@ -337,11 +363,15 @@ export function getAllToolDefinitions(): AIToolDefinition[] {
   return getAllToolHandlers().map(t => t.definition)
 }
 
-/** Execute a tool by name (built-in or MCP) */
+/** Execute a tool by name (built-in, Bus, or MCP) */
 export async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
   // Check built-in tools first
   const handler = BUILTIN_TOOLS[name]
   if (handler) return handler.execute(input)
+
+  // Check Bus tools (app-provided via provideTool)
+  const busTool = _cachedBusTools.find((t) => t.definition.name === name)
+  if (busTool) return busTool.execute(input)
 
   // Check MCP tools (name format: mcp_{serverId}_{toolName})
   const mcpMatch = name.match(/^mcp_([^_]+)_(.+)$/)

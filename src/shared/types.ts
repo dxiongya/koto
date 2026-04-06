@@ -49,6 +49,9 @@ export const IpcChannels = {
   TERMINAL_SAVE_BUFFER: 'terminal:saveBuffer',
   TERMINAL_LOAD_BUFFER: 'terminal:loadBuffer',
   TERMINAL_GET_REPLAY_BUFFER: 'terminal:getReplayBuffer',
+  // Bus-to-main bridge
+  BUS_LIST_TOOLS: 'bus:listTools',
+  BUS_CALL_TOOL: 'bus:callTool',
   TERMINAL_SAVE_ALL_SYNC: 'terminal:saveAllSync',
   TERMINAL_DATA: 'terminal:data',
   TERMINAL_EXIT: 'terminal:exit',

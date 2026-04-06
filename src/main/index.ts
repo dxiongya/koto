@@ -11,6 +11,7 @@ import { registerAssetProtocol } from './core/asset-protocol'
 import { registerAppProtocol } from './core/app-loader'
 import { mcpManager } from './core/mcp-manager'
 import { automationScheduler } from './core/automation-scheduler'
+import { refreshBusTools } from './core/ai-tools'
 
 function sendToRenderer(win: BrowserWindow, shortcut: string): void {
   win.webContents.send('shortcut', shortcut)
@@ -140,6 +141,13 @@ app.whenReady().then(() => {
       console.error('[MCP] Init failed:', err)
     })
   }
+
+  // Refresh Bus tools after renderer has registered apps (5s delay)
+  setTimeout(() => {
+    refreshBusTools().then((tools) => {
+      console.log(`[Bus] ${(tools as any)?.length ?? 0} app tools available for AI`)
+    }).catch(() => {})
+  }, 5000)
 
   // Start automation scheduler
   automationScheduler.start()

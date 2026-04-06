@@ -137,6 +137,25 @@ const api = {
     content: (query: string, dirs: string[], maxResults?: number) =>
       ipcRenderer.invoke(IpcChannels.SEARCH_CONTENT, query, dirs, maxResults),
   },
+  bus: {
+    // Renderer responds to main process requests for Bus tool info/calls
+    onListTools: (callback: () => { name: string; description: string; parameters: Record<string, unknown>; appId: string }[]) => {
+      ipcRenderer.on(IpcChannels.BUS_LIST_TOOLS, async (event) => {
+        const tools = callback()
+        event.sender.send(IpcChannels.BUS_LIST_TOOLS + ':response', tools)
+      })
+    },
+    onCallTool: (callback: (name: string, params: Record<string, unknown>) => Promise<unknown>) => {
+      ipcRenderer.on(IpcChannels.BUS_CALL_TOOL, async (event, name: string, params: Record<string, unknown>, requestId: string) => {
+        try {
+          const result = await callback(name, params)
+          event.sender.send(IpcChannels.BUS_CALL_TOOL + ':response', requestId, { ok: true, data: result })
+        } catch (e) {
+          event.sender.send(IpcChannels.BUS_CALL_TOOL + ':response', requestId, { ok: false, error: String(e) })
+        }
+      })
+    },
+  },
   changelog: {
     append: (entry: Record<string, unknown>) =>
       ipcRenderer.invoke(IpcChannels.CHANGELOG_APPEND, entry),

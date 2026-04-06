@@ -8,7 +8,7 @@ import { FileSwitcher } from './components/FileSwitcher'
 import { ContextPanel } from './components/ContextPanel'
 import { builtinThemes, applyTheme, applyFont } from './themes'
 import type { FontId } from './themes'
-import { getAppRegistry } from './core/AppContext'
+import { getAppRegistry, getAppBus } from './core/AppContext'
 import { AppAPIProvider } from './core/AppContext'
 import { registerBuiltinApps } from './core/builtinApps'
 import { TerminalApp } from './apps/TerminalApp'
@@ -152,6 +152,20 @@ export default function App() {
       // Register built-in apps
       return registerBuiltinApps(getAppRegistry())
     }).then(() => {
+      // Set up Bus-to-main bridge — allows main process MCP server to call Bus tools
+      const bus = getAppBus()
+      window.api.bus.onListTools(() => {
+        return bus.getTools().map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+          appId: t.appId,
+        }))
+      })
+      window.api.bus.onCallTool(async (name, params) => {
+        return bus.request(name, params)
+      })
+
       setRestored(true)
     }).catch((err) => {
       console.error('Failed to restore state:', err)
