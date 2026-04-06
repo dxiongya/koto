@@ -1,42 +1,31 @@
 /**
  * Lite MCP Server — exposes app Bus tools to external AI clients.
  *
- * When enabled, starts an MCP server using SSE transport on a local port.
+ * Supports both Streamable HTTP (modern) and SSE (legacy) transports.
  * Claude Code and other MCP clients can connect and use notes.read,
  * collector.search, etc.
  *
  * Flow: External AI → MCP Server → Bus Bridge → Renderer Bus → App handler
  */
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import http from 'http'
 import { listBusTools, callBusTool, type BridgedTool } from './bus-bridge'
 
-let server: Server | null = null
 let httpServer: http.Server | null = null
 let cachedTools: BridgedTool[] = []
 let activePort: number | null = null
 
-/** Start the MCP server on the given port */
-export async function startMCPServer(port: number = 3899): Promise<{ port: number }> {
-  if (httpServer) {
-    console.log(`[MCP Server] Already running on port ${activePort}`)
-    return { port: activePort! }
-  }
-
-  // Refresh tools from Bus
-  cachedTools = await listBusTools()
-  console.log(`[MCP Server] ${cachedTools.length} tools available`)
-
-  server = new Server(
+function createMCPServer(): Server {
+  const server = new Server(
     { name: 'lite-workspace', version: '1.0.0' },
     { capabilities: { tools: {} } },
   )
 
   // List tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    // Refresh on each list request to catch new tools
     cachedTools = await listBusTools()
     return {
       tools: cachedTools.map((t) => ({
@@ -74,48 +63,80 @@ export async function startMCPServer(port: number = 3899): Promise<{ port: numbe
     }
   })
 
-  // HTTP server with SSE transport
-  const transports = new Map<string, SSEServerTransport>()
+  return server
+}
+
+/** Start the MCP server on the given port */
+export async function startMCPServer(port: number = 3899): Promise<{ port: number }> {
+  if (httpServer) {
+    console.log(`[MCP Server] Already running on port ${activePort}`)
+    return { port: activePort! }
+  }
+
+  cachedTools = await listBusTools()
+  console.log(`[MCP Server] ${cachedTools.length} tools available`)
+
+  // SSE transport state (legacy clients)
+  const sseTransports = new Map<string, SSEServerTransport>()
 
   httpServer = http.createServer(async (req, res) => {
     // CORS
     res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept')
     if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return }
 
     const url = new URL(req.url || '/', `http://localhost:${port}`)
 
+    // ── Streamable HTTP transport (modern, /mcp endpoint) ──
+    if (url.pathname === '/mcp') {
+      const server = createMCPServer()
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
+      res.on('close', () => { transport.close(); server.close() })
+      await server.connect(transport)
+      await transport.handleRequest(req, res)
+      return
+    }
+
+    // ── SSE transport (legacy, /sse + /message endpoints) ──
     if (url.pathname === '/sse') {
-      // SSE endpoint — client connects here
+      const server = createMCPServer()
       const transport = new SSEServerTransport('/message', res)
-      transports.set(transport.sessionId, transport)
-      res.on('close', () => transports.delete(transport.sessionId))
-      await server!.connect(transport)
-    } else if (url.pathname === '/message') {
-      // Message endpoint — client sends messages here
+      sseTransports.set(transport.sessionId, transport)
+      res.on('close', () => { sseTransports.delete(transport.sessionId); server.close() })
+      await server.connect(transport)
+      return
+    }
+
+    if (url.pathname === '/message') {
       const sessionId = url.searchParams.get('sessionId')
-      const transport = sessionId ? transports.get(sessionId) : undefined
+      const transport = sessionId ? sseTransports.get(sessionId) : undefined
       if (transport) {
         await transport.handlePostMessage(req, res)
       } else {
         res.writeHead(404)
         res.end('Session not found')
       }
-    } else if (url.pathname === '/health') {
+      return
+    }
+
+    // ── Health check ──
+    if (url.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ status: 'ok', tools: cachedTools.length }))
-    } else {
-      res.writeHead(404)
-      res.end('Not found')
+      return
     }
+
+    res.writeHead(404)
+    res.end('Not found')
   })
 
   return new Promise((resolve, reject) => {
     httpServer!.listen(port, '127.0.0.1', () => {
       activePort = port
       console.log(`[MCP Server] Running on http://lite.localhost:${port}`)
-      console.log(`[MCP Server] SSE endpoint: http://lite.localhost:${port}/sse`)
+      console.log(`[MCP Server] Streamable HTTP: http://lite.localhost:${port}/mcp`)
+      console.log(`[MCP Server] SSE (legacy):    http://lite.localhost:${port}/sse`)
       resolve({ port })
     })
     httpServer!.on('error', (e) => {
@@ -133,10 +154,6 @@ export async function stopMCPServer(): Promise<void> {
     httpServer = null
     activePort = null
     console.log('[MCP Server] Stopped')
-  }
-  if (server) {
-    await server.close()
-    server = null
   }
 }
 
