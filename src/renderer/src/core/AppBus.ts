@@ -1,14 +1,16 @@
 /**
  * App Bus — inter-app communication channel.
  * Apps provide capabilities, request from others, emit/listen events.
+ * Tools registered via provideTool() are auto-exposed to MCP when enabled.
  */
-import type { AppBus } from '../../../shared/app-interface'
+import type { AppBus, BusToolDefinition } from '../../../shared/app-interface'
 
 type Handler = (params?: unknown) => unknown | Promise<unknown>
 type Listener = (data?: unknown) => void
 
 export function createAppBus(): AppBus {
   const providers = new Map<string, Handler>()
+  const tools = new Map<string, BusToolDefinition>()
   const listeners = new Map<string, Set<Listener>>()
 
   return {
@@ -16,8 +18,16 @@ export function createAppBus(): AppBus {
       providers.set(capability, handler)
     },
 
+    provideTool(definition): void {
+      const { name, handler, ...meta } = definition
+      // Register as both a tool (with metadata) and a regular capability
+      tools.set(name, { ...meta, name, handler })
+      providers.set(name, handler)
+    },
+
     unprovide(capability: string): void {
       providers.delete(capability)
+      tools.delete(capability)
     },
 
     async request<T = unknown>(capability: string, params?: unknown): Promise<T | null> {
@@ -34,6 +44,10 @@ export function createAppBus(): AppBus {
 
     has(capability: string): boolean {
       return providers.has(capability)
+    },
+
+    getTools(): BusToolDefinition[] {
+      return Array.from(tools.values())
     },
 
     emit(event: string, data?: unknown): void {

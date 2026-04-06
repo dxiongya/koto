@@ -64,17 +64,43 @@ export interface AppSearchResult {
     | { type: 'navigate'; app: string; state?: Record<string, unknown> }
 }
 
+// ── Bus Tool (capability with metadata for MCP auto-bridging) ──
+
+export interface BusToolParameter {
+  type: 'string' | 'number' | 'boolean'
+  description: string
+  required?: boolean
+  enum?: string[]
+}
+
+export interface BusToolDefinition {
+  /** Tool name (e.g. 'notes.read') — also used as Bus capability name */
+  name: string
+  /** Human-readable description for AI */
+  description: string
+  /** Parameter schema */
+  parameters: Record<string, BusToolParameter>
+  /** Source app ID */
+  appId: string
+  /** Handler function */
+  handler: (params: Record<string, unknown>) => unknown | Promise<unknown>
+}
+
 // ── App Bus ──
 
 export interface AppBus {
   /** Register a capability that other apps can request */
   provide(capability: string, handler: (params?: unknown) => unknown | Promise<unknown>): void
+  /** Register a tool with metadata (auto-exposed to MCP when enabled) */
+  provideTool(definition: Omit<BusToolDefinition, 'handler'> & { handler: (params: Record<string, unknown>) => unknown | Promise<unknown> }): void
   /** Remove a provided capability */
   unprovide(capability: string): void
   /** Request a capability from any app that provides it */
   request<T = unknown>(capability: string, params?: unknown): Promise<T | null>
   /** Check if a capability is available */
   has(capability: string): boolean
+  /** Get all registered tool definitions (for MCP bridge) */
+  getTools(): BusToolDefinition[]
   /** Broadcast an event to all listeners */
   emit(event: string, data?: unknown): void
   /** Listen for events */
