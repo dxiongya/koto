@@ -136,6 +136,27 @@ export const collectorAppDefinition: AppDefinition = {
     })
 
     api.bus.provideTool({
+      name: 'collector.update',
+      appId: 'collector.app',
+      description: 'Update an existing collector item (partial update).',
+      parameters: {
+        id: { type: 'string', description: 'Item ID', required: true },
+        title: { type: 'string', description: 'New title' },
+        note: { type: 'string', description: 'New note' },
+        group: { type: 'string', description: 'New group' },
+        meta: { type: 'string', description: 'JSON string of metadata to merge' },
+      },
+      handler: async (params) => {
+        const { id, meta: metaStr, ...patch } = params as any
+        if (metaStr) {
+          try { (patch as any).meta = JSON.parse(metaStr) } catch {}
+        }
+        const res = await window.api.collector.update(id, patch)
+        return res.ok ? { success: true } : { success: false, error: res.error }
+      },
+    })
+
+    api.bus.provideTool({
       name: 'collector.renameGroup',
       appId: 'collector.app',
       description: 'Rename a collector group.',
