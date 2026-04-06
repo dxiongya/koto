@@ -52,6 +52,7 @@ export const IpcChannels = {
   // Bus-to-main bridge
   BUS_LIST_TOOLS: 'bus:listTools',
   BUS_CALL_TOOL: 'bus:callTool',
+  BUS_TOOLS_READY: 'bus:toolsReady',
   TERMINAL_SAVE_ALL_SYNC: 'terminal:saveAllSync',
   TERMINAL_DATA: 'terminal:data',
   TERMINAL_EXIT: 'terminal:exit',

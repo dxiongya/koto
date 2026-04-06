@@ -152,7 +152,7 @@ export default function App() {
       // Register built-in apps
       return registerBuiltinApps(getAppRegistry())
     }).then(() => {
-      // Set up Bus-to-main bridge — allows main process MCP server to call Bus tools
+      // Set up Bus-to-main bridge — allows main process to call Bus tools
       const bus = getAppBus()
       window.api.bus.onListTools(() => {
         return bus.getTools().map((t) => ({
@@ -165,6 +165,9 @@ export default function App() {
       window.api.bus.onCallTool(async (name, params) => {
         return bus.request(name, params)
       })
+
+      // Notify main process that Bus tools are ready
+      window.api.bus.notifyToolsReady()
 
       setRestored(true)
     }).catch((err) => {

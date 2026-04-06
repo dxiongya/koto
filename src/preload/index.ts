@@ -145,6 +145,7 @@ const api = {
         event.sender.send(IpcChannels.BUS_LIST_TOOLS + ':response', tools)
       })
     },
+    notifyToolsReady: () => ipcRenderer.invoke(IpcChannels.BUS_TOOLS_READY),
     onCallTool: (callback: (name: string, params: Record<string, unknown>) => Promise<unknown>) => {
       ipcRenderer.on(IpcChannels.BUS_CALL_TOOL, async (event, name: string, params: Record<string, unknown>, requestId: string) => {
         try {

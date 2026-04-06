@@ -142,12 +142,12 @@ app.whenReady().then(() => {
     })
   }
 
-  // Refresh Bus tools after renderer has registered apps (5s delay)
-  setTimeout(() => {
-    refreshBusTools().then((tools) => {
-      console.log(`[Bus] ${(tools as any)?.length ?? 0} app tools available for AI`)
-    }).catch(() => {})
-  }, 5000)
+  // Refresh Bus tools when renderer signals apps are registered
+  ipcMain.handle(IpcChannels.BUS_TOOLS_READY, async () => {
+    await refreshBusTools()
+    console.log(`[Bus] App tools refreshed for AI`)
+    return { ok: true }
+  })
 
   // Start automation scheduler
   automationScheduler.start()
