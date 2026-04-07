@@ -19,7 +19,7 @@ import { listAutomations, createAutomation, updateAutomation, deleteAutomation }
 import { readSnapshots, restoreSnapshot } from './automation-snapshots'
 import { loadExperience } from './automation-runner'
 import { automationScheduler } from './automation-scheduler'
-import { listCollectedItems, countCollectedItems, findDuplicateByUrl, findDuplicateByHash, computeContentHash, addCollectedItem, updateCollectedItem, deleteCollectedItem, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, ftsSearch, readItemMarkdown } from './collector-store'
+import { listCollectedItems, countCollectedItems, findDuplicateByUrl, findDuplicateByHash, computeContentHash, addCollectedItem, updateCollectedItem, deleteCollectedItem, deduplicateItems, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, ftsSearch, readItemMarkdown } from './collector-store'
 import { hybridSearch, embedAllPending, embedAndSave } from './collector-embedding'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
 
@@ -772,6 +772,14 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_COUNT, (_, group?: string) => {
     try {
       return { ok: true, data: countCollectedItems(group) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_DEDUP, (_, group?: string) => {
+    try {
+      return { ok: true, data: deduplicateItems(group) }
     } catch (e) {
       return { ok: false, error: String(e) }
     }

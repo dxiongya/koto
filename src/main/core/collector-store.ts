@@ -281,6 +281,77 @@ export function updateCollectedItem(id: string, patch: Partial<CollectedItem>): 
   return rowToItem(updated)
 }
 
+/** Find and remove duplicate items in a group (or all). Keeps the oldest, deletes newer duplicates. */
+export function deduplicateItems(group?: string): { removed: number; kept: number } {
+  const db = getDb()
+
+  // Find duplicates by URL (most common)
+  const sql = group && group !== 'all'
+    ? `SELECT url, COUNT(*) as cnt, GROUP_CONCAT(id) as ids, MIN(created_at) as oldest
+       FROM items WHERE url IS NOT NULL AND url != '' AND "group" = ?
+       GROUP BY url HAVING cnt > 1`
+    : `SELECT url, COUNT(*) as cnt, GROUP_CONCAT(id) as ids, MIN(created_at) as oldest
+       FROM items WHERE url IS NOT NULL AND url != ''
+       GROUP BY url HAVING cnt > 1`
+
+  const rows = group && group !== 'all'
+    ? db.prepare(sql).all(group) as { url: string; cnt: number; ids: string; oldest: number }[]
+    : db.prepare(sql).all() as { url: string; cnt: number; ids: string; oldest: number }[]
+
+  let removed = 0
+
+  for (const row of rows) {
+    const allIds = row.ids.split(',')
+    // Find the oldest item to keep
+    const keepRow = db.prepare('SELECT id FROM items WHERE url = ? ORDER BY created_at ASC LIMIT 1').get(row.url) as { id: string }
+    const keepId = keepRow.id
+
+    // Delete all others
+    for (const id of allIds) {
+      if (id !== keepId) {
+        // Delete asset + markdown files
+        const item = db.prepare('SELECT asset_path FROM items WHERE id = ?').get(id) as { asset_path: string | null } | undefined
+        if (item?.asset_path) {
+          try { fs.unlinkSync(path.join(getLiteHome(), 'collected', item.asset_path)) } catch {}
+        }
+        try { fs.unlinkSync(path.join(getLiteHome(), 'collected', 'markdown', `${id}.md`)) } catch {}
+
+        db.prepare('DELETE FROM items WHERE id = ?').run(id)
+        try { db.prepare('DELETE FROM vectors WHERE item_id = ?').run(id) } catch {}
+        removed++
+      }
+    }
+  }
+
+  // Also deduplicate by title (for items without URL, like text clips)
+  const titleSql = group && group !== 'all'
+    ? `SELECT title, COUNT(*) as cnt, GROUP_CONCAT(id) as ids
+       FROM items WHERE (url IS NULL OR url = '') AND "group" = ?
+       GROUP BY title HAVING cnt > 1`
+    : `SELECT title, COUNT(*) as cnt, GROUP_CONCAT(id) as ids
+       FROM items WHERE (url IS NULL OR url = '')
+       GROUP BY title HAVING cnt > 1`
+
+  const titleRows = group && group !== 'all'
+    ? db.prepare(titleSql).all(group) as { title: string; cnt: number; ids: string }[]
+    : db.prepare(titleSql).all() as { title: string; cnt: number; ids: string }[]
+
+  for (const row of titleRows) {
+    const allIds = row.ids.split(',')
+    const keepId = allIds[0] // keep first
+    for (const id of allIds.slice(1)) {
+      db.prepare('DELETE FROM items WHERE id = ?').run(id)
+      removed++
+    }
+  }
+
+  const total = group && group !== 'all'
+    ? (db.prepare('SELECT COUNT(*) as c FROM items WHERE "group" = ?').get(group) as { c: number }).c
+    : (db.prepare('SELECT COUNT(*) as c FROM items').get() as { c: number }).c
+
+  return { removed, kept: total }
+}
+
 export function deleteCollectedItem(id: string): boolean {
   const db = getDb()
   const item = db.prepare('SELECT * FROM items WHERE id = ?').get(id) as Record<string, unknown> | undefined

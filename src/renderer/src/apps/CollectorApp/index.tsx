@@ -300,6 +300,20 @@ export const CollectorApp: React.FC = () => {
             <button onClick={() => setViewMode('list')} aria-label="List view" className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-bg-active text-tx-main' : 'text-tx-faint hover:text-tx-muted'}`}><List size={13} /></button>
             <button onClick={() => setViewMode('feed')} aria-label="Feed view" className={`p-1.5 transition-colors ${viewMode === 'feed' ? 'bg-bg-active text-tx-main' : 'text-tx-faint hover:text-tx-muted'}`}><BookOpen size={13} /></button>
           </div>
+          <button
+            onClick={async () => {
+              if (!confirm(`Remove duplicates${activeFilter !== 'all' ? ` in "${activeFilter}"` : ''}?`)) return
+              const res = await window.api.collector.dedup(groupParam)
+              if (res.ok) {
+                alert(`Removed ${res.data.removed} duplicates. ${res.data.kept} items remaining.`)
+                loadItems()
+              }
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-tx-faint border border-border-subtle rounded-md hover:bg-bg-hover hover:text-status-warning transition-colors"
+            title="Remove duplicate items"
+          >
+            Dedup
+          </button>
           <button onClick={() => setShowCollectPanel(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-tx-muted border border-border-strong rounded-md hover:bg-bg-hover transition-colors">
             <Plus size={12} />Collect
           </button>

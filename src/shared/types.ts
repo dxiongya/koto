@@ -66,6 +66,7 @@ export const IpcChannels = {
   MEMORY_KG_INVALIDATE: 'memory:kgInvalidate',
   MEMORY_KG_QUERY: 'memory:kgQuery',
   MEMORY_KG_STATS: 'memory:kgStats',
+  COLLECTOR_DEDUP: 'collector:dedup',
   MEMORY_MINE_FILE: 'memory:mineFile',
   MEMORY_GRAPH_TRAVERSE: 'memory:graphTraverse',
 
