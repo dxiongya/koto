@@ -30,6 +30,7 @@ export const CollectorApp: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<CollectedItem[] | null>(null)
   const [searching, setSearching] = useState(false)
+  const [focusedItemId, setFocusedItemId] = useState<string | null>(null)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -93,6 +94,23 @@ export const CollectorApp: React.FC = () => {
     }, 300)
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
   }, [searchQuery])
+
+  // Listen for sidebar item focus event → scroll to item + highlight
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { itemId } = (e as CustomEvent).detail
+      setFocusedItemId(itemId)
+      // Scroll to the item after render
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-collector-id="${itemId}"]`)
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+      // Clear highlight after 3 seconds
+      setTimeout(() => setFocusedItemId(null), 3000)
+    }
+    window.addEventListener('lite:collector-focus-item', handler)
+    return () => window.removeEventListener('lite:collector-focus-item', handler)
+  }, [])
 
   // ── Actions ──
 
@@ -348,15 +366,27 @@ export const CollectorApp: React.FC = () => {
           </div>
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-4 gap-2.5 pb-4">
-            {filteredItems.map((item) => <ItemCard key={item.id} item={item} onDelete={handleDelete} onOpen={handleOpen} />)}
+            {filteredItems.map((item) => (
+              <div key={item.id} data-collector-id={item.id} className={focusedItemId === item.id ? 'ring-2 ring-accent-main rounded-md transition-all' : ''}>
+                <ItemCard item={item} onDelete={handleDelete} onOpen={handleOpen} />
+              </div>
+            ))}
           </div>
         ) : viewMode === 'list' ? (
           <div className="flex flex-col gap-px pb-4">
-            {filteredItems.map((item) => <ItemListRow key={item.id} item={item} onDelete={handleDelete} onOpen={handleOpen} />)}
+            {filteredItems.map((item) => (
+              <div key={item.id} data-collector-id={item.id} className={focusedItemId === item.id ? 'ring-2 ring-accent-main rounded-md transition-all' : ''}>
+                <ItemListRow item={item} onDelete={handleDelete} onOpen={handleOpen} />
+              </div>
+            ))}
           </div>
         ) : (
           <div className="flex flex-col gap-6 pb-8 max-w-[640px] mx-auto w-full">
-            {filteredItems.map((item) => <FeedItem key={item.id} item={item} onDelete={handleDelete} onOpen={handleOpen} />)}
+            {filteredItems.map((item) => (
+              <div key={item.id} data-collector-id={item.id} className={focusedItemId === item.id ? 'ring-2 ring-accent-main rounded-md transition-all' : ''}>
+                <FeedItem item={item} onDelete={handleDelete} onOpen={handleOpen} />
+              </div>
+            ))}
           </div>
         )}
         {loadingMore && <div className="flex justify-center py-4"><Loader2 size={16} className="text-tx-faint animate-spin" /></div>}

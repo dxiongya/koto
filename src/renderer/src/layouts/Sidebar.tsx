@@ -1300,7 +1300,21 @@ const CollectorAppSection: React.FC<{
           e.dataTransfer.setData('application/x-collector-item', item.id)
           e.dataTransfer.effectAllowed = 'move'
         }}
-        onClick={(e) => { e.stopPropagation(); setSelectedItemId(selected ? null : item.id) }}
+        onClick={(e) => {
+          e.stopPropagation()
+          setSelectedItemId(selected ? null : item.id)
+          // Navigate to collector.app and set group filter to show this item
+          useUIStore.getState().setCurrentApp('collector.app')
+          const group = item.group && item.group !== 'all' ? item.group : 'all'
+          const store = useUIStore.getState()
+          useUIStore.setState({
+            appStates: { ...store.appStates, 'collector.app': { ...store.appStates['collector.app'], activeFilePath: group } },
+          })
+          // Dispatch event for main area to scroll to this item
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('lite:collector-focus-item', { detail: { itemId: item.id } }))
+          }, 100)
+        }}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedItemId(selected ? null : item.id) } }}
         className={`pl-[40px] py-[3px] pr-4 flex items-center gap-2 text-[12px] cursor-grab active:cursor-grabbing
           hover:bg-bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
