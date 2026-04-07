@@ -11,6 +11,7 @@ const BUILTIN_APPS: Record<string, () => Promise<{ definition: AppDefinition }>>
   'collector.app': () => import('../apps/CollectorApp/appDef').then(m => ({ definition: m.collectorAppDefinition })),
   'code.app': () => import('../apps/CodeApp/appDef').then(m => ({ definition: m.codeAppDefinition })),
   'terminal.app': () => import('../apps/TerminalApp/appDef').then(m => ({ definition: m.terminalAppDefinition })),
+  'memory.app': () => import('../apps/MemoryApp/appDef').then(m => ({ definition: m.memoryAppDefinition })),
 }
 
 const DEFAULT_ENABLED = ['notes.app', 'collector.app']

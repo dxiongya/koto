@@ -23,6 +23,7 @@ export function initLiteHome(): string {
     path.join(liteHome, 'automations'),
     path.join(liteHome, 'automations', 'snapshots'),
     path.join(liteHome, 'automations', 'learnings'),
+    path.join(liteHome, 'memory'),
   ]
 
   for (const dir of dirs) {

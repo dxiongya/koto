@@ -133,6 +133,26 @@ const api = {
       }
     },
   },
+  memory: {
+    store: (wing: string, room: string, content: string, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.MEMORY_STORE, wing, room, content, opts),
+    search: (query: string, wing?: string, room?: string, limit?: number) =>
+      ipcRenderer.invoke(IpcChannels.MEMORY_SEARCH, query, wing, room, limit),
+    list: (wing?: string, room?: string, limit?: number, offset?: number) =>
+      ipcRenderer.invoke(IpcChannels.MEMORY_LIST, wing, room, limit, offset),
+    delete: (id: string) => ipcRenderer.invoke(IpcChannels.MEMORY_DELETE, id),
+    status: () => ipcRenderer.invoke(IpcChannels.MEMORY_STATUS),
+    taxonomy: () => ipcRenderer.invoke(IpcChannels.MEMORY_TAXONOMY),
+    getContext: (wing?: string, room?: string) => ipcRenderer.invoke(IpcChannels.MEMORY_GET_CONTEXT, wing, room),
+    setIdentity: (content: string) => ipcRenderer.invoke(IpcChannels.MEMORY_SET_IDENTITY, content),
+    kgAdd: (subject: string, predicate: string, object: string, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.MEMORY_KG_ADD, subject, predicate, object, opts),
+    kgInvalidate: (subject: string, predicate: string, object: string, ended?: string) =>
+      ipcRenderer.invoke(IpcChannels.MEMORY_KG_INVALIDATE, subject, predicate, object, ended),
+    kgQuery: (entity: string, opts?: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.MEMORY_KG_QUERY, entity, opts),
+    kgStats: () => ipcRenderer.invoke(IpcChannels.MEMORY_KG_STATS),
+  },
   search: {
     content: (query: string, dirs: string[], maxResults?: number) =>
       ipcRenderer.invoke(IpcChannels.SEARCH_CONTENT, query, dirs, maxResults),

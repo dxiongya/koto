@@ -74,6 +74,96 @@ export function setupIpcHandlers(): void {
     }
   })
 
+  // ── Memory.app ──
+  ipcMain.handle(IpcChannels.MEMORY_STORE, async (_, wing: string, room: string, content: string, opts?: Record<string, unknown>) => {
+    try {
+      const { storeMemory } = await import('./memory-store')
+      return { ok: true, data: storeMemory(wing, room, content, opts as any) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_SEARCH, async (_, query: string, wing?: string, room?: string, limit?: number) => {
+    try {
+      const { searchMemories } = await import('./memory-store')
+      return { ok: true, data: searchMemories(query, wing, room, limit) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_LIST, async (_, wing?: string, room?: string, limit?: number, offset?: number) => {
+    try {
+      const { listMemories } = await import('./memory-store')
+      return { ok: true, data: listMemories(wing, room, limit, offset) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_DELETE, async (_, id: string) => {
+    try {
+      const { deleteMemory } = await import('./memory-store')
+      return { ok: true, data: deleteMemory(id) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_STATUS, async () => {
+    try {
+      const { getMemoryStatus } = await import('./memory-store')
+      const { getKgStats } = await import('./memory-kg')
+      return { ok: true, data: { ...getMemoryStatus(), kg: getKgStats() } }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_TAXONOMY, async () => {
+    try {
+      const { getTaxonomy } = await import('./memory-store')
+      return { ok: true, data: getTaxonomy() }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_GET_CONTEXT, async (_, wing?: string, room?: string) => {
+    try {
+      const { getIdentity, getEssentialMemories, listMemories } = await import('./memory-store')
+      const identity = getIdentity()
+      const essential = getEssentialMemories(15)
+      const onDemand = (wing || room) ? listMemories(wing, room, 20) : []
+      return { ok: true, data: { identity, essential, onDemand } }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_SET_IDENTITY, async (_, content: string) => {
+    try {
+      const { setIdentity } = await import('./memory-store')
+      setIdentity(content)
+      return { ok: true }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_KG_ADD, async (_, subject: string, predicate: string, object: string, opts?: Record<string, unknown>) => {
+    try {
+      const { addTriple } = await import('./memory-kg')
+      return { ok: true, data: addTriple(subject, predicate, object, opts as any) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_KG_INVALIDATE, async (_, subject: string, predicate: string, object: string, ended?: string) => {
+    try {
+      const { invalidateTriple } = await import('./memory-kg')
+      return { ok: true, data: invalidateTriple(subject, predicate, object, ended) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_KG_QUERY, async (_, entity: string, opts?: Record<string, unknown>) => {
+    try {
+      const { queryEntity } = await import('./memory-kg')
+      return { ok: true, data: queryEntity(entity, opts as any) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_KG_STATS, async () => {
+    try {
+      const { getKgStats } = await import('./memory-kg')
+      return { ok: true, data: getKgStats() }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
   // ── Lite Home ──
 
   ipcMain.handle(IpcChannels.LITE_GET_HOME, () => {
