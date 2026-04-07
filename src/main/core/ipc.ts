@@ -78,14 +78,40 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.MEMORY_STORE, async (_, wing: string, room: string, content: string, opts?: Record<string, unknown>) => {
     try {
       const { storeMemory } = await import('./memory-store')
-      return { ok: true, data: storeMemory(wing, room, content, opts as any) }
+      const memory = storeMemory(wing, room, content, opts as any)
+      // Auto-embed asynchronously (don't block the response)
+      import('./memory-embedding').then(({ embedMemory }) => {
+        embedMemory(memory.id).catch(() => {})
+      }).catch(() => {})
+      return { ok: true, data: memory }
     } catch (e) { return { ok: false, error: String(e) } }
   })
 
   ipcMain.handle(IpcChannels.MEMORY_SEARCH, async (_, query: string, wing?: string, room?: string, limit?: number) => {
     try {
-      const { searchMemories } = await import('./memory-store')
-      return { ok: true, data: searchMemories(query, wing, room, limit) }
+      const { searchMemories, getMemory } = await import('./memory-store')
+      const maxResults = limit || 10
+
+      // FTS5 keyword search
+      const ftsResults = searchMemories(query, wing, room, maxResults)
+
+      // Semantic search (supplement if FTS results are sparse)
+      let semanticResults: typeof ftsResults = []
+      if (ftsResults.length < maxResults) {
+        try {
+          const { semanticMemorySearch } = await import('./memory-embedding')
+          const semHits = await semanticMemorySearch(query, maxResults, wing, room)
+          const ftsIds = new Set(ftsResults.map(r => r.id))
+          for (const hit of semHits) {
+            if (ftsIds.has(hit.memoryId)) continue
+            const mem = getMemory(hit.memoryId)
+            if (mem) semanticResults.push({ ...mem, score: hit.score })
+          }
+        } catch { /* semantic search unavailable (no API key) */ }
+      }
+
+      // Merge: FTS first, then semantic
+      return { ok: true, data: [...ftsResults, ...semanticResults].slice(0, maxResults) }
     } catch (e) { return { ok: false, error: String(e) } }
   })
 
