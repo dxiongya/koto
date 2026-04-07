@@ -133,7 +133,14 @@ export function setupIpcHandlers(): void {
     try {
       const { getMemoryStatus } = await import('./memory-store')
       const { getKgStats } = await import('./memory-kg')
-      return { ok: true, data: { ...getMemoryStatus(), kg: getKgStats() } }
+      return {
+        ok: true,
+        data: {
+          ...getMemoryStatus(), kg: getKgStats(),
+          protocol: 'Before responding about any person, project, or past event — call memory.search() or memory.kgQuery() first. Store important new information with memory.store(). Use memory.getContext() on wake-up.',
+          halls: ['general', 'facts', 'events', 'decisions', 'preferences', 'advice'],
+        },
+      }
     } catch (e) { return { ok: false, error: String(e) } }
   })
 
@@ -146,11 +153,32 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.MEMORY_GET_CONTEXT, async (_, wing?: string, room?: string) => {
     try {
-      const { getIdentity, getEssentialMemories, listMemories } = await import('./memory-store')
+      const { getIdentity, getEssentialMemories, listMemories, getMemoryStatus } = await import('./memory-store')
+      const { getKgStats } = await import('./memory-kg')
+
+      // Layer 0: Identity
       const identity = getIdentity()
-      const essential = getEssentialMemories(15)
-      const onDemand = (wing || room) ? listMemories(wing, room, 20) : []
-      return { ok: true, data: { identity, essential, onDemand } }
+
+      // Layer 1: Essential story (top importance memories)
+      const essential = getEssentialMemories(15).map(m => ({
+        wing: m.wingId, room: m.roomId, summary: m.summary || m.content.slice(0, 100),
+        hall: m.hall, importance: m.importance,
+      }))
+
+      // Layer 2: On-demand (specific wing/room)
+      const onDemand = (wing || room) ? listMemories(wing, room, 20).map(m => ({
+        id: m.id, content: m.content, hall: m.hall, importance: m.importance,
+        createdAt: m.createdAt,
+      })) : []
+
+      // Stats
+      const stats = getMemoryStatus()
+      const kg = getKgStats()
+
+      // Protocol instruction
+      const protocol = `MEMORY PROTOCOL: Before responding about any person, project, or past event — search the memory first. Never guess. Use memory.search(query) for specific lookups, memory.kgQuery(entity) for relationship queries. Store important new information with memory.store().`
+
+      return { ok: true, data: { identity, essential, onDemand, stats: { ...stats, kg }, protocol } }
     } catch (e) { return { ok: false, error: String(e) } }
   })
 
