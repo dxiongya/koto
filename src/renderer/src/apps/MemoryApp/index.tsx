@@ -28,38 +28,44 @@ export const MemoryApp: React.FC = () => {
   const [identity, setIdentity] = useState('')
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
 
+  const api = (window as any).api?.memory
+
   const loadTaxonomy = useCallback(async () => {
-    const res = await window.api.memory.taxonomy()
+    if (!api) return
+    const res = await api.taxonomy()
     if (res.ok) setTaxonomy(res.data.wings)
-  }, [])
+  }, [api])
 
   const loadMemories = useCallback(async (wing?: string, room?: string) => {
-    const res = await window.api.memory.list(wing || undefined, room || undefined, 100)
+    if (!api) return
+    const res = await api.list(wing || undefined, room || undefined, 100)
     if (res.ok) setMemories(res.data)
-  }, [])
+  }, [api])
 
   const loadKgStats = useCallback(async () => {
-    const res = await window.api.memory.kgStats()
+    if (!api) return
+    const res = await api.kgStats()
     if (res.ok) setKgStats(res.data)
-  }, [])
+  }, [api])
 
   useEffect(() => {
+    if (!api) return
     loadTaxonomy()
     loadKgStats()
-    window.api.memory.getContext().then((res: any) => {
+    api.getContext().then((res: any) => {
       if (res.ok && res.data.identity) setIdentity(res.data.identity)
     })
-  }, [])
+  }, [api])
 
   useEffect(() => {
     loadMemories(selectedWing || undefined, selectedRoom || undefined)
   }, [selectedWing, selectedRoom, loadMemories])
 
   const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) { setSearchResults([]); return }
-    const res = await window.api.memory.search(searchQuery)
+    if (!api || !searchQuery.trim()) { setSearchResults([]); return }
+    const res = await api.search(searchQuery)
     if (res.ok) setSearchResults(res.data)
-  }, [searchQuery])
+  }, [api, searchQuery])
 
   useEffect(() => {
     if (searchQuery.length >= 2) {
@@ -70,7 +76,8 @@ export const MemoryApp: React.FC = () => {
   }, [searchQuery, handleSearch])
 
   const handleDelete = useCallback(async (id: string) => {
-    await window.api.memory.delete(id)
+    if (!api) return
+    await api.delete(id)
     loadMemories(selectedWing || undefined, selectedRoom || undefined)
     loadTaxonomy()
   }, [selectedWing, selectedRoom, loadMemories, loadTaxonomy])
