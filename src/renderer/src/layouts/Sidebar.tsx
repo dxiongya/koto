@@ -4,7 +4,7 @@ import {
   ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal,
   FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Plus, Moon, Sun, FolderOpen, FolderPlus, X,
   Pencil, Trash2, FilePlus, FolderInput, Settings, Zap, Archive, Layers, Folder,
-  Link, Image, Video, Twitter, Monitor, Type
+  Link, Image, Video, Twitter, Monitor, Type, Brain
 } from 'lucide-react'
 import { useUIStore, collectTerminalIds, removeFromTree, genTerminalPersistKey } from '../store/useUIStore'
 import { useContextMenu, type ContextMenuItem } from '../components/ContextMenu'
@@ -1576,6 +1576,11 @@ export const Sidebar: React.FC = () => {
               return <TerminalAppSection key={id} currentApp={currentApp} expanded={expandedSections.includes(id)}
                 onHeaderClick={() => handleAppClick(id)} renameTrigger={renameTrigger}
                 onFocusSidebar={() => sidebarRef.current?.focus()} />
+            case 'memory.app':
+              return <AppSectionHeader key={id} appId={id as AppType}
+                icon={<Brain size={14} strokeWidth={2.5} />}
+                currentApp={currentApp} expanded={expandedSections.includes(id)}
+                onClick={() => handleAppClick(id)} />
             default:
               // Generic app header for any new/third-party app
               return <AppSectionHeader key={id} appId={id as AppType}
