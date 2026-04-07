@@ -224,8 +224,8 @@ const api = {
     },
   },
   collector: {
-    list: (limit?: number, offset?: number) => ipcRenderer.invoke(IpcChannels.COLLECTOR_LIST, limit, offset),
-    count: () => ipcRenderer.invoke(IpcChannels.COLLECTOR_COUNT),
+    list: (limit?: number, offset?: number, group?: string) => ipcRenderer.invoke(IpcChannels.COLLECTOR_LIST, limit, offset, group),
+    count: (group?: string) => ipcRenderer.invoke(IpcChannels.COLLECTOR_COUNT, group),
     checkDuplicate: (url: string) => ipcRenderer.invoke(IpcChannels.COLLECTOR_CHECK_DUPLICATE, url),
     checkDuplicateHash: (data: ArrayBuffer) => ipcRenderer.invoke(IpcChannels.COLLECTOR_CHECK_DUPLICATE_HASH, data),
     getEmbeddingKey: () => ipcRenderer.invoke(IpcChannels.EMBEDDING_GET_API_KEY),

@@ -41,24 +41,27 @@ export const CollectorApp: React.FC = () => {
 
   // ── Data loading ──
 
+  // Server-side group filtering — load only items for the active group
+  const groupParam = activeFilter !== 'all' && !(['link','image','video','tweet','text','screenshot'].includes(activeFilter)) ? activeFilter : undefined
+
   const loadItems = useCallback(async () => {
     const [itemsRes, groupsRes, countRes] = await Promise.all([
-      window.api.collector.list(PAGE_SIZE, 0),
+      window.api.collector.list(PAGE_SIZE, 0, groupParam),
       window.api.collector.groups(),
-      window.api.collector.count(),
+      window.api.collector.count(groupParam),
     ])
     if (itemsRes.ok) { setItems(itemsRes.data); setHasMore(itemsRes.data.length >= PAGE_SIZE) }
     if (groupsRes.ok) setGroups(groupsRes.data)
     if (countRes.ok) setTotalCount(countRes.data)
-  }, [])
+  }, [groupParam])
 
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore) return
     setLoadingMore(true)
-    const res = await window.api.collector.list(PAGE_SIZE, items.length)
+    const res = await window.api.collector.list(PAGE_SIZE, items.length, groupParam)
     if (res.ok) { setItems((prev) => [...prev, ...res.data]); setHasMore(res.data.length >= PAGE_SIZE) }
     setLoadingMore(false)
-  }, [items.length, loadingMore, hasMore])
+  }, [items.length, loadingMore, hasMore, groupParam])
 
   useEffect(() => { loadItems() }, [loadItems, activeFilter, collectorVersion])
 
@@ -246,7 +249,8 @@ export const CollectorApp: React.FC = () => {
 
   // ── Filtering ──
 
-  const groupFiltered = activeFilter === 'all' ? items : items.filter((i) => i.group === activeFilter)
+  // Group filtering is now server-side. Only type filtering done client-side.
+  const groupFiltered = items
   const typeFiltered = typeFilter === 'all' ? groupFiltered : groupFiltered.filter((i) => i.type === typeFilter)
   const filteredItems = searchResults !== null ? searchResults : typeFiltered
   const filterLabel = activeFilter === 'all' ? 'All Items' : activeFilter

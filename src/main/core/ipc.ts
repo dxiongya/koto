@@ -558,17 +558,17 @@ export function setupIpcHandlers(): void {
 
   // ── Collector ──
 
-  ipcMain.handle(IpcChannels.COLLECTOR_LIST, (_, limit?: number, offset?: number) => {
+  ipcMain.handle(IpcChannels.COLLECTOR_LIST, (_, limit?: number, offset?: number, group?: string) => {
     try {
-      return { ok: true, data: listCollectedItems(limit || 0, offset || 0) }
+      return { ok: true, data: listCollectedItems(limit || 0, offset || 0, group) }
     } catch (e) {
       return { ok: false, error: String(e) }
     }
   })
 
-  ipcMain.handle(IpcChannels.COLLECTOR_COUNT, () => {
+  ipcMain.handle(IpcChannels.COLLECTOR_COUNT, (_, group?: string) => {
     try {
-      return { ok: true, data: countCollectedItems() }
+      return { ok: true, data: countCollectedItems(group) }
     } catch (e) {
       return { ok: false, error: String(e) }
     }

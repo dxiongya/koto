@@ -176,7 +176,16 @@ function generateId(): string {
 
 // ── CRUD ──
 
-export function listCollectedItems(limit = 0, offset = 0): CollectedItem[] {
+export function listCollectedItems(limit = 0, offset = 0, group?: string): CollectedItem[] {
+  if (group && group !== 'all') {
+    const sql = limit > 0
+      ? 'SELECT * FROM items WHERE "group" = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
+      : 'SELECT * FROM items WHERE "group" = ? ORDER BY created_at DESC'
+    const rows = limit > 0
+      ? getDb().prepare(sql).all(group, limit, offset)
+      : getDb().prepare(sql).all(group)
+    return (rows as Record<string, unknown>[]).map(rowToItem)
+  }
   const sql = limit > 0
     ? 'SELECT * FROM items ORDER BY created_at DESC LIMIT ? OFFSET ?'
     : 'SELECT * FROM items ORDER BY created_at DESC'
@@ -186,7 +195,10 @@ export function listCollectedItems(limit = 0, offset = 0): CollectedItem[] {
   return (rows as Record<string, unknown>[]).map(rowToItem)
 }
 
-export function countCollectedItems(): number {
+export function countCollectedItems(group?: string): number {
+  if (group && group !== 'all') {
+    return (getDb().prepare('SELECT COUNT(*) as c FROM items WHERE "group" = ?').get(group) as { c: number }).c
+  }
   return (getDb().prepare('SELECT COUNT(*) as c FROM items').get() as { c: number }).c
 }
 

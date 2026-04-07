@@ -27,6 +27,23 @@ export const DetailPanel: React.FC<{
   const hasMarkdown = item.meta?.hasMarkdown as boolean | undefined
   const markdownLength = item.meta?.markdownLength as number | undefined
 
+  // Lazy-load OG image for links without any image
+  const [lazyOgImage, setLazyOgImage] = useState<string | null>(null)
+  useEffect(() => {
+    if (localAsset || ogImage || tweetThumb || !item.url) return
+    // Fetch OG image via URL meta and cache in item
+    let cancelled = false
+    window.api.url.fetchMeta(item.url).then((res: any) => {
+      if (cancelled || !res.ok || !res.data?.image) return
+      setLazyOgImage(res.data.image)
+      // Cache in meta so it doesn't need to fetch again
+      window.api.collector.update(item.id, { meta: { ...item.meta, ogImage: res.data.image } }).catch(() => {})
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [item.id, item.url, localAsset, ogImage, tweetThumb])
+
+  const displayImage = localAsset || ogImage || tweetThumb || lazyOgImage
+
   const [markdown, setMarkdown] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -91,9 +108,9 @@ export const DetailPanel: React.FC<{
         {/* Content — scrollable */}
         <div className="flex-1 overflow-y-auto">
           {/* Image preview */}
-          {(localAsset || ogImage || tweetThumb) && (
+          {displayImage && (
             <div className="w-full max-h-[280px] overflow-hidden bg-bg-app">
-              <img src={localAsset || ogImage || tweetThumb || ''} alt="" className="w-full object-contain max-h-[280px]"
+              <img src={displayImage} alt="" className="w-full object-contain max-h-[280px]"
                 onError={(e) => { (e.target as HTMLElement).style.display = 'none' }} />
             </div>
           )}

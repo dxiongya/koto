@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { Globe, Twitter, Play, Monitor, Image, X } from 'lucide-react'
 import type { CollectedItem } from '../../../../shared/types'
 import { getDomain, TYPE_ICONS, TYPE_LABELS } from './shared'
@@ -18,6 +18,20 @@ export const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) =>
   const domain = getDomain(item.url)
   const wasDragged = useRef(false)
 
+  // Lazy-load OG image for links without any image
+  const [lazyOg, setLazyOg] = useState<string | null>(null)
+  const hasNoImage = !localAsset && !ogImage && !tweetThumbnail
+  useEffect(() => {
+    if (!hasNoImage || !item.url || item.type === 'text') return
+    let cancelled = false
+    window.api.url.fetchMeta(item.url).then((res: any) => {
+      if (cancelled || !res.ok || !res.data?.image) return
+      setLazyOg(res.data.image)
+      window.api.collector.update(item.id, { meta: { ...item.meta, ogImage: res.data.image } }).catch(() => {})
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [item.id, item.url, hasNoImage])
+
   return (
     <div
       draggable
@@ -34,6 +48,8 @@ export const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) =>
             <img src={ogImage} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
           ) : tweetThumbnail ? (
             <img src={tweetThumbnail} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+          ) : lazyOg ? (
+            <img src={lazyOg} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
           ) : (
             <>
               {item.type === 'link' && <Globe size={22} className="text-tx-faint" />}
