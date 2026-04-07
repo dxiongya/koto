@@ -7,6 +7,13 @@ export const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) =>
   const Icon = TYPE_ICONS[item.type]
   const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
   const ogImage = item.meta?.ogImage as string | undefined
+  // For X/Twitter bookmarks: use stored media or author profile image
+  const tweetThumbnail = !localAsset && !ogImage && item.url?.match(/x\.com|twitter\.com/)
+    ? ((item.meta?.mediaUrls as string[])?.[0]
+      || item.meta?.thumbnailUrl as string
+      || item.meta?.authorProfileImageUrl as string
+      || null)
+    : null
   const description = item.note || (item.meta?.description as string | undefined) || ''
   const domain = getDomain(item.url)
   const wasDragged = useRef(false)
@@ -25,6 +32,8 @@ export const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) =>
             item.type === 'video' ? <video src={localAsset} className="w-full h-full object-cover" muted /> : <img src={localAsset} alt="" className="w-full h-full object-cover" />
           ) : ogImage ? (
             <img src={ogImage} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+          ) : tweetThumbnail ? (
+            <img src={tweetThumbnail} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
           ) : (
             <>
               {item.type === 'link' && <Globe size={22} className="text-tx-faint" />}

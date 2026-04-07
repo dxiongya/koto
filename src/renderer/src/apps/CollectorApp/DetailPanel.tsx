@@ -18,6 +18,9 @@ export const DetailPanel: React.FC<{
   const domain = getDomain(item.url)
   const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
   const ogImage = item.meta?.ogImage as string | undefined
+  const tweetThumb = !localAsset && !ogImage && item.url?.match(/x\.com|twitter\.com/)
+    ? ((item.meta?.mediaUrls as string[])?.[0] || item.meta?.thumbnailUrl as string || item.meta?.authorProfileImageUrl as string || null)
+    : null
   const ocrText = item.meta?.ocrText as string | undefined
   const imageDesc = item.meta?.imageDescription as string | undefined
   const description = item.meta?.description as string | undefined
@@ -88,9 +91,9 @@ export const DetailPanel: React.FC<{
         {/* Content — scrollable */}
         <div className="flex-1 overflow-y-auto">
           {/* Image preview */}
-          {(localAsset || ogImage) && (
+          {(localAsset || ogImage || tweetThumb) && (
             <div className="w-full max-h-[280px] overflow-hidden bg-bg-app">
-              <img src={localAsset || ogImage || ''} alt="" className="w-full object-contain max-h-[280px]"
+              <img src={localAsset || ogImage || tweetThumb || ''} alt="" className="w-full object-contain max-h-[280px]"
                 onError={(e) => { (e.target as HTMLElement).style.display = 'none' }} />
             </div>
           )}

@@ -9,6 +9,9 @@ export const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) =>
   const Icon = TYPE_ICONS[item.type]
   const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
   const ogImage = item.meta?.ogImage as string | undefined
+  const tweetThumbnail = !localAsset && !ogImage && item.url?.match(/x\.com|twitter\.com/)
+    ? ((item.meta?.mediaUrls as string[])?.[0] || item.meta?.thumbnailUrl as string || item.meta?.authorProfileImageUrl as string || null)
+    : null
   const domain = getDomain(item.url)
   const [markdown, setMarkdown] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
@@ -36,7 +39,7 @@ export const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) =>
   const contentPreview = markdown || item.note || (item.meta?.description as string) || (item.meta?.ocrText as string) || ''
   const isLong = contentPreview.length > 600
   const displayContent = expanded ? contentPreview : contentPreview.slice(0, 600)
-  const hasImage = !!(localAsset || ogImage)
+  const hasImage = !!(localAsset || ogImage || tweetThumbnail)
   const timeAgo = (() => {
     const diff = Date.now() - item.createdAt
     const mins = Math.floor(diff / 60000)
@@ -76,7 +79,7 @@ export const FeedItem: React.FC<{ item: CollectedItem; onDelete: (id: string) =>
 
         {hasImage && (
           <div className="mb-3 rounded-md overflow-hidden max-h-[280px] cursor-pointer" onClick={() => onOpen(item)}>
-            <img src={localAsset || ogImage || ''} alt="" className="w-full object-cover" onError={(e) => { (e.target as HTMLElement).style.display = 'none' }} />
+            <img src={localAsset || ogImage || tweetThumbnail || ''} alt="" className="w-full object-cover" onError={(e) => { (e.target as HTMLElement).style.display = 'none' }} />
           </div>
         )}
 

@@ -7,6 +7,10 @@ export const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string)
   const domain = getDomain(item.url)
   const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
   const ogImage = item.meta?.ogImage as string | undefined
+  const tweetThumb = !localAsset && !ogImage && item.url?.match(/x\.com|twitter\.com/)
+    ? ((item.meta?.mediaUrls as string[])?.[0] || item.meta?.thumbnailUrl as string || item.meta?.authorProfileImageUrl as string || null)
+    : null
+  const thumb = localAsset || ogImage || tweetThumb
 
   return (
     <div
@@ -16,8 +20,7 @@ export const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string)
       className="group flex items-center gap-3 px-3 py-2 rounded-md hover:bg-bg-hover transition-colors cursor-pointer"
     >
       <div className="w-10 h-10 rounded bg-bg-sidebar flex items-center justify-center shrink-0 overflow-hidden">
-        {localAsset ? <img src={localAsset} alt="" className="w-full h-full object-cover" />
-          : ogImage ? <img src={ogImage} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+        {thumb ? <img src={thumb} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
           : <Icon size={16} className="text-tx-faint" />}
       </div>
       <div className="flex-1 min-w-0">
