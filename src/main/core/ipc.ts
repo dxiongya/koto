@@ -78,12 +78,29 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.MEMORY_STORE, async (_, wing: string, room: string, content: string, opts?: Record<string, unknown>) => {
     try {
       const { storeMemory } = await import('./memory-store')
-      const memory = storeMemory(wing, room, content, opts as any)
-      // Auto-embed asynchronously (don't block the response)
+      const { detectRoom, detectWing, compressToAAAK } = await import('./memory-intelligence')
+
+      // Auto-detect wing/room if set to 'auto'
+      const finalWing = (!wing || wing === 'auto') ? detectWing(content, 'general') : wing
+      const finalRoom = (!room || room === 'auto') ? detectRoom(content) : room
+
+      // Optionally compress to AAAK (if content is long and not already compressed)
+      let finalContent = content
+      if (content.length > 500 && (opts as any)?.compress) {
+        finalContent = compressToAAAK(content, {
+          hall: (opts as any)?.hall,
+          importance: (opts as any)?.importance,
+        })
+      }
+
+      const memory = storeMemory(finalWing, finalRoom, finalContent, opts as any)
+
+      // Auto-embed asynchronously
       import('./memory-embedding').then(({ embedMemory }) => {
         embedMemory(memory.id).catch(() => {})
       }).catch(() => {})
-      return { ok: true, data: memory }
+
+      return { ok: true, data: { ...memory, detectedWing: finalWing, detectedRoom: finalRoom } }
     } catch (e) { return { ok: false, error: String(e) } }
   })
 
@@ -192,8 +209,19 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.MEMORY_KG_ADD, async (_, subject: string, predicate: string, object: string, opts?: Record<string, unknown>) => {
     try {
-      const { addTriple } = await import('./memory-kg')
-      return { ok: true, data: addTriple(subject, predicate, object, opts as any) }
+      const { addTriple, queryEntity } = await import('./memory-kg')
+      const { detectContradictions } = await import('./memory-intelligence')
+
+      // Check for contradictions before adding
+      const subjectSlug = subject.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')
+      const existing = queryEntity(subject, { direction: 'outgoing' })
+      const contradictions = detectContradictions(
+        subjectSlug, predicate, object.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-'),
+        existing.outgoing.map(t => ({ id: t.id, subjectId: t.subjectId, predicate: t.predicate, objectId: t.objectId, validTo: t.validTo })),
+      )
+
+      const triple = addTriple(subject, predicate, object, opts as any)
+      return { ok: true, data: { triple, contradictions } }
     } catch (e) { return { ok: false, error: String(e) } }
   })
 
@@ -215,6 +243,37 @@ export function setupIpcHandlers(): void {
     try {
       const { getKgStats } = await import('./memory-kg')
       return { ok: true, data: getKgStats() }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_MINE_FILE, async (_, filePath: string, wing?: string) => {
+    try {
+      const { mineConversationFile, chunkConversation, detectWing } = await import('./memory-intelligence')
+      const { storeMemory } = await import('./memory-store')
+
+      const conversations = mineConversationFile(filePath)
+      let stored = 0
+      for (const conv of conversations) {
+        const chunks = chunkConversation(conv)
+        const finalWing = wing || detectWing(chunks[0]?.content || '', 'imported')
+        for (const chunk of chunks) {
+          storeMemory(finalWing, chunk.room, chunk.content, { source: conv.source, hall: 'events' })
+          stored++
+        }
+      }
+      return { ok: true, data: { conversations: conversations.length, memoriesStored: stored } }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.MEMORY_GRAPH_TRAVERSE, async (_, startRoom: string, maxDepth?: number) => {
+    try {
+      const { listMemories } = await import('./memory-store')
+      const { buildPalaceGraph, traverseFromRoom } = await import('./memory-intelligence')
+
+      const allMemories = listMemories(undefined, undefined, 10000, 0)
+      const { nodes, tunnels } = buildPalaceGraph(allMemories.map(m => ({ wingId: m.wingId, roomId: m.roomId })))
+      const connected = traverseFromRoom(startRoom, nodes, tunnels, maxDepth || 3)
+      return { ok: true, data: { nodes: nodes.length, tunnels: tunnels.length, connected } }
     } catch (e) { return { ok: false, error: String(e) } }
   })
 

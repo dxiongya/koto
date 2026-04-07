@@ -92,10 +92,10 @@ export const memoryAppDefinition: AppDefinition = {
     api.bus.provideTool({
       name: 'memory.store',
       appId: 'memory.app',
-      description: 'Store a memory. Wings and rooms are auto-created. Use hall to classify: facts, events, decisions, preferences, advice. Set importance 1-5 (5=critical).',
+      description: 'Store a memory. Set wing/room to "auto" for automatic detection from content keywords. Use hall to classify: facts, events, decisions, preferences, advice. Set importance 1-5 (5=critical). Set compress:true for AAAK compression (30x reduction, still LLM-readable).',
       parameters: {
-        wing: { type: 'string', description: 'Wing (project/domain name)', required: true },
-        room: { type: 'string', description: 'Room (topic name)', required: true },
+        wing: { type: 'string', description: 'Wing (project/domain name, or "auto" for keyword detection)', required: true },
+        room: { type: 'string', description: 'Room (topic name, or "auto" for keyword detection)', required: true },
         content: { type: 'string', description: 'Memory content (verbatim or AAAK compressed)', required: true },
         hall: { type: 'string', description: 'Memory type: general, facts, events, decisions, preferences, advice' },
         importance: { type: 'number', description: 'Importance 1-5 (default 3)' },
@@ -170,6 +170,36 @@ export const memoryAppDefinition: AppDefinition = {
       handler: async (params) => {
         const res = await window.api.memory.delete(params.id as string)
         return res.ok ? { success: res.data } : { error: res.error }
+      },
+    })
+
+    // ── Intelligence Tools ──
+
+    api.bus.provideTool({
+      name: 'memory.mineConversation',
+      appId: 'memory.app',
+      description: 'Import a conversation file (Claude Code JSONL, ChatGPT JSON, or plain text) into memory. Auto-detects format, chunks by exchange pairs, and assigns rooms by keyword detection.',
+      parameters: {
+        filePath: { type: 'string', description: 'Path to the conversation file', required: true },
+        wing: { type: 'string', description: 'Wing to store under (auto-detected if omitted)' },
+      },
+      handler: async (params) => {
+        const res = await window.api.memory.mineFile(params.filePath as string, params.wing as string)
+        return res.ok ? res.data : { error: res.error }
+      },
+    })
+
+    api.bus.provideTool({
+      name: 'memory.traverse',
+      appId: 'memory.app',
+      description: 'Explore the palace graph — find rooms connected to a starting room across wings. Discovers hidden connections between topics and projects.',
+      parameters: {
+        startRoom: { type: 'string', description: 'Room to start traversal from', required: true },
+        maxDepth: { type: 'number', description: 'Max BFS depth (default 3)' },
+      },
+      handler: async (params) => {
+        const res = await window.api.memory.graphTraverse(params.startRoom as string, params.maxDepth as number)
+        return res.ok ? res.data : { error: res.error }
       },
     })
   },

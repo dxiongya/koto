@@ -152,6 +152,8 @@ const api = {
     kgQuery: (entity: string, opts?: Record<string, unknown>) =>
       ipcRenderer.invoke(IpcChannels.MEMORY_KG_QUERY, entity, opts),
     kgStats: () => ipcRenderer.invoke(IpcChannels.MEMORY_KG_STATS),
+    mineFile: (filePath: string, wing?: string) => ipcRenderer.invoke(IpcChannels.MEMORY_MINE_FILE, filePath, wing),
+    graphTraverse: (startRoom: string, maxDepth?: number) => ipcRenderer.invoke(IpcChannels.MEMORY_GRAPH_TRAVERSE, startRoom, maxDepth),
   },
   search: {
     content: (query: string, dirs: string[], maxResults?: number) =>
