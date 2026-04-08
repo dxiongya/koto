@@ -11,6 +11,7 @@ import { registerAssetProtocol } from './core/asset-protocol'
 import { registerAppProtocol } from './core/app-loader'
 import { mcpManager } from './core/mcp-manager'
 import { automationScheduler } from './core/automation-scheduler'
+import { collectorSyncScheduler } from './core/collector-sync-scheduler'
 import { refreshBusTools } from './core/ai-tools'
 
 function sendToRenderer(win: BrowserWindow, shortcut: string): void {
@@ -144,8 +145,9 @@ app.whenReady().then(() => {
 
   // Note: BUS_TOOLS_READY handler is in setupIpcHandlers (ipc.ts)
 
-  // Start automation scheduler
+  // Start schedulers
   automationScheduler.start()
+  collectorSyncScheduler.start()
 
   // ── Application Menu with accelerators as backup ──
   const sendShortcut = (name: string): void => {
@@ -224,6 +226,7 @@ app.on('before-quit', () => {
   ptyManager.closeAll()
   mcpManager.shutdown().catch(() => {})
   automationScheduler.stop()
+  collectorSyncScheduler.stop()
 })
 
 app.on('window-all-closed', () => {
