@@ -785,6 +785,66 @@ export function setupIpcHandlers(): void {
     }
   })
 
+  // ── Collector Sync ──
+  ipcMain.handle(IpcChannels.COLLECTOR_SYNC_GET_CONFIG, async (_, groupName: string) => {
+    try {
+      const { getSyncConfig } = await import('./collector-sync-store')
+      return { ok: true, data: getSyncConfig(groupName) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_SYNC_SET_CONFIG, async (_, groupName: string, config: Record<string, unknown>) => {
+    try {
+      const { setSyncConfig } = await import('./collector-sync-store')
+      return { ok: true, data: setSyncConfig(groupName, config as any) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_SYNC_DELETE_CONFIG, async (_, groupName: string) => {
+    try {
+      const { deleteSyncConfig } = await import('./collector-sync-store')
+      return { ok: true, data: deleteSyncConfig(groupName) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_SYNC_LIST_CONFIGS, async () => {
+    try {
+      const { listSyncConfigs } = await import('./collector-sync-store')
+      return { ok: true, data: listSyncConfigs() }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_SYNC_RUN_NOW, async (_, groupName: string) => {
+    try {
+      // Will be implemented in Phase 2 (runner) + Phase 3 (scheduler)
+      return { ok: false, error: 'Sync runner not yet implemented' }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_SYNC_GET_SCRIPT, async (_, groupName: string) => {
+    try {
+      const { getScriptSource } = await import('./collector-sync-store')
+      return { ok: true, data: getScriptSource(groupName) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_SYNC_SET_SCRIPT, async (_, groupName: string, source: string) => {
+    try {
+      const { setScriptSource } = await import('./collector-sync-store')
+      return { ok: true, data: setScriptSource(groupName, source) }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.COLLECTOR_SYNC_LIST_ADAPTERS, async () => {
+    try {
+      return { ok: true, data: [
+        { id: 'x-bookmarks', name: 'X/Twitter Bookmarks', description: 'Sync bookmarks via fieldtheory-cli' },
+        { id: 'rss', name: 'RSS Feed', description: 'Import items from an RSS feed' },
+        { id: 'custom', name: 'Custom Script', description: 'Write your own sync script' },
+      ]}
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
   ipcMain.handle(IpcChannels.COLLECTOR_CHECK_DUPLICATE, (_, url: string) => {
     try {
       const dup = findDuplicateByUrl(url)

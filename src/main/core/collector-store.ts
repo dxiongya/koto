@@ -68,6 +68,23 @@ function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_items_url ON items(url);
     CREATE INDEX IF NOT EXISTS idx_items_group ON items("group");
+
+    -- Group sync automation configs
+    CREATE TABLE IF NOT EXISTS group_sync_configs (
+      group_name TEXT PRIMARY KEY,
+      adapter TEXT NOT NULL DEFAULT 'custom',
+      script_path TEXT,
+      schedule TEXT NOT NULL DEFAULT 'manual',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_sync_at INTEGER,
+      last_sync_status TEXT,
+      last_sync_error TEXT,
+      last_sync_items_added INTEGER DEFAULT 0,
+      sync_count INTEGER DEFAULT 0,
+      adapter_config TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
   `)
 
   // Migrate from JSON if exists
