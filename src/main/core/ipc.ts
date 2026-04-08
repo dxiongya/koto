@@ -816,8 +816,9 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.COLLECTOR_SYNC_RUN_NOW, async (_, groupName: string) => {
     try {
-      // Will be implemented in Phase 2 (runner) + Phase 3 (scheduler)
-      return { ok: false, error: 'Sync runner not yet implemented' }
+      const { runSync } = await import('./collector-sync-runner')
+      const result = await runSync(groupName)
+      return { ok: result.success, data: result, error: result.error }
     } catch (e) { return { ok: false, error: String(e) } }
   })
 
