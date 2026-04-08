@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, X, Layers, Loader2, Sparkles, LayoutGrid, List, BookOpen, Search } from 'lucide-react'
+import { Plus, X, Layers, Loader2, Sparkles, LayoutGrid, List, BookOpen, Search, RefreshCw, Settings2 } from 'lucide-react'
 import { useUIStore } from '../../store/useUIStore'
 import type { CollectedItem, CollectedItemType } from '../../../../shared/types'
 import { TYPE_ICONS, TYPE_LABELS, type ToastState } from './shared'
@@ -31,6 +31,9 @@ export const CollectorApp: React.FC = () => {
   const [searchResults, setSearchResults] = useState<CollectedItem[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null)
+  const [syncConfig, setSyncConfig] = useState<any>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -94,6 +97,31 @@ export const CollectorApp: React.FC = () => {
     }, 300)
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
   }, [searchQuery])
+
+  // Load sync config for current group
+  useEffect(() => {
+    if (!groupParam) { setSyncConfig(null); return }
+    window.api.collector.sync.getConfig(groupParam).then((res: any) => {
+      if (res.ok) setSyncConfig(res.data)
+      else setSyncConfig(null)
+    })
+  }, [groupParam])
+
+  // Listen for sync progress events
+  useEffect(() => {
+    const handler = (_: unknown, event: any) => {
+      if (event.groupName !== groupParam) return
+      if (event.status === 'started') { setSyncing(true); setSyncMessage('Syncing...') }
+      else if (event.status === 'progress') setSyncMessage(event.message || 'Syncing...')
+      else if (event.status === 'completed') { setSyncing(false); setSyncMessage(null); loadItems() }
+      else if (event.status === 'error') { setSyncing(false); setSyncMessage(`Error: ${event.message}`) }
+      else if (event.status === 'cancelled') { setSyncing(false); setSyncMessage(null) }
+    }
+    // @ts-ignore
+    window.api?.terminal?.onData // just to check if preload exists
+    // Listen via custom event (IPC push comes through preload)
+    return () => {}
+  }, [groupParam, loadItems])
 
   // Listen for sidebar item focus event → scroll to item + highlight
   useEffect(() => {
@@ -318,6 +346,62 @@ export const CollectorApp: React.FC = () => {
             <button onClick={() => setViewMode('list')} aria-label="List view" className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-bg-active text-tx-main' : 'text-tx-faint hover:text-tx-muted'}`}><List size={13} /></button>
             <button onClick={() => setViewMode('feed')} aria-label="Feed view" className={`p-1.5 transition-colors ${viewMode === 'feed' ? 'bg-bg-active text-tx-main' : 'text-tx-faint hover:text-tx-muted'}`}><BookOpen size={13} /></button>
           </div>
+          {/* Sync button (only for groups with sync config) */}
+          {groupParam && syncConfig && (
+            <button
+              onClick={async () => {
+                setSyncing(true)
+                setSyncMessage('Starting sync...')
+                const res = await window.api.collector.sync.runNow(groupParam)
+                if (res.ok && res.data?.success) {
+                  setSyncMessage(`Synced! ${res.data.itemsAdded} new items.`)
+                  loadItems()
+                } else {
+                  setSyncMessage(`Error: ${res.data?.error || res.error}`)
+                }
+                setSyncing(false)
+                setTimeout(() => setSyncMessage(null), 5000)
+              }}
+              disabled={syncing}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] border rounded-md transition-colors
+                ${syncing ? 'text-accent-main border-accent-main/30 bg-accent-main/5' : 'text-tx-faint border-border-subtle hover:bg-bg-hover hover:text-accent-main'}`}
+              title={`Sync ${groupParam} (${syncConfig.adapter})`}
+            >
+              <RefreshCw size={11} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Syncing...' : 'Sync'}
+            </button>
+          )}
+          {/* Setup sync (for groups without config) */}
+          {groupParam && !syncConfig && (
+            <button
+              onClick={async () => {
+                const adapters = await window.api.collector.sync.listAdapters()
+                if (!adapters.ok) return
+                const choice = prompt(`Choose adapter for "${groupParam}":\n${adapters.data.map((a: any, i: number) => `${i + 1}. ${a.name} — ${a.description}`).join('\n')}\n\nEnter number:`)
+                if (!choice) return
+                const adapter = adapters.data[parseInt(choice) - 1]
+                if (!adapter) return
+                // Create config + install script
+                const { getAdapterTemplate } = await import('../../../../main/core/collector-sync-adapters')
+                const template = getAdapterTemplate?.(adapter.id)
+                await window.api.collector.sync.setConfig(groupParam, {
+                  adapter: adapter.id,
+                  schedule: 'manual',
+                  adapterConfig: adapter.defaultConfig,
+                })
+                if (template?.script) {
+                  await window.api.collector.sync.setScript(groupParam, template.script)
+                }
+                const configRes = await window.api.collector.sync.getConfig(groupParam)
+                if (configRes.ok) setSyncConfig(configRes.data)
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-tx-faint border border-border-subtle rounded-md hover:bg-bg-hover hover:text-tx-muted transition-colors"
+              title="Configure sync for this group"
+            >
+              <Settings2 size={11} />
+              Setup Sync
+            </button>
+          )}
           <button
             onClick={async () => {
               if (!confirm(`Remove duplicates${activeFilter !== 'all' ? ` in "${activeFilter}"` : ''}?`)) return
@@ -337,6 +421,14 @@ export const CollectorApp: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Sync status message */}
+      {syncMessage && (
+        <div className="shrink-0 px-3 py-1.5 text-[11px] text-accent-main bg-accent-main/5 rounded-md flex items-center gap-2">
+          {syncing && <Loader2 size={11} className="animate-spin" />}
+          {syncMessage}
+        </div>
+      )}
 
       {/* Type filter chips */}
       {Object.keys(typeCounts).length > 1 && (
