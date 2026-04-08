@@ -838,11 +838,8 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.COLLECTOR_SYNC_LIST_ADAPTERS, async () => {
     try {
-      return { ok: true, data: [
-        { id: 'x-bookmarks', name: 'X/Twitter Bookmarks', description: 'Sync bookmarks via fieldtheory-cli' },
-        { id: 'rss', name: 'RSS Feed', description: 'Import items from an RSS feed' },
-        { id: 'custom', name: 'Custom Script', description: 'Write your own sync script' },
-      ]}
+      const { BUILTIN_ADAPTERS } = await import('./collector-sync-adapters')
+      return { ok: true, data: BUILTIN_ADAPTERS.map(a => ({ id: a.id, name: a.name, description: a.description, defaultConfig: a.defaultConfig })) }
     } catch (e) { return { ok: false, error: String(e) } }
   })
 

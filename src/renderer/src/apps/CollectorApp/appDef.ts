@@ -169,5 +169,18 @@ export const collectorAppDefinition: AppDefinition = {
         return res.ok ? { groups: res.data, success: true } : { success: false, error: res.error }
       },
     })
+
+    api.bus.provideTool({
+      name: 'collector.syncGroup',
+      appId: 'collector.app',
+      description: 'Trigger a sync for a collector group that has a sync script configured.',
+      parameters: {
+        group: { type: 'string', description: 'Group name to sync', required: true },
+      },
+      handler: async (params) => {
+        const res = await window.api.collector.sync.runNow(params.group as string)
+        return res.ok ? res.data : { error: res.error }
+      },
+    })
   },
 }
