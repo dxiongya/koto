@@ -366,9 +366,10 @@ const AIProviderForm: React.FC<{
 const FEATURE_LABELS: Record<AIFeature, { name: string; desc: string }> = {
   completion: { name: 'Tab Completion', desc: 'Ghost text while typing — use a fast model' },
   chat: { name: 'AI Chat', desc: 'Chat panel and inline actions — use a capable model' },
+  wiki: { name: 'Wiki Ingest', desc: 'Auto-build knowledge wiki — use a cheap model (burns tokens)' },
 }
 
-const FEATURES: AIFeature[] = ['completion', 'chat']
+const FEATURES: AIFeature[] = ['completion', 'chat', 'wiki']
 
 // ── Embedding Section ──
 

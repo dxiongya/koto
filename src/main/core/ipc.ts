@@ -23,6 +23,7 @@ import { listCollectedItems, countCollectedItems, findDuplicateByUrl, findDuplic
 import { listTasks, createTask, updateTask, deleteTask, type TaskCreateInput, type ScheduledTask } from './task-store'
 import { taskScheduler } from './task-scheduler'
 import { embedAllPending, embedAndSave } from './collector-embedding'
+import { emitAppEvent } from './event-bus'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
 
 /** Decode common HTML entities */
@@ -876,6 +877,27 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_ADD, (_, input: CollectorAddInput) => {
     try {
       const item = addCollectedItem(input)
+      // Emit an 'added' event. If the item has no further enrichment coming
+      // (text paste, image with no OCR pipeline), also emit 'enriched' so
+      // subscribers can treat it as ready-to-ingest.
+      emitAppEvent({
+        type: 'collector:item-added',
+        itemId: item.id,
+        itemType: item.type,
+        title: item.title,
+        group: item.group,
+      })
+      const needsAsyncEnrichment = !!item.url && (item.type === 'link' || item.type === 'tweet')
+      if (!needsAsyncEnrichment) {
+        emitAppEvent({
+          type: 'collector:item-enriched',
+          itemId: item.id,
+          itemType: item.type,
+          hasMarkdown: false,
+          hasOcr: !!(item.meta as Record<string, unknown>)?.ocrText,
+          hasDescription: !!((item.meta as Record<string, unknown>)?.description) || !!item.note,
+        })
+      }
       return { ok: true, data: item }
     } catch (e) {
       return { ok: false, error: String(e) }
@@ -885,6 +907,13 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_UPDATE, (_, id: string, patch: Partial<CollectedItem>) => {
     try {
       const item = updateCollectedItem(id, patch)
+      if (item) {
+        emitAppEvent({
+          type: 'collector:item-updated',
+          itemId: item.id,
+          fields: Object.keys(patch),
+        })
+      }
       return item ? { ok: true, data: item } : { ok: false, error: 'Item not found' }
     } catch (e) {
       return { ok: false, error: String(e) }
@@ -894,6 +923,7 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_DELETE, (_, id: string) => {
     try {
       const ok = deleteCollectedItem(id)
+      if (ok) emitAppEvent({ type: 'collector:item-deleted', itemId: id })
       return ok ? { ok: true, data: undefined } : { ok: false, error: 'Item not found' }
     } catch (e) {
       return { ok: false, error: String(e) }
@@ -983,6 +1013,22 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_FETCH_MARKDOWN, async (_, itemId: string, url: string) => {
     try {
       const filePath = await fetchAndSaveMarkdown(itemId, url)
+      if (filePath) {
+        // Markdown fetched — item is now "enriched" and ready for wiki ingest.
+        // Look up the item to populate event metadata.
+        const items = listCollectedItems()
+        const item = items.find((i) => i.id === itemId)
+        if (item) {
+          emitAppEvent({
+            type: 'collector:item-enriched',
+            itemId,
+            itemType: item.type,
+            hasMarkdown: true,
+            hasOcr: !!(item.meta as Record<string, unknown>)?.ocrText,
+            hasDescription: !!((item.meta as Record<string, unknown>)?.description) || !!item.note,
+          })
+        }
+      }
       return filePath ? { ok: true, data: filePath } : { ok: false, error: 'Failed to fetch markdown' }
     } catch (e) {
       return { ok: false, error: String(e) }

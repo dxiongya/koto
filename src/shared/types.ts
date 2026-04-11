@@ -170,6 +170,9 @@ export const IpcChannels = {
   SHELL_OPEN_PATH: 'shell:openPath',
   SHELL_REVEAL_PATH: 'shell:revealPath',
 
+  // App events (main → renderer push) — cross-app notifications
+  APP_EVENT: 'app:event',
+
   // Task Scheduler
   TASK_LIST: 'task:list',
   TASK_CREATE: 'task:create',
@@ -236,7 +239,7 @@ export function getProviderModel(provider: AIProviderConfig, override?: string):
   return provider.model
 }
 
-export type AIFeature = 'completion' | 'chat'
+export type AIFeature = 'completion' | 'chat' | 'wiki'
 
 /** A specific (provider, model) pair that a feature is routed to. */
 export interface AIFeatureRoute {
@@ -248,6 +251,9 @@ export interface AIFeatureRoute {
 export interface AIFeatureRouting {
   completion: AIFeatureRoute | null
   chat: AIFeatureRoute | null
+  /** Used by wiki.app for ingest / lint / graph analysis — tends to burn
+   *  tokens, so route this to a cheap model (GLM, DeepSeek, local Ollama). */
+  wiki: AIFeatureRoute | null
 }
 
 /**
@@ -298,7 +304,7 @@ export interface AISettings {
 export const DEFAULT_AI_SETTINGS: AISettings = {
   providers: [],
   activeProviderId: null,
-  featureRouting: { completion: null, chat: null },
+  featureRouting: { completion: null, chat: null, wiki: null },
   usage: { ...DEFAULT_AI_USAGE_STATS },
 }
 

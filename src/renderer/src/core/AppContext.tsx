@@ -13,9 +13,22 @@ import { builtinThemes } from '../themes'
 
 let _bus: AppBus | null = null
 let _registry: AppRegistry | null = null
+let _eventBridgeInstalled = false
 
 export function getAppBus(): AppBus {
   if (!_bus) _bus = createAppBus()
+  // Install the main → renderer event bridge exactly once. IPC events from
+  // the main process (via window.api.events.onAppEvent) are re-emitted onto
+  // the AppBus so any app subscribed via `bus.on(eventName, ...)` receives
+  // them alongside renderer-local events.
+  if (!_eventBridgeInstalled && typeof window !== 'undefined' && window.api?.events?.onAppEvent) {
+    _eventBridgeInstalled = true
+    window.api.events.onAppEvent((event) => {
+      if (event && typeof event.type === 'string') {
+        _bus!.emit(event.type, event)
+      }
+    })
+  }
   return _bus
 }
 

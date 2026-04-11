@@ -325,6 +325,17 @@ const api = {
     },
     fileSwitcherState: (open: boolean) => ipcRenderer.send('file-switcher:state', open),
   },
+  events: {
+    // Subscribe to cross-app events broadcast from the main process.
+    // Event shape is defined in shared/events.ts (AppEvent union).
+    onAppEvent: (callback: (event: { type: string; [k: string]: unknown }) => void) => {
+      const handler = (_: unknown, event: { type: string; [k: string]: unknown }): void => callback(event)
+      ipcRenderer.on(IpcChannels.APP_EVENT, handler)
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.APP_EVENT, handler)
+      }
+    },
+  },
 }
 
 if (process.contextIsolated) {
