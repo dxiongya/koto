@@ -1067,6 +1067,64 @@ export function setupIpcHandlers(): void {
     }
   })
 
+  // ── Wiki.app ──
+
+  ipcMain.handle(IpcChannels.WIKI_INIT, async () => {
+    try {
+      const { initWiki } = await import('./wiki-store')
+      return { ok: true, data: initWiki() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_STATS, async () => {
+    try {
+      const { getWikiStats } = await import('./wiki-store')
+      return { ok: true, data: getWikiStats() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_LIST_PAGES, async () => {
+    try {
+      const { listWikiPages } = await import('./wiki-store')
+      return { ok: true, data: listWikiPages() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_READ, async (_, relPath: string) => {
+    try {
+      const { readWikiFile } = await import('./wiki-store')
+      return { ok: true, data: readWikiFile(relPath) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_WRITE, async (_, relPath: string, content: string) => {
+    try {
+      const { writeWikiFile } = await import('./wiki-store')
+      writeWikiFile(relPath, content)
+      return { ok: true, data: undefined }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_APPEND_LOG, async (_, entry: string) => {
+    try {
+      const { appendLog } = await import('./wiki-store')
+      appendLog(entry)
+      return { ok: true, data: undefined }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
   // ── Task Scheduler ──
 
   ipcMain.handle(IpcChannels.TASK_LIST, (_, appId?: string) => {

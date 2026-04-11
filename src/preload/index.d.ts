@@ -84,6 +84,18 @@ export interface ShortcutAPI {
   fileSwitcherState: (open: boolean) => void
 }
 
+export interface ShellAPI {
+  openExternal: (url: string) => Promise<IpcResult<void>>
+  openPath: (filePath: string) => Promise<IpcResult<void>>
+  revealPath: (filePath: string) => Promise<IpcResult<void>>
+}
+
+// Collector API is not fully typed — existing code uses many call shapes.
+// Use `any` here so we don't regress pre-existing usage while the shared
+// types catch up. WikiApp imports `Record<string, unknown>` helpers above it.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type CollectorAPI = any
+
 export interface ChangelogAPI {
   append: (entry: ChangelogEntry) => Promise<IpcResult<void>>
   read: (filePath: string) => Promise<IpcResult<ChangelogEntry[]>>
@@ -135,6 +147,26 @@ export interface TaskAPI {
   onRunEvent: (callback: (event: TaskRunEvent) => void) => () => void
 }
 
+export interface WikiAPI {
+  init: () => Promise<IpcResult<{ created: boolean; root: string }>>
+  stats: () => Promise<IpcResult<{
+    root: string
+    total: number
+    byType: Record<string, number>
+    hasIndex: boolean
+    hasPurpose: boolean
+    lastLogEntry: string | null
+  }>>
+  listPages: () => Promise<IpcResult<Array<{ path: string; relPath: string; type: string; title: string }>>>
+  read: (relPath: string) => Promise<IpcResult<string | null>>
+  write: (relPath: string, content: string) => Promise<IpcResult<void>>
+  appendLog: (entry: string) => Promise<IpcResult<void>>
+}
+
+export interface EventsAPI {
+  onAppEvent: (callback: (event: { type: string; [k: string]: unknown }) => void) => () => void
+}
+
 export interface AIAPI {
   chat: (
     providerId: string,
@@ -168,6 +200,10 @@ declare global {
       skills: SkillsAPI
       ai: AIAPI
       task: TaskAPI
+      wiki: WikiAPI
+      events: EventsAPI
+      shell: ShellAPI
+      collector: CollectorAPI
     }
   }
 }

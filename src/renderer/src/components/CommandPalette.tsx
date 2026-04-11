@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Search, FileText, FileCode, Terminal, Settings, Globe, Archive,
   Plus, PanelLeft, Moon, Sun, ArrowRight, Hash, Clock, HelpCircle,
-  Link, Image, Video, Twitter, Monitor, Type,
+  Link, Image, Video, Twitter, Monitor, Type, Brain, BookOpen,
 } from 'lucide-react'
 import { useUIStore, genTerminalPersistKey } from '../store/useUIStore'
 import type { AppType } from '../../../shared/types'
@@ -135,6 +135,8 @@ const APP_META: Record<AppType, { label: string; icon: React.FC<{ size?: number;
   'browser.app': { label: 'Browser', icon: Globe },
   'collector.app': { label: 'Collector', icon: Archive },
   'settings.app': { label: 'Settings', icon: Settings },
+  'memory.app': { label: 'Memory', icon: Brain },
+  'wiki.app': { label: 'Wiki', icon: BookOpen },
 }
 
 // ── Help items ──

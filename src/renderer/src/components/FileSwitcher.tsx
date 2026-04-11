@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { FileText, FileCode, Terminal, Settings, Globe, Archive } from 'lucide-react'
+import { FileText, FileCode, Terminal, Settings, Globe, Archive, Brain, BookOpen } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import type { AppType } from '../../../shared/types'
 
@@ -10,6 +10,8 @@ const APP_ICONS: Record<AppType, React.FC<{ size?: number; className?: string }>
   'browser.app': Globe,
   'collector.app': Archive,
   'settings.app': Settings,
+  'memory.app': Brain,
+  'wiki.app': BookOpen,
 }
 
 interface SwitcherItem {

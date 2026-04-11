@@ -173,6 +173,14 @@ export const IpcChannels = {
   // App events (main → renderer push) — cross-app notifications
   APP_EVENT: 'app:event',
 
+  // Wiki.app
+  WIKI_INIT: 'wiki:init',
+  WIKI_STATS: 'wiki:stats',
+  WIKI_LIST_PAGES: 'wiki:listPages',
+  WIKI_READ: 'wiki:read',
+  WIKI_WRITE: 'wiki:write',
+  WIKI_APPEND_LOG: 'wiki:appendLog',
+
   // Task Scheduler
   TASK_LIST: 'task:list',
   TASK_CREATE: 'task:create',
@@ -206,7 +214,7 @@ export interface FsWatchEvent {
 
 // ── App Types ──
 
-export type AppType = 'notes.app' | 'code.app' | 'browser.app' | 'terminal.app' | 'collector.app' | 'settings.app'
+export type AppType = 'notes.app' | 'code.app' | 'browser.app' | 'terminal.app' | 'collector.app' | 'settings.app' | 'memory.app' | 'wiki.app'
 
 // ── Per-App State ──
 
@@ -498,6 +506,8 @@ export interface LiteConfig {
   disabledBusTools?: string[]
   // First-run welcome dialog shown
   hasSeenWelcome: boolean
+  // Wiki.app auto-ingest preference
+  wikiAutoIngest?: boolean
 }
 
 // ── Default Per-App State ──
@@ -520,6 +530,8 @@ export const DEFAULT_LITE_CONFIG: LiteConfig = {
     'terminal.app': { ...DEFAULT_PER_APP_STATE },
     'collector.app': { ...DEFAULT_PER_APP_STATE },
     'settings.app': { ...DEFAULT_PER_APP_STATE },
+    'memory.app': { ...DEFAULT_PER_APP_STATE },
+    'wiki.app': { ...DEFAULT_PER_APP_STATE },
   },
   notesExpandedGroups: [],
   notesSortBy: 'modified',

@@ -289,6 +289,15 @@ const api = {
     deleteGroup: (name: string) =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_DELETE_GROUP, name),
   },
+  wiki: {
+    init: () => ipcRenderer.invoke(IpcChannels.WIKI_INIT),
+    stats: () => ipcRenderer.invoke(IpcChannels.WIKI_STATS),
+    listPages: () => ipcRenderer.invoke(IpcChannels.WIKI_LIST_PAGES),
+    read: (relPath: string) => ipcRenderer.invoke(IpcChannels.WIKI_READ, relPath),
+    write: (relPath: string, content: string) =>
+      ipcRenderer.invoke(IpcChannels.WIKI_WRITE, relPath, content),
+    appendLog: (entry: string) => ipcRenderer.invoke(IpcChannels.WIKI_APPEND_LOG, entry),
+  },
   task: {
     list: (appId?: string) => ipcRenderer.invoke(IpcChannels.TASK_LIST, appId),
     create: (input: Record<string, unknown>) =>
