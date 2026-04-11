@@ -548,18 +548,20 @@ function QuickAutomationDialog({
   const [prompt, setPrompt] = useState('')
   const [interval, setInterval] = useState<AutomationInterval>(60)
   const [creating, setCreating] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath
 
   const handleCreate = async (): Promise<void> => {
     if (!name.trim() || !prompt.trim() || !activeFilePath) return
+    setErrorMsg(null)
     setCreating(true)
 
     const stateRes = await window.api.state.get()
     const providers = stateRes.ok ? stateRes.data.ai?.providers?.filter((p: { enabled: boolean }) => p.enabled) : []
     const providerId = providers?.[0]?.id
     if (!providerId) {
-      alert('No AI provider configured. Go to Settings first.')
+      setErrorMsg('No AI provider configured. Open Settings → AI → Providers to add one.')
       setCreating(false)
       return
     }
@@ -623,6 +625,23 @@ function QuickAutomationDialog({
           </div>
         </div>
 
+        {errorMsg && (
+          <div className="mx-4 mb-2 p-2.5 rounded-md bg-status-error/10 border border-status-error/30 text-[11px] text-status-error flex items-start gap-2">
+            <AlertCircle size={12} className="mt-0.5 shrink-0" />
+            <div className="flex-1">
+              {errorMsg}
+              <button
+                onClick={() => {
+                  useUIStore.getState().setCurrentApp('settings.app')
+                  onClose()
+                }}
+                className="ml-2 underline hover:text-status-error/80"
+              >
+                Open Settings
+              </button>
+            </div>
+          </div>
+        )}
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border-subtle">
           <button onClick={onClose} className="px-3 py-1.5 rounded text-xs text-tx-muted hover:text-tx-main transition-colors">Cancel</button>
           <button onClick={handleCreate} disabled={!name.trim() || !prompt.trim() || creating}

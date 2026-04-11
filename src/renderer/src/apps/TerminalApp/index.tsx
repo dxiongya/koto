@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo, memo } from 'react'
-import { Terminal, X, GripVertical } from 'lucide-react'
+import { Terminal, X, GripVertical, Plus } from 'lucide-react'
 import { useUIStore, collectTerminalIds, removeFromTree, insertIntoTree } from '../../store/useUIStore'
 import type { SplitNode } from '../../store/useUIStore'
 import { TerminalView } from './TerminalView'
@@ -166,8 +166,32 @@ export const TerminalApp: React.FC = () => {
         )}
 
         {!hasTerminals && (
-          <div className="flex items-center justify-center h-full text-tx-faint text-sm">
-            Open a folder to start
+          <div className="flex flex-col items-center justify-center h-full gap-4 text-tx-faint">
+            <Terminal size={32} className="text-tx-faint" />
+            <div className="text-sm">No terminals open</div>
+            <button
+              onClick={async () => {
+                const store = useUIStore.getState()
+                const cwd = store.codeProjectPath ?? undefined
+                const res = await window.api.terminal.create(cwd)
+                if (res.ok) {
+                  const { genTerminalPersistKey } = await import('../../store/useUIStore')
+                  store.addTerminalSession({
+                    id: res.data,
+                    persistKey: genTerminalPersistKey(),
+                    title: `Terminal 1`,
+                    cwd,
+                  })
+                }
+              }}
+              className="flex items-center gap-1.5 px-4 py-1.5 text-[13px] text-tx-muted border border-border-strong rounded-md hover:border-tx-faint hover:text-tx-main transition-colors"
+            >
+              <Plus size={13} />
+              New Terminal
+            </button>
+            <div className="text-xs text-tx-faint mt-1">
+              Or press <kbd className="px-1.5 py-0.5 text-[10px] bg-bg-hover border border-border-subtle rounded font-mono">⌘K</kbd> and type "new terminal"
+            </div>
           </div>
         )}
       </div>

@@ -12,6 +12,8 @@ import { registerAppProtocol } from './core/app-loader'
 import { mcpManager } from './core/mcp-manager'
 import { automationScheduler } from './core/automation-scheduler'
 import { collectorSyncScheduler } from './core/collector-sync-scheduler'
+import { taskScheduler } from './core/task-scheduler'
+import { registerBuiltinExecutors } from './core/task-executors'
 import { refreshBusTools } from './core/ai-tools'
 
 function sendToRenderer(win: BrowserWindow, shortcut: string): void {
@@ -110,7 +112,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('app.koto.desktop')
 
   // NOTE: removed optimizer.watchWindowShortcuts — it can intercept our custom shortcuts
 
@@ -149,6 +151,32 @@ app.whenReady().then(() => {
   automationScheduler.start()
   collectorSyncScheduler.start()
 
+  // Unified task scheduler
+  registerBuiltinExecutors()
+  taskScheduler.start()
+
+  // Background: embed any collector items missing vectors (fire-and-forget).
+  // Runs after a delay so startup isn't blocked; uses its own error handling.
+  setTimeout(() => {
+    (async () => {
+      try {
+        const { loadConfig } = await import('./core/lite-home')
+        if (!loadConfig().embeddingGeminiApiKey) return // no API key configured
+        const { listCollectedItems, getEmbeddingStats } = await import('./core/collector-store')
+        const stats = getEmbeddingStats()
+        const missing = stats.total - stats.embedded
+        if (missing <= 0) return
+        console.log(`[Collector] Auto-embedding ${missing} items without vectors...`)
+        const { embedAllPending } = await import('./core/collector-embedding')
+        const items = listCollectedItems(1000, 0)
+        const result = await embedAllPending(items)
+        console.log(`[Collector] Auto-embed complete: +${result.embedded} embedded, ${result.failed} failed`)
+      } catch (e) {
+        console.warn('[Collector] Auto-embed failed:', e)
+      }
+    })()
+  }, 5000)
+
   // ── Application Menu with accelerators as backup ──
   const sendShortcut = (name: string): void => {
     const win = BrowserWindow.getFocusedWindow()
@@ -157,7 +185,7 @@ app.whenReady().then(() => {
 
   const template: Electron.MenuItemConstructorOptions[] = [
     {
-      label: 'Lite',
+      label: 'Koto',
       submenu: [
         { role: 'about' },
         { type: 'separator' },
@@ -227,6 +255,7 @@ app.on('before-quit', () => {
   mcpManager.shutdown().catch(() => {})
   automationScheduler.stop()
   collectorSyncScheduler.stop()
+  taskScheduler.stop()
 })
 
 app.on('window-all-closed', () => {

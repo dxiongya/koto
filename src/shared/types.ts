@@ -167,6 +167,16 @@ export const IpcChannels = {
 
   // Shell
   SHELL_OPEN_EXTERNAL: 'shell:openExternal',
+  SHELL_OPEN_PATH: 'shell:openPath',
+  SHELL_REVEAL_PATH: 'shell:revealPath',
+
+  // Task Scheduler
+  TASK_LIST: 'task:list',
+  TASK_CREATE: 'task:create',
+  TASK_UPDATE: 'task:update',
+  TASK_DELETE: 'task:delete',
+  TASK_TRIGGER: 'task:trigger',
+  TASK_RUN_EVENT: 'task:runEvent',
 
   // Shortcuts forwarded from main process
   SHORTCUT: 'shortcut',
@@ -212,15 +222,46 @@ export interface AIProviderConfig {
   type: AIProviderType
   apiKey: string
   baseUrl: string
+  /** @deprecated — use `models[0]`. Kept for backward compat with old configs. */
   model: string
+  /** List of models this provider can use. First entry is the default. */
+  models: string[]
   enabled: boolean
+}
+
+/** Resolve the active model for a provider — uses models[0] with fallback to the legacy `model` field. */
+export function getProviderModel(provider: AIProviderConfig, override?: string): string {
+  if (override) return override
+  if (provider.models?.length) return provider.models[0]
+  return provider.model
 }
 
 export type AIFeature = 'completion' | 'chat'
 
+/** A specific (provider, model) pair that a feature is routed to. */
+export interface AIFeatureRoute {
+  providerId: string
+  /** Specific model override; if omitted, uses the provider's first model. */
+  model?: string
+}
+
 export interface AIFeatureRouting {
-  completion: string | null  // provider ID, null = use active
-  chat: string | null
+  completion: AIFeatureRoute | null
+  chat: AIFeatureRoute | null
+}
+
+/**
+ * Normalize a stored routing value — older configs may still have a plain
+ * string (just a providerId). Convert to the new object form.
+ */
+export function normalizeFeatureRoute(value: unknown): AIFeatureRoute | null {
+  if (!value) return null
+  if (typeof value === 'string') return { providerId: value }
+  if (typeof value === 'object' && value !== null && 'providerId' in value) {
+    const v = value as AIFeatureRoute
+    return { providerId: v.providerId, model: v.model }
+  }
+  return null
 }
 
 export interface AIUsageRecord {
@@ -408,8 +449,16 @@ export interface TerminalSessionInfo {
   cwd?: string
 }
 
+/**
+ * Unified MRU entry — used for both files and terminals.
+ * The discriminator is whether `terminalId` or `path` is present.
+ * For files: { path, app, openedAt }
+ * For terminals: { terminalId, title, app: 'terminal.app', openedAt }
+ */
 export interface RecentFileEntry {
-  path: string
+  path?: string
+  terminalId?: string
+  title?: string           // display title (mainly for terminals)
   app: AppType
   openedAt: number
 }
@@ -437,6 +486,12 @@ export interface LiteConfig {
   ai: AISettings
   // MCP Servers
   mcpServers: MCPServerConfig[]
+  // App enable/disable (written by welcome onboarding + Settings → Apps)
+  enabledApps?: string[]
+  appOrder?: string[]
+  disabledBusTools?: string[]
+  // First-run welcome dialog shown
+  hasSeenWelcome: boolean
 }
 
 // ── Default Per-App State ──
@@ -469,6 +524,7 @@ export const DEFAULT_LITE_CONFIG: LiteConfig = {
   embeddingGeminiApiKey: '',
   ai: { ...DEFAULT_AI_SETTINGS },
   mcpServers: [],
+  hasSeenWelcome: false,
 }
 
 // ── Collector Types ──

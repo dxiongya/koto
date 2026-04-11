@@ -1,9 +1,13 @@
 /**
  * Collector Sync Scheduler — Runs sync scripts on schedule.
  * 60-second tick checks for due syncs.
+ *
+ * Also syncs configs into the unified task store on start,
+ * so they appear in the unified task list and can be managed via task.* API.
  */
-import { listEnabledSyncConfigs } from './collector-sync-store'
+import { listEnabledSyncConfigs, listSyncConfigs } from './collector-sync-store'
 import { runSync, isSyncRunning } from './collector-sync-runner'
+import { findTaskByName, createTask } from './task-store'
 
 const TICK_INTERVAL = 60_000 // 60 seconds
 
@@ -19,6 +23,10 @@ class CollectorSyncScheduler {
   start(): void {
     if (this.timer) return
     console.log('[Collector Sync] Scheduler started')
+
+    // Sync existing configs to unified task store
+    this.syncToTaskStore()
+
     // Check immediately on start
     this.tick()
     this.timer = setInterval(() => this.tick(), TICK_INTERVAL)
@@ -29,6 +37,34 @@ class CollectorSyncScheduler {
       clearInterval(this.timer)
       this.timer = null
       console.log('[Collector Sync] Scheduler stopped')
+    }
+  }
+
+  /** Mirror sync configs into the unified task store (idempotent) */
+  private syncToTaskStore(): void {
+    try {
+      const configs = listSyncConfigs()
+      for (const config of configs) {
+        const taskName = `Sync: ${config.groupName}`
+        const existing = findTaskByName(taskName, 'collector.app')
+        if (existing) continue
+
+        createTask({
+          name: taskName,
+          type: 'script',
+          appId: 'collector.app',
+          enabled: config.enabled,
+          schedule: config.schedule === 'manual' ? 'manual' : config.schedule,
+          config: {
+            groupName: config.groupName,
+            adapter: config.adapter,
+            adapterConfig: config.adapterConfig,
+          },
+        })
+        console.log(`[Collector Sync] Synced "${config.groupName}" to task store`)
+      }
+    } catch (e) {
+      console.error('[Collector Sync] Failed to sync to task store:', e)
     }
   }
 

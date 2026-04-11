@@ -29,7 +29,7 @@ export const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => vo
       }
       setDetected({ type: 'link', title: domain, url: val, domain })
     } catch {
-      setDetected({ type: 'text', title: val.slice(0, 60), url: undefined, domain: undefined })
+      setDetected({ type: 'text', title: val.split('\n')[0].slice(0, 120), url: undefined, domain: undefined })
     }
   }, [inputValue])
 

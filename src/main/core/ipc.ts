@@ -19,8 +19,10 @@ import { listAutomations, createAutomation, updateAutomation, deleteAutomation }
 import { readSnapshots, restoreSnapshot } from './automation-snapshots'
 import { loadExperience } from './automation-runner'
 import { automationScheduler } from './automation-scheduler'
-import { listCollectedItems, countCollectedItems, findDuplicateByUrl, findDuplicateByHash, computeContentHash, addCollectedItem, updateCollectedItem, deleteCollectedItem, deduplicateItems, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, ftsSearch, readItemMarkdown } from './collector-store'
-import { hybridSearch, embedAllPending, embedAndSave } from './collector-embedding'
+import { listCollectedItems, countCollectedItems, findDuplicateByUrl, findDuplicateByHash, computeContentHash, addCollectedItem, updateCollectedItem, deleteCollectedItem, deduplicateItems, getCollectorGroups, addCollectorGroup, renameCollectorGroup, deleteCollectorGroup, fetchAndSaveMarkdown, readItemMarkdown } from './collector-store'
+import { listTasks, createTask, updateTask, deleteTask, type TaskCreateInput, type ScheduledTask } from './task-store'
+import { taskScheduler } from './task-scheduler'
+import { embedAllPending, embedAndSave } from './collector-embedding'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
 
 /** Decode common HTML entities */
@@ -376,8 +378,8 @@ export function setupIpcHandlers(): void {
     ptyManager.close(id)
   })
 
-  ipcMain.handle(IpcChannels.TERMINAL_GET_CWD, (_, id: string) => {
-    const cwd = ptyManager.getCwd(id)
+  ipcMain.handle(IpcChannels.TERMINAL_GET_CWD, async (_, id: string) => {
+    const cwd = await ptyManager.getCwd(id)
     return { ok: true, data: cwd }
   })
 
@@ -620,14 +622,15 @@ export function setupIpcHandlers(): void {
       messages: AIChatMessage[],
       temperature?: number,
       maxTokens?: number,
-      enableTools?: boolean
+      enableTools?: boolean,
+      modelOverride?: string,
     ) => {
       const onToolEvent = enableTools
         ? (toolEvent: import('../../shared/types').AIToolEvent) => {
             event.sender.send(IpcChannels.AI_CHAT_TOOL_EVENT, toolEvent)
           }
         : undefined
-      return aiChat(providerId, messages, temperature, maxTokens, enableTools, onToolEvent)
+      return aiChat(providerId, messages, temperature, maxTokens, enableTools, onToolEvent, modelOverride)
     }
   )
 
@@ -839,7 +842,15 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_SYNC_LIST_ADAPTERS, async () => {
     try {
       const { BUILTIN_ADAPTERS } = await import('./collector-sync-adapters')
-      return { ok: true, data: BUILTIN_ADAPTERS.map(a => ({ id: a.id, name: a.name, description: a.description, defaultConfig: a.defaultConfig })) }
+      // Include script so the renderer can install it during Setup Sync
+      // without needing to import main-process code.
+      return { ok: true, data: BUILTIN_ADAPTERS.map(a => ({
+        id: a.id,
+        name: a.name,
+        description: a.description,
+        defaultConfig: a.defaultConfig,
+        script: a.script,
+      })) }
     } catch (e) { return { ok: false, error: String(e) } }
   })
 
@@ -924,26 +935,19 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.COLLECTOR_SEARCH, async (_, query: string) => {
     try {
-      // 1. FTS5 keyword search first (fast, precise)
-      const ftsResults = ftsSearch(query)
-      const ftsData = ftsResults.map((r) => ({ item: r.item, score: r.rank, source: 'keyword' as const }))
-
-      // 2. If FTS found enough, return directly
-      if (ftsData.length >= 5) return { ok: true, data: ftsData }
-
-      // 3. Supplement with hybrid (keyword + semantic)
-      const items = listCollectedItems(100, 0)
-      const hybridResults = await hybridSearch(query, items)
-      const itemMap = new Map(items.map((i) => [i.id, i]))
-      const ftsIds = new Set(ftsData.map((r) => r.item.id))
-
-      // Merge: FTS results first, then hybrid additions
-      const hybridAdditions = hybridResults
-        .filter((r) => !ftsIds.has(r.itemId))
-        .map((r) => ({ item: itemMap.get(r.itemId)!, score: r.score, source: r.source }))
-        .filter((r) => r.item)
-
-      return { ok: true, data: [...ftsData, ...hybridAdditions] }
+      // RRF fusion of keyword (FTS5/LIKE) + semantic (embedding cosine).
+      // See collector-search.ts for ranking details.
+      const { hybridCollectorSearch } = await import('./collector-search')
+      const results = await hybridCollectorSearch(query, 20)
+      return {
+        ok: true,
+        data: results.map((r) => ({
+          item: r.item,
+          score: r.score,
+          // Preserve "source" shape for consumers that expect it (legacy).
+          source: r.sources.length > 1 ? 'hybrid' : (r.sources[0] || 'keyword'),
+        })),
+      }
     } catch (e) {
       return { ok: false, error: String(e) }
     }
@@ -1017,6 +1021,51 @@ export function setupIpcHandlers(): void {
     }
   })
 
+  // ── Task Scheduler ──
+
+  ipcMain.handle(IpcChannels.TASK_LIST, (_, appId?: string) => {
+    try {
+      return { ok: true, data: listTasks(appId) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.TASK_CREATE, (_, input: TaskCreateInput) => {
+    try {
+      return { ok: true, data: createTask(input) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.TASK_UPDATE, (_, id: string, patch: Partial<Pick<ScheduledTask, 'name' | 'enabled' | 'schedule' | 'config' | 'appId'>>) => {
+    try {
+      const task = updateTask(id, patch)
+      return task ? { ok: true, data: task } : { ok: false, error: 'Task not found' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.TASK_DELETE, (_, id: string) => {
+    try {
+      const ok = deleteTask(id)
+      return ok ? { ok: true, data: undefined } : { ok: false, error: 'Task not found' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.TASK_TRIGGER, async (_, id: string) => {
+    try {
+      const result = await taskScheduler.runNow(id)
+      return result.success ? { ok: true, data: result } : { ok: false, error: result.error }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
   // ── Apps ──
 
   ipcMain.handle(IpcChannels.APPS_DISCOVER, () => {
@@ -1032,6 +1081,16 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.SHELL_OPEN_EXTERNAL, (_, url: string) => {
     shell.openExternal(url)
+    return { ok: true, data: undefined }
+  })
+
+  ipcMain.handle(IpcChannels.SHELL_OPEN_PATH, async (_, filePath: string) => {
+    const err = await shell.openPath(filePath)
+    return err ? { ok: false, error: err } : { ok: true, data: undefined }
+  })
+
+  ipcMain.handle(IpcChannels.SHELL_REVEAL_PATH, (_, filePath: string) => {
+    shell.showItemInFolder(filePath)
     return { ok: true, data: undefined }
   })
 }

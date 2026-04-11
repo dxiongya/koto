@@ -26,26 +26,78 @@ interface PaletteItem {
 
 import { fuzzyMatch, fuzzyScore } from '../utils/fuzzySearch'
 
-// ── Highlight matched chars ──
+// ── Highlight matched text ──
+//
+// Two modes:
+//   - 'fuzzy' (default): char-by-char subsequence match. Good for file-name
+//     fuzzy search (e.g. "CP" → CommandPalette) where each query char should
+//     find its next occurrence in the text.
+//   - 'word': whole-token match (case-insensitive, ≥2 chars). For search
+//     result snippets where the query is actual words/phrases — highlights
+//     entire matching words, not scattered single letters.
 
-function HighlightMatch({ text, query }: { text: string; query: string }) {
-  if (!query) return <>{text}</>
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function HighlightMatch({
+  text,
+  query,
+  mode = 'fuzzy',
+}: {
+  text?: string
+  query: string
+  mode?: 'fuzzy' | 'word'
+}) {
+  const safeText = text || ''
+  if (!query || !safeText) return <>{safeText}</>
+
+  if (mode === 'word') {
+    // Whole-word highlighting for search results.
+    const tokens = query
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.replace(/[^\p{L}\p{N}]+/gu, '')) // strip punctuation
+      .filter((t) => t.length >= 2)
+    if (tokens.length === 0) return <>{safeText}</>
+    const pattern = new RegExp(`(${tokens.map(escapeRegex).join('|')})`, 'gi')
+    const parts = safeText.split(pattern)
+    return (
+      <>
+        {parts.map((part, i) => {
+          if (!part) return null
+          const isMatch = tokens.some((t) => part.toLowerCase() === t)
+          return isMatch ? (
+            <span key={i} className="text-accent-main font-semibold">
+              {part}
+            </span>
+          ) : (
+            <span key={i}>{part}</span>
+          )
+        })}
+      </>
+    )
+  }
+
+  // fuzzy subsequence (file names, commands)
   const q = query.toLowerCase()
   const chars: { char: string; matched: boolean }[] = []
   let qi = 0
-  for (let i = 0; i < text.length; i++) {
-    if (qi < q.length && text[i].toLowerCase() === q[qi]) {
-      chars.push({ char: text[i], matched: true })
+  for (let i = 0; i < safeText.length; i++) {
+    if (qi < q.length && safeText[i].toLowerCase() === q[qi]) {
+      chars.push({ char: safeText[i], matched: true })
       qi++
     } else {
-      chars.push({ char: text[i], matched: false })
+      chars.push({ char: safeText[i], matched: false })
     }
   }
   return (
     <>
       {chars.map((c, i) =>
         c.matched ? (
-          <span key={i} className="text-accent-main font-semibold">{c.char}</span>
+          <span key={i} className="text-accent-main font-semibold">
+            {c.char}
+          </span>
         ) : (
           <span key={i}>{c.char}</span>
         ),
@@ -205,17 +257,29 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       const bus = getAppBus()
 
       // If app shortcut active, only search that app. Otherwise fan out to all.
+      // APP_PRIORITY defines both which providers to query and the cross-app
+      // display order. Each provider's internal ranking is preserved; results
+      // are concatenated in priority order (no global score mixing since each
+      // app's score scale is incompatible).
+      const APP_PRIORITY: { cap: string; source: string }[] = [
+        { cap: 'notes.search', source: 'notes.app' },
+        { cap: 'collector.search', source: 'collector.app' },
+        { cap: 'terminal.search', source: 'terminal.app' },
+      ]
       const providers = appShortcutMatch
-        ? [appShortcutMatch.searchCap]
-        : ['notes.search', 'collector.search', 'terminal.search']
-      const available = providers.filter((cap) => bus.has(cap))
-      const results = await Promise.all(
-        available.map((cap) => bus.request<AppSearchResult[]>(cap, { query: searchQuery }).catch(() => null)),
+        ? APP_PRIORITY.filter((p) => p.cap === appShortcutMatch.searchCap)
+        : APP_PRIORITY
+      const available = providers.filter((p) => bus.has(p.cap))
+      const perAppResults = await Promise.all(
+        available.map((p) =>
+          bus.request<AppSearchResult[]>(p.cap, { query: searchQuery })
+            .then((res) => ({ source: p.source, items: res || [] }))
+            .catch(() => ({ source: p.source, items: [] as AppSearchResult[] })),
+        ),
       )
 
-      // Merge + sort by score
-      const allResults = (results.flat().filter(Boolean) as AppSearchResult[])
-      allResults.sort((a, b) => b.score - a.score)
+      // Concatenate in priority order, preserving each app's internal rank.
+      const allResults = perAppResults.flatMap((r) => r.items)
 
       // Convert to PaletteItems
       const items: PaletteItem[] = allResults.map((r) => ({
@@ -254,10 +318,15 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
   }, [shouldSearch, searchQuery, appShortcutMatch?.searchCap])
 
-  // Recent files lookup
-  const recentPathSet = useMemo(() => {
+  // Recent items lookup — covers both files (by path) and terminals (by terminalId).
+  // Value is a recency rank: newer items → higher number. Used to boost their
+  // score in fuzzy ranking (boost * 10) so recently-used items float to the top.
+  const recentRankByKey = useMemo(() => {
     const map = new Map<string, number>()
-    recentFiles.forEach((f, i) => map.set(f.path, recentFiles.length - i))
+    recentFiles.forEach((f, i) => {
+      const key = f.path || (f.terminalId ? `term:${f.terminalId}` : null)
+      if (key) map.set(key, recentFiles.length - i)
+    })
     return map
   }, [recentFiles])
 
@@ -355,24 +424,42 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
     // ── Default file search mode ──
 
-    // Recent files
+    // Recent items (files + terminals) — walk unified MRU in time order
+    const seenRecentKeys = new Set<string>()
     for (const recent of recentFiles.slice(0, 10)) {
-      const fileName = recent.path.split('/').pop() || recent.path
-      const isNote = recent.app === 'notes.app'
-      all.push({
-        id: `recent:${recent.path}`,
-        label: fileName,
-        hint: isNote ? 'notes' : recent.path.split('/').slice(-2, -1)[0],
-        icon: Clock,
-        category: 'Recent',
-        boost: recentPathSet.get(recent.path) || 0,
-        action: () => {
-          store.setCurrentApp(recent.app)
-          useUIStore.setState({
-            appStates: { ...store.appStates, [recent.app]: { ...store.appStates[recent.app], activeFilePath: recent.path } },
-          })
-        },
-      })
+      if (recent.terminalId) {
+        const session = terminalSessions.find((s) => s.id === recent.terminalId)
+        if (!session) continue
+        const key = `term:${session.id}`
+        seenRecentKeys.add(key)
+        all.push({
+          id: `recent-term:${session.id}`,
+          label: session.title || recent.title || 'Terminal',
+          hint: session.cwd?.split('/').pop(),
+          icon: Clock,
+          category: 'Recent',
+          boost: recentRankByKey.get(key) || 0,
+          action: () => { store.setCurrentApp('terminal.app'); store.setActiveTerminalId(session.id) },
+        })
+      } else if (recent.path) {
+        const fileName = recent.path.split('/').pop() || recent.path
+        const isNote = recent.app === 'notes.app'
+        seenRecentKeys.add(recent.path)
+        all.push({
+          id: `recent:${recent.path}`,
+          label: fileName,
+          hint: isNote ? 'notes' : recent.path.split('/').slice(-2, -1)[0],
+          icon: Clock,
+          category: 'Recent',
+          boost: recentRankByKey.get(recent.path) || 0,
+          action: () => {
+            store.setCurrentApp(recent.app)
+            useUIStore.setState({
+              appStates: { ...store.appStates, [recent.app]: { ...store.appStates[recent.app], activeFilePath: recent.path } },
+            })
+          },
+        })
+      }
     }
 
     // Apps
@@ -384,13 +471,14 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       })
     }
 
-    // Note files (skip if already in recent)
+    // Note files (skip if already in recent). MRU-ranked files still get a
+    // residual boost so they rank above never-touched files in fuzzy search.
     for (const file of noteFiles) {
-      if (recentPathSet.has(file.path)) continue
+      if (seenRecentKeys.has(file.path)) continue
+      const mruRank = recentRankByKey.get(file.path) || 0
       all.push({
         id: `note:${file.path}`, label: file.name, icon: FileText, category: 'Notes',
-        // Boost if currently in notes.app
-        boost: currentApp === 'notes.app' ? 5 : 0,
+        boost: mruRank + (currentApp === 'notes.app' ? 5 : 0),
         action: () => {
           store.setCurrentApp('notes.app')
           useUIStore.setState({
@@ -402,12 +490,13 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
 
     // Code files (skip if already in recent)
     for (const file of codeFiles) {
-      if (recentPathSet.has(file.path)) continue
+      if (seenRecentKeys.has(file.path)) continue
+      const mruRank = recentRankByKey.get(file.path) || 0
       all.push({
         id: `code:${file.path}`, label: file.name,
         hint: file.name.split('/').slice(0, -1).join('/') || undefined,
         icon: FileCode, category: 'Code',
-        boost: currentApp === 'code.app' ? 5 : 0,
+        boost: mruRank + (currentApp === 'code.app' ? 5 : 0),
         action: () => {
           store.setCurrentApp('code.app')
           useUIStore.setState({
@@ -417,8 +506,9 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       })
     }
 
-    // Terminals
+    // Terminals (skip if already shown in Recent)
     for (const session of terminalSessions) {
+      if (seenRecentKeys.has(`term:${session.id}`)) continue
       all.push({
         id: `term:${session.id}`, label: session.title, hint: session.cwd?.split('/').pop(),
         icon: Terminal, category: 'Terminals',
@@ -464,7 +554,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     )
 
     return all
-  }, [isCommandMode, isContentMode, isLineMode, isHelpMode, noteFiles, codeFiles, collectorItems, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentPathSet, searchQuery])
+  }, [isCommandMode, isContentMode, isLineMode, isHelpMode, noteFiles, codeFiles, collectorItems, terminalSessions, currentApp, codeProjectPath, theme, recentFiles, recentRankByKey, searchQuery])
 
   // ── Filter + sort ──
   const filtered = useMemo(() => {
@@ -472,11 +562,14 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
     if (!searchQuery) return items
 
     // Start with fuzzy-matched static items
+    // Boost weight is significant (×10) so recently-used items decisively
+    // rank above similarly-scored fresh matches. Recency rank goes from 1..30
+    // (oldest..newest in the MRU list), so top boost ≈ 300 extra points.
     const fuzzyMatched = items
       .filter((item) => fuzzyMatch(searchQuery, item.label))
       .sort((a, b) => {
-        const scoreA = fuzzyScore(searchQuery, a.label) + (a.boost || 0) * 2
-        const scoreB = fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 2
+        const scoreA = fuzzyScore(searchQuery, a.label) + (a.boost || 0) * 10
+        const scoreB = fuzzyScore(searchQuery, b.label) + (b.boost || 0) * 10
         return scoreB - scoreA
       })
 
@@ -594,7 +687,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* Results */}
-        <div ref={listRef} className="max-h-[380px] overflow-y-auto py-1">
+        <div ref={listRef} className="max-h-[380px] overflow-y-auto py-1 scroll-thin">
           {searching ? (
             <div className="px-4 py-6 text-center text-tx-faint text-[13px]">Searching...</div>
           ) : grouped.length === 0 ? (
@@ -610,6 +703,10 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
                 {group.items.map((item) => {
                   const idx = flatItems.indexOf(item)
                   const isSelected = idx === selectedIndex
+                  // Search result items use word-level highlighting; other
+                  // items (file names, commands) use fuzzy subsequence.
+                  const isSearchResult = item.category.endsWith('Results')
+                  const highlightMode: 'fuzzy' | 'word' = isSearchResult ? 'word' : 'fuzzy'
                   return (
                     <div
                       key={item.id}
@@ -624,7 +721,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="text-[13px] truncate">
-                            <HighlightMatch text={item.label} query={isContentMode || isLineMode || isHelpMode ? '' : searchQuery} />
+                            <HighlightMatch text={item.label} query={isContentMode || isLineMode || isHelpMode ? '' : searchQuery} mode={highlightMode} />
                           </span>
                           {item.hint && (
                             <span className="text-[11px] text-tx-faint truncate max-w-[140px] shrink-0">{item.hint}</span>
@@ -632,7 +729,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
                         </div>
                         {item.detail && (
                           <div className="text-[11px] text-tx-faint truncate mt-0.5">
-                            <HighlightMatch text={item.detail} query={searchQuery} />
+                            <HighlightMatch text={item.detail} query={searchQuery} mode={highlightMode} />
                           </div>
                         )}
                       </div>

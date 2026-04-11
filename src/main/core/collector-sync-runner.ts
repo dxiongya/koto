@@ -144,8 +144,28 @@ export async function runSync(groupName: string): Promise<{ success: boolean; it
     return { success: false, itemsAdded: 0, error: 'Sync already running' }
   }
 
-  const scriptSource = getScriptSource(groupName)
-  if (!scriptSource) return { success: false, itemsAdded: 0, error: 'No sync script found' }
+  // Resolve script source:
+  //   1. User-installed script file (script_path on the config row)
+  //   2. Fallback: built-in adapter template (auto-heal configs created
+  //      without a script, e.g. from the broken Setup Sync flow)
+  let scriptSource = getScriptSource(groupName)
+  if (!scriptSource && config.adapter && config.adapter !== 'custom') {
+    const { getAdapterTemplate } = await import('./collector-sync-adapters')
+    const template = getAdapterTemplate(config.adapter)
+    if (template?.script) {
+      scriptSource = template.script
+      // Persist so next run uses the proper path
+      const { setScriptSource } = await import('./collector-sync-store')
+      try { setScriptSource(groupName, template.script) } catch { /* non-fatal */ }
+    }
+  }
+  if (!scriptSource) {
+    return {
+      success: false,
+      itemsAdded: 0,
+      error: `No sync script configured for "${groupName}". Open Setup Sync and pick an adapter.`,
+    }
+  }
 
   const { ctx, getStats, abort } = buildSyncContext(groupName, config.adapterConfig)
   activeAborts.set(groupName, abort)

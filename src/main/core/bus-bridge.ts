@@ -10,6 +10,7 @@
  */
 import { BrowserWindow } from 'electron'
 import { IpcChannels } from '../../shared/types'
+import { loadConfig } from './lite-home'
 
 export interface BridgedTool {
   name: string
@@ -18,23 +19,48 @@ export interface BridgedTool {
   appId: string
 }
 
-/** Get all Bus tools from the renderer */
+// Default enabled set mirrors `DEFAULT_ENABLED` in `builtinApps.ts`. Used when
+// no explicit enabledApps list exists in config (fresh install).
+const DEFAULT_ENABLED_APPS = new Set(['notes.app', 'collector.app'])
+
+/**
+ * Build the filter predicate for a BridgedTool based on current config:
+ *   - system / no-appId tools → always allowed
+ *   - tools from enabled apps → allowed
+ *   - tools from disabled apps → rejected
+ *   - individual tools the user disabled in Settings → rejected
+ */
+function buildToolFilter(): (t: BridgedTool) => boolean {
+  let enabled = DEFAULT_ENABLED_APPS
+  let disabledTools = new Set<string>()
+  try {
+    const cfg = loadConfig()
+    if (cfg.enabledApps?.length) enabled = new Set(cfg.enabledApps)
+    if (cfg.disabledBusTools?.length) disabledTools = new Set(cfg.disabledBusTools)
+  } catch { /* fall back to defaults */ }
+
+  return (t: BridgedTool) => {
+    if (disabledTools.has(t.name)) return false
+    if (!t.appId || t.appId === 'system') return true
+    return enabled.has(t.appId)
+  }
+}
+
+/** Get all Bus tools from the renderer (filtered to enabled apps + non-disabled tools) */
 export function listBusTools(): Promise<BridgedTool[]> {
   return new Promise((resolve) => {
     const win = BrowserWindow.getAllWindows()[0]
     if (!win) { resolve([]); return }
 
-    const handler = (_: unknown, tools: BridgedTool[]) => {
-      win.webContents.ipc.removeHandler(IpcChannels.BUS_LIST_TOOLS + ':response')
-      resolve(tools || [])
-    }
+    const filter = buildToolFilter()
+    const applyFilter = (tools: BridgedTool[]): BridgedTool[] => (tools || []).filter(filter)
 
     // Listen for response
     win.webContents.ipc.removeHandler(IpcChannels.BUS_LIST_TOOLS + ':response')
     win.webContents.on('ipc-message', function onMsg(_ev, channel, ...args) {
       if (channel === IpcChannels.BUS_LIST_TOOLS + ':response') {
         win.webContents.removeListener('ipc-message', onMsg)
-        resolve((args[0] as BridgedTool[]) || [])
+        resolve(applyFilter(args[0] as BridgedTool[]))
       }
     })
 
@@ -47,7 +73,17 @@ export function listBusTools(): Promise<BridgedTool[]> {
 }
 
 /** Call a Bus tool in the renderer and get the result */
-export function callBusTool(name: string, params: Record<string, unknown>): Promise<unknown> {
+export async function callBusTool(name: string, params: Record<string, unknown>): Promise<unknown> {
+  // Guard: reject calls to tools from disabled apps or individually disabled tools.
+  // This mirrors the filtering in listBusTools() so external MCP clients can't
+  // invoke tools they shouldn't see.
+  const allTools = await rawListBusTools()
+  const filter = buildToolFilter()
+  const target = allTools.find((t) => t.name === name)
+  if (target && !filter(target)) {
+    throw new Error(`Tool "${name}" is not available (its app is disabled or the tool is turned off)`)
+  }
+
   return new Promise((resolve, reject) => {
     const win = BrowserWindow.getAllWindows()[0]
     if (!win) { reject(new Error('No window')); return }
@@ -71,5 +107,24 @@ export function callBusTool(name: string, params: Record<string, unknown>): Prom
       win.webContents.removeListener('ipc-message', onMsg as any)
       reject(new Error(`Bus tool "${name}" timed out`))
     }, 10000)
+  })
+}
+
+/** Internal: get the unfiltered tool list (used by callBusTool's guard). */
+function rawListBusTools(): Promise<BridgedTool[]> {
+  return new Promise((resolve) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (!win) { resolve([]); return }
+
+    win.webContents.ipc.removeHandler(IpcChannels.BUS_LIST_TOOLS + ':response')
+    win.webContents.on('ipc-message', function onMsg(_ev, channel, ...args) {
+      if (channel === IpcChannels.BUS_LIST_TOOLS + ':response') {
+        win.webContents.removeListener('ipc-message', onMsg)
+        resolve((args[0] as BridgedTool[]) || [])
+      }
+    })
+
+    win.webContents.send(IpcChannels.BUS_LIST_TOOLS)
+    setTimeout(() => resolve([]), 2000)
   })
 }

@@ -20,7 +20,7 @@ let activePort: number | null = null
 
 function createMCPServer(): Server {
   const server = new Server(
-    { name: 'lite-workspace', version: '1.0.0' },
+    { name: 'koto', version: '1.0.0' },
     { capabilities: { tools: {} } },
   )
 
@@ -152,9 +152,9 @@ export async function startMCPServer(port: number = 3899): Promise<{ port: numbe
   return new Promise((resolve, reject) => {
     httpServer!.listen(port, '127.0.0.1', () => {
       activePort = port
-      console.log(`[MCP Server] Running on http://lite.localhost:${port}`)
-      console.log(`[MCP Server] Streamable HTTP: http://lite.localhost:${port}/mcp`)
-      console.log(`[MCP Server] SSE (legacy):    http://lite.localhost:${port}/sse`)
+      console.log(`[MCP Server] Running on http://koto.localhost:${port}`)
+      console.log(`[MCP Server] Streamable HTTP: http://koto.localhost:${port}/mcp`)
+      console.log(`[MCP Server] SSE (legacy):    http://koto.localhost:${port}/sse`)
       resolve({ port })
     })
     httpServer!.on('error', (e) => {

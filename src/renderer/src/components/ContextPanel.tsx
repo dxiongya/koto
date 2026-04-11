@@ -13,7 +13,6 @@ import {
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import { getAppBus } from '../core/AppContext'
-import { fuzzyMatch, fuzzyScore } from '../utils/fuzzySearch'
 import type { AppSearchResult } from '../../../shared/app-interface'
 
 // ── Icon map (same as CommandPalette) ──
@@ -24,20 +23,34 @@ const ICON_MAP: Record<string, React.FC<{ size?: number; className?: string }>> 
 }
 
 // ── Highlight ──
+// Word-level matching for search results (whole tokens, not fuzzy chars).
 
-function HighlightMatch({ text, query }: { text: string; query: string }) {
-  if (!query) return <>{text}</>
-  const q = query.toLowerCase()
-  const chars: { char: string; matched: boolean }[] = []
-  let qi = 0
-  for (let i = 0; i < text.length; i++) {
-    if (qi < q.length && text[i].toLowerCase() === q[qi]) {
-      chars.push({ char: text[i], matched: true }); qi++
-    } else {
-      chars.push({ char: text[i], matched: false })
-    }
-  }
-  return <>{chars.map((c, i) => c.matched ? <span key={i} className="text-accent-main font-semibold">{c.char}</span> : c.char)}</>
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function HighlightMatch({ text, query }: { text?: string; query: string }) {
+  const safe = text || ''
+  if (!query || !safe) return <>{safe}</>
+  const tokens = query
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.replace(/[^\p{L}\p{N}]+/gu, ''))
+    .filter((t) => t.length >= 2)
+  if (tokens.length === 0) return <>{safe}</>
+  const pattern = new RegExp(`(${tokens.map(escapeRegex).join('|')})`, 'gi')
+  const parts = safe.split(pattern)
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (!part) return null
+        const isMatch = tokens.some((t) => part.toLowerCase() === t)
+        return isMatch
+          ? <span key={i} className="text-accent-main font-semibold">{part}</span>
+          : <span key={i}>{part}</span>
+      })}
+    </>
+  )
 }
 
 // ── Types ──
@@ -80,6 +93,16 @@ function ContextPanelInner({ onClose }: { onClose: () => void }) {
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const liteHome = useUIStore((s) => s.liteHome)
+  const recentFiles = useUIStore((s) => s.recentFiles)
+
+  // Recency lookup: path → rank (higher = more recent).
+  const recentRankByPath = useMemo(() => {
+    const map = new Map<string, number>()
+    recentFiles.forEach((f, i) => {
+      if (f.path) map.set(f.path, recentFiles.length - i)
+    })
+    return map
+  }, [recentFiles])
 
   // App shortcut detection (e.g. "n design")
   const appShortcut = query.length >= 2 && query[1] === ' ' && APP_SHORTCUTS[query[0]]
@@ -109,21 +132,27 @@ function ContextPanelInner({ onClose }: { onClose: () => void }) {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     searchTimerRef.current = setTimeout(async () => {
       const bus = getAppBus()
+      // Each app's ranking is preserved; cross-app order is fixed by priority.
+      const APP_PRIORITY = ['notes.search', 'collector.search']
       const providers = appShortcut
-        ? [appShortcut.searchCap]
-        : ['notes.search', 'collector.search']
-      const results = await Promise.all(
+        ? APP_PRIORITY.filter((cap) => cap === appShortcut.searchCap)
+        : APP_PRIORITY
+      const perAppResults = await Promise.all(
         providers.filter((cap) => bus.has(cap))
-          .map((cap) => bus.request<AppSearchResult[]>(cap, { query: searchQuery }).catch(() => null)),
+          .map((cap) =>
+            bus.request<AppSearchResult[]>(cap, { query: searchQuery })
+              .then((res) => res || [])
+              .catch(() => [] as AppSearchResult[]),
+          ),
       )
-      const allResults = (results.flat().filter(Boolean) as AppSearchResult[])
-        .sort((a, b) => b.score - a.score)
+      const allResults = perAppResults.flat()
 
       setSearchResults(allResults.map((r): ContextItem => {
-        const injectText = r.action.type === 'open-file'
-          ? (r.action.path.includes(' ') ? `"${r.action.path}"` : r.action.path)
-          : r.action.type === 'open-url' ? r.action.url
-          : r.title
+        const action = r.action
+        const injectText = action?.type === 'open-file'
+          ? (action.path.includes(' ') ? `"${action.path}"` : action.path)
+          : action?.type === 'open-url' ? action.url
+          : r.title || ''
         return {
           id: r.id,
           label: r.title,
@@ -139,11 +168,21 @@ function ContextPanelInner({ onClose }: { onClose: () => void }) {
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
   }, [searchQuery, appShortcut?.searchCap])
 
-  // Merge: search results first, then browsable files (when no query)
+  // Merge: search results first, then browsable files (when no query).
+  // In both cases, recently-used files get a recency bump to the top.
   const items = useMemo(() => {
-    if (searchQuery) return searchResults
-    return noteFiles // Browse mode: show note files
-  }, [searchQuery, searchResults, noteFiles])
+    const rank = (item: ContextItem): number => {
+      // item.id is `note-${path}` for browse mode, or from bus search
+      const path = item.id.startsWith('note-') ? item.id.slice(5) : item.injectText
+      return recentRankByPath.get(path) || 0
+    }
+    if (searchQuery) {
+      // Stable sort: recency boost * large constant, preserve search order for non-recent
+      return [...searchResults].sort((a, b) => rank(b) - rank(a))
+    }
+    // Browse mode — recent files first, then the rest in their original order
+    return [...noteFiles].sort((a, b) => rank(b) - rank(a))
+  }, [searchQuery, searchResults, noteFiles, recentRankByPath])
 
   // Clamp selection
   useEffect(() => {

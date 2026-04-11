@@ -413,12 +413,13 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
     setChatHistory((prev) => [...prev, { role: 'user', content: currentPrompt, refs: currentRefs }])
 
     try {
-      const provider = useUIStore.getState().getAIProviderForFeature('chat')
-      if (!provider) {
+      const routed = useUIStore.getState().getAIProviderForFeature('chat')
+      if (!routed) {
         setError('No AI provider configured. Go to Settings to add one.')
         setLoading(false)
         return
       }
+      const { provider, model } = routed
 
       // Resolve refs
       let resolvedPrompt = currentPrompt
@@ -465,7 +466,7 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
         }
       })
 
-      const result = await window.api.ai.chat(provider.id, messages, 0.7, 2048, true)
+      const result = await window.api.ai.chat(provider.id, messages, 0.7, 2048, true, model)
       unsubToolEvent()
 
       if (result.ok) {

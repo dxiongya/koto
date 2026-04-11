@@ -40,16 +40,51 @@ export const collectorAppDefinition: AppDefinition = {
         if (!query) return []
         const res = await window.api.collector.search(query)
         if (!res.ok) return []
-        return res.data.slice(0, 15).map((r: any) => {
+
+        // Build a snippet centered around the first matching token.
+        // Falls back to the note start if no token matches in the note.
+        const tokens = query
+          .toLowerCase()
+          .split(/\s+/)
+          .map((t) => t.replace(/[^\p{L}\p{N}]+/gu, ''))
+          .filter((t) => t.length >= 2)
+
+        const buildSnippet = (text: string): string => {
+          if (!text) return ''
+          const lower = text.toLowerCase()
+          let firstIdx = -1
+          for (const t of tokens) {
+            const idx = lower.indexOf(t)
+            if (idx !== -1 && (firstIdx === -1 || idx < firstIdx)) firstIdx = idx
+          }
+          if (firstIdx === -1) return text.slice(0, 200)
+          // Context window: ~80 chars before, ~120 after
+          const start = Math.max(0, firstIdx - 80)
+          const end = Math.min(text.length, firstIdx + 120)
+          const prefix = start > 0 ? '…' : ''
+          const suffix = end < text.length ? '…' : ''
+          return prefix + text.slice(start, end).trim() + suffix
+        }
+
+        return res.data.slice(0, 15).map((r: any, i: number) => {
           const item = r.item ?? r
+          const title = item.title || item.url || item.note?.slice(0, 80) || 'Untitled'
+          const note = (item.note || '').trim()
           return {
             id: item.id,
+            title,
+            subtitle: item.url || item.group || '',
+            snippet: note && note !== title ? buildSnippet(note) : '',
+            score: typeof r.score === 'number' ? r.score : 100 - i,
+            source: 'collector.app',
+            icon: item.type === 'link' ? 'link' : item.type === 'image' ? 'image' : 'archive',
+            action: item.url
+              ? { type: 'open-url', url: item.url }
+              : { type: 'navigate', app: 'collector.app', state: { collectorActiveItemId: item.id } },
+            // MCP-only fields (extra, ignored by palette):
             type: item.type,
-            title: item.title || item.url || 'Untitled',
             url: item.url,
             group: item.group,
-            score: r.score,
-            source: r.source,
           }
         })
       },

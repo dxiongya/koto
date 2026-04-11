@@ -303,6 +303,29 @@ ul.editor-checklist {
   left: -2px;
 }
 
+/* ─── Thin Scrollbar (utility class for panels/lists) ─────────────── */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--tx-main) 18%, transparent) transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--tx-main) 14%, transparent);
+  border-radius: 3px;
+}
+.scroll-thin::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--tx-main) 26%, transparent);
+}
+.scroll-thin::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* ─── Table of Contents ─────────────────────────────────────────────── */
 .toc-floating::-webkit-scrollbar,
 .toc-pinned::-webkit-scrollbar {
@@ -314,6 +337,15 @@ ul.editor-checklist {
 @keyframes toc-fade-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Welcome Dialog Card Transition ────────────────────────────── */
+.welcome-card-enter {
+  animation: welcome-card-fade 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes welcome-card-fade {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 /* ─── Ghost Text (AI Completion) ────────────────────────────────────── */

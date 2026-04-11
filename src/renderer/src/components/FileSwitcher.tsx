@@ -24,20 +24,77 @@ interface SwitcherItem {
 function buildItems(): SwitcherItem[] {
   const store = useUIStore.getState()
   const items: SwitcherItem[] = []
+  const seenTerminals = new Set<string>()
+  const seenFiles = new Set<string>()
 
-  for (const rf of store.recentFiles.slice(0, 15)) {
-    const fileName = rf.path.split('/').pop() || rf.path
-    const dirHint = rf.path.split('/').slice(-2, -1)[0]
-    items.push({
-      label: fileName,
-      hint: dirHint,
-      app: rf.app,
-      filePath: rf.path,
-      icon: APP_ICONS[rf.app] || FileText,
-    })
+  // Determine the "current item" — the file/terminal the user is actively
+  // working on right now. This MUST be at position 0 regardless of MRU
+  // staleness (e.g. if the file was opened via back-navigation or was
+  // restored from saved state without a tracking call).
+  let currentItem: SwitcherItem | null = null
+  if (store.currentApp === 'terminal.app' && store.activeTerminalId) {
+    const session = store.terminalSessions.find((s) => s.id === store.activeTerminalId)
+    if (session) {
+      currentItem = {
+        label: session.title || 'Terminal',
+        hint: session.cwd?.split('/').pop(),
+        app: 'terminal.app',
+        terminalId: session.id,
+        icon: Terminal,
+      }
+      seenTerminals.add(session.id)
+    }
+  } else {
+    const activePath = store.appStates[store.currentApp]?.activeFilePath
+    if (activePath) {
+      const fileName = activePath.split('/').pop() || activePath
+      const dirHint = activePath.split('/').slice(-2, -1)[0]
+      currentItem = {
+        label: fileName,
+        hint: dirHint,
+        app: store.currentApp,
+        filePath: activePath,
+        icon: APP_ICONS[store.currentApp] || FileText,
+      }
+      seenFiles.add(activePath)
+    }
+  }
+  if (currentItem) items.push(currentItem)
+
+  // Walk the unified MRU list — sorted by openedAt desc. Skip anything
+  // already included as the current item.
+  for (const rf of store.recentFiles.slice(0, 20)) {
+    if (rf.terminalId) {
+      if (seenTerminals.has(rf.terminalId)) continue
+      const session = store.terminalSessions.find((s) => s.id === rf.terminalId)
+      if (!session) continue
+      seenTerminals.add(session.id)
+      items.push({
+        label: session.title || rf.title || 'Terminal',
+        hint: session.cwd?.split('/').pop(),
+        app: 'terminal.app',
+        terminalId: session.id,
+        icon: Terminal,
+      })
+    } else if (rf.path) {
+      if (seenFiles.has(rf.path)) continue
+      seenFiles.add(rf.path)
+      const fileName = rf.path.split('/').pop() || rf.path
+      const dirHint = rf.path.split('/').slice(-2, -1)[0]
+      items.push({
+        label: fileName,
+        hint: dirHint,
+        app: rf.app,
+        filePath: rf.path,
+        icon: APP_ICONS[rf.app] || FileText,
+      })
+    }
   }
 
+  // Append any terminals that have never been used. They go at the end;
+  // once activated they'll surface to the top naturally.
   for (const ts of store.terminalSessions) {
+    if (seenTerminals.has(ts.id)) continue
     items.push({
       label: ts.title || 'Terminal',
       hint: ts.cwd?.split('/').pop(),

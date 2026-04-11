@@ -157,7 +157,12 @@ export function FloatingToolbarPlugin(): JSX.Element | null {
       SELECTION_CHANGE_COMMAND,
       () => {
         cancelAnimationFrame(rafRef.current)
-        rafRef.current = requestAnimationFrame(() => updateToolbar())
+        // rAF callback runs outside the editor's read context, so we must
+        // re-enter via editor.read() before calling $getSelection() etc.
+        // Lexical 0.41+ throws "Unable to find an active editor state" otherwise.
+        rafRef.current = requestAnimationFrame(() => {
+          editor.read(() => updateToolbar())
+        })
         return false
       },
       COMMAND_PRIORITY_LOW

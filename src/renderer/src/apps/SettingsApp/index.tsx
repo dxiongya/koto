@@ -7,9 +7,10 @@ import { AI_PROVIDER_BASE_URLS, AI_PROVIDER_MODELS } from '../../../../shared/ty
 import {
   Check, Sun, Moon, Plus, Trash2, Pencil, Zap, Eye, EyeOff,
   Radio, Loader2, BarChart3, RotateCcw, Server, BookOpen,
-  Power, PowerOff, RefreshCw, ChevronDown, ChevronRight, Wrench
+  Power, PowerOff, RefreshCw, ChevronDown, ChevronRight, Wrench,
+  FolderOpen, Keyboard, Info, Copy, X,
 } from 'lucide-react'
-import { AutomationSection } from '../../components/AutomationSection'
+import { ScheduledTasksSection } from '../../components/ScheduledTasksSection'
 import { getAppRegistry } from '../../core/AppContext'
 
 /** Mini app preview using a theme's colors */
@@ -51,7 +52,7 @@ interface ProviderFormData {
   type: AIProviderType
   apiKey: string
   baseUrl: string
-  model: string
+  models: string[]
 }
 
 const AIProviderForm: React.FC<{
@@ -59,32 +60,69 @@ const AIProviderForm: React.FC<{
   onSave: (data: ProviderFormData) => void
   onCancel: () => void
 }> = ({ initial, onSave, onCancel }) => {
-  const [form, setForm] = useState<ProviderFormData>({
-    name: initial?.name ?? '',
-    type: initial?.type ?? 'openai',
-    apiKey: initial?.apiKey ?? '',
-    baseUrl: initial?.baseUrl ?? AI_PROVIDER_BASE_URLS['openai'],
-    model: initial?.model ?? '',
+  const [form, setForm] = useState<ProviderFormData>(() => {
+    // Migrate legacy `model` field → `models` array on first read
+    const initialModels = initial?.models?.length
+      ? initial.models
+      : initial?.model
+      ? [initial.model]
+      : []
+    return {
+      name: initial?.name ?? '',
+      type: initial?.type ?? 'openai',
+      apiKey: initial?.apiKey ?? '',
+      baseUrl: initial?.baseUrl ?? AI_PROVIDER_BASE_URLS['openai'],
+      models: initialModels,
+    }
   })
+  const [modelInput, setModelInput] = useState('')
+  const [modelStatus, setModelStatus] = useState<Record<string, { ok: boolean; msg: string; loading?: boolean }>>({})
   const [showKey, setShowKey] = useState(false)
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
 
   const updateType = useCallback((type: AIProviderType) => {
-    setForm((prev) => ({
-      ...prev,
-      type,
-      baseUrl: AI_PROVIDER_BASE_URLS[type] || prev.baseUrl,
-      model: AI_PROVIDER_MODELS[type]?.[0] || prev.model,
-    }))
-    setTestResult(null)
+    setForm((prev) => {
+      // If user has no models yet, seed with the first suggested model for the new type
+      const seedModel = AI_PROVIDER_MODELS[type]?.[0]
+      const nextModels = prev.models.length > 0
+        ? prev.models
+        : seedModel
+        ? [seedModel]
+        : []
+      return {
+        ...prev,
+        type,
+        baseUrl: AI_PROVIDER_BASE_URLS[type] || prev.baseUrl,
+        models: nextModels,
+      }
+    })
+    setModelStatus({})
   }, [])
 
   const suggestedModels = AI_PROVIDER_MODELS[form.type] || []
 
-  const handleTest = useCallback(async () => {
-    setTesting(true)
-    setTestResult(null)
+  const addModel = useCallback((name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setForm((p) => (p.models.includes(trimmed) ? p : { ...p, models: [...p.models, trimmed] }))
+    setModelInput('')
+  }, [])
+
+  const removeModel = useCallback((name: string) => {
+    setForm((p) => ({ ...p, models: p.models.filter((m) => m !== name) }))
+  }, [])
+
+  const moveModelUp = useCallback((idx: number) => {
+    setForm((p) => {
+      if (idx <= 0) return p
+      const next = [...p.models]
+      ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+      return { ...p, models: next }
+    })
+  }, [])
+
+  /** Test a specific model by passing it as the provider.model while using the current API key. */
+  const testModel = useCallback(async (modelName: string) => {
+    setModelStatus((prev) => ({ ...prev, [modelName]: { ok: false, msg: '', loading: true } }))
     try {
       const provider: AIProviderConfig = {
         id: initial?.id ?? 'test',
@@ -92,22 +130,22 @@ const AIProviderForm: React.FC<{
         type: form.type,
         apiKey: form.apiKey,
         baseUrl: form.baseUrl,
-        model: form.model,
+        model: modelName,
+        models: [modelName],
         enabled: true,
       }
       const res = await window.api.ai.testConnection(provider as unknown as Record<string, unknown>)
       if (res.ok) {
-        setTestResult({ ok: true, msg: res.data })
+        setModelStatus((prev) => ({ ...prev, [modelName]: { ok: true, msg: res.data } }))
       } else {
-        setTestResult({ ok: false, msg: res.error })
+        setModelStatus((prev) => ({ ...prev, [modelName]: { ok: false, msg: res.error } }))
       }
     } catch (err) {
-      setTestResult({ ok: false, msg: String(err) })
+      setModelStatus((prev) => ({ ...prev, [modelName]: { ok: false, msg: String(err) } }))
     }
-    setTesting(false)
   }, [form, initial])
 
-  const canSave = form.name.trim() && form.apiKey.trim() && form.model.trim()
+  const canSave = form.name.trim() && form.apiKey.trim() && form.models.length > 0
 
   return (
     <div className="space-y-4 bg-bg-hover rounded-lg p-4 border border-border-subtle">
@@ -150,7 +188,7 @@ const AIProviderForm: React.FC<{
           <input
             type={showKey ? 'text' : 'password'}
             value={form.apiKey}
-            onChange={(e) => { setForm((p) => ({ ...p, apiKey: e.target.value })); setTestResult(null) }}
+            onChange={(e) => { setForm((p) => ({ ...p, apiKey: e.target.value })); setModelStatus({}) }}
             placeholder="sk-..."
             className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 pr-9 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono"
           />
@@ -178,57 +216,133 @@ const AIProviderForm: React.FC<{
         </div>
       )}
 
-      {/* Model */}
+      {/* Models — supports multiple models under one API key */}
       <div>
-        <label className="block text-xs text-tx-muted mb-1.5">Model</label>
-        <input
-          type="text"
-          value={form.model}
-          onChange={(e) => setForm((p) => ({ ...p, model: e.target.value }))}
-          placeholder="model name"
-          className="w-full bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono"
-        />
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="text-xs text-tx-muted">Models</label>
+          <span className="text-[10px] text-tx-faint">First entry is the default</span>
+        </div>
+
+        {/* Current model list — each row has its own test button */}
+        {form.models.length > 0 && (
+          <div className="space-y-1 mb-2">
+            {form.models.map((m, idx) => {
+              const status = modelStatus[m]
+              return (
+                <div key={m}>
+                  <div
+                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border ${
+                      idx === 0
+                        ? 'border-accent-main/30 bg-accent-main/5'
+                        : 'border-border-subtle bg-bg-app'
+                    }`}
+                  >
+                    {idx === 0 ? (
+                      <span className="text-[9px] uppercase tracking-wider text-accent-main font-medium shrink-0">
+                        default
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => moveModelUp(idx)}
+                        className="text-[9px] uppercase tracking-wider text-tx-faint hover:text-tx-muted shrink-0"
+                        title="Set as default"
+                      >
+                        set default
+                      </button>
+                    )}
+                    <code className="flex-1 text-xs text-tx-main font-mono truncate">{m}</code>
+                    {/* Per-model test button */}
+                    <button
+                      type="button"
+                      onClick={() => testModel(m)}
+                      disabled={!form.apiKey.trim() || status?.loading}
+                      className={`shrink-0 p-1 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+                        status?.ok === true
+                          ? 'text-status-success hover:bg-status-success/10'
+                          : status?.ok === false && !status.loading
+                          ? 'text-status-error hover:bg-status-error/10'
+                          : 'text-tx-faint hover:text-tx-main hover:bg-bg-hover'
+                      }`}
+                      title={status?.msg || 'Test this model'}
+                    >
+                      {status?.loading
+                        ? <Loader2 size={11} className="animate-spin" />
+                        : status?.ok === true
+                        ? <Check size={11} />
+                        : <Zap size={11} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeModel(m)}
+                      className="text-tx-faint hover:text-status-error shrink-0"
+                      title="Remove"
+                    >
+                      <X size={12} />
+                    </button>
+                  </div>
+                  {/* Inline error under the row if test failed */}
+                  {status && !status.loading && !status.ok && status.msg && (
+                    <div className="text-[10px] text-status-error px-2.5 py-0.5 truncate">
+                      {status.msg}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Add model input */}
+        <div className="flex items-center gap-1.5">
+          <input
+            type="text"
+            value={modelInput}
+            onChange={(e) => setModelInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addModel(modelInput)
+              }
+            }}
+            placeholder="Add a model (e.g. glm-5.1)"
+            className="flex-1 bg-bg-app text-tx-main text-sm rounded-md px-3 py-1.5 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono"
+          />
+          <button
+            type="button"
+            onClick={() => addModel(modelInput)}
+            disabled={!modelInput.trim()}
+            className="px-3 py-1.5 rounded-md text-xs text-tx-muted hover:text-tx-main hover:bg-bg-active transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Add
+          </button>
+        </div>
+
+        {/* Suggested models — tap to append */}
         {suggestedModels.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-2">
-            {suggestedModels.map((m) => (
-              <button
-                key={m}
-                onClick={() => setForm((p) => ({ ...p, model: m }))}
-                className={`px-2 py-0.5 rounded text-xs transition-colors ${
-                  form.model === m
-                    ? 'bg-accent-main/15 text-accent-main'
-                    : 'bg-bg-active text-tx-muted hover:text-tx-main'
-                }`}
-              >
-                {m}
-              </button>
-            ))}
+            {suggestedModels
+              .filter((m) => !form.models.includes(m))
+              .map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => addModel(m)}
+                  className="px-2 py-0.5 rounded text-xs bg-bg-active text-tx-muted hover:text-tx-main transition-colors"
+                  title="Click to add"
+                >
+                  + {m}
+                </button>
+              ))}
           </div>
         )}
       </div>
 
-      {/* Test Result */}
-      {testResult && (
-        <div className={`text-xs px-3 py-2 rounded-md ${
-          testResult.ok
-            ? 'bg-status-success/10 text-status-success'
-            : 'bg-status-error/10 text-status-error'
-        }`}>
-          {testResult.msg}
-        </div>
-      )}
-
-      {/* Actions */}
+      {/* Actions — per-model Test is in each row; bottom has only Save/Cancel */}
       <div className="flex items-center gap-2 pt-1">
-        <button
-          onClick={handleTest}
-          disabled={!form.apiKey.trim() || !form.model.trim() || testing}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs text-tx-muted hover:text-tx-main hover:bg-bg-active transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {testing ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-          Test
-        </button>
-        <div className="flex-1" />
+        <div className="flex-1 text-[10px] text-tx-faint">
+          Use the <Zap size={10} className="inline align-text-top" /> on each model to test it
+        </div>
         <button
           onClick={onCancel}
           className="px-3 py-1.5 rounded-md text-xs text-tx-muted hover:text-tx-main hover:bg-bg-active transition-colors"
@@ -273,6 +387,8 @@ const AppsSection: React.FC = () => {
     const enabledIds = registry.getEnabled().map((a) => a.definition.manifest.id)
     window.api.state.update({ enabledApps: enabledIds })
     forceUpdate((n) => n + 1)
+    // Bump global apps version so Sidebar also re-renders
+    useUIStore.getState().bumpAppsVersion()
   }, [registry])
 
   const persistAppOrder = useCallback(() => {
@@ -513,7 +629,8 @@ const AISettingsSection: React.FC = () => {
       type: data.type,
       apiKey: data.apiKey,
       baseUrl: data.baseUrl,
-      model: data.model,
+      model: data.models[0] ?? '',
+      models: data.models,
       enabled: true,
     })
     setShowForm(false)
@@ -526,7 +643,8 @@ const AISettingsSection: React.FC = () => {
       type: data.type,
       apiKey: data.apiKey,
       baseUrl: data.baseUrl,
-      model: data.model,
+      model: data.models[0] ?? '',
+      models: data.models,
     })
     setEditingId(null)
   }, [editingId, updateAIProvider])
@@ -577,7 +695,14 @@ const AISettingsSection: React.FC = () => {
                       {PROVIDER_TYPE_LABELS[p.type]}
                     </span>
                   </div>
-                  <div className="text-xs text-tx-faint font-mono mt-0.5 truncate">{p.model}</div>
+                  <div className="text-xs text-tx-faint font-mono mt-0.5 truncate">
+                    {(() => {
+                      const modelList = p.models?.length ? p.models : p.model ? [p.model] : []
+                      if (modelList.length === 0) return 'no model'
+                      if (modelList.length === 1) return modelList[0]
+                      return `${modelList[0]} · +${modelList.length - 1} more`
+                    })()}
+                  </div>
                 </div>
 
                 {/* Actions */}
@@ -625,13 +750,16 @@ const AISettingsSection: React.FC = () => {
         />
       )}
 
-      {/* Feature Routing */}
+      {/* Feature Routing — pick a specific (provider, model) pair per feature */}
       {ai.providers.length > 0 && !showForm && !editingId && (
         <div className="mt-6">
           <h3 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-3">Feature Routing</h3>
           <div className="space-y-2">
             {FEATURES.map((feature) => {
               const routed = ai.featureRouting[feature]
+              const routedValue = routed
+                ? `${routed.providerId}::${routed.model ?? ''}`
+                : ''
               return (
                 <div key={feature} className="flex items-center gap-3 px-3 py-2 rounded-md border border-border-subtle">
                   <div className="flex-1 min-w-0">
@@ -639,14 +767,29 @@ const AISettingsSection: React.FC = () => {
                     <div className="text-[11px] text-tx-faint">{FEATURE_LABELS[feature].desc}</div>
                   </div>
                   <select
-                    value={routed ?? ''}
-                    onChange={(e) => setAIFeatureProvider(feature, e.target.value || null)}
-                    className="bg-bg-app text-tx-main text-xs rounded-md px-2 py-1.5 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 min-w-[140px]"
+                    value={routedValue}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (!val) {
+                        setAIFeatureProvider(feature, null)
+                        return
+                      }
+                      const [providerId, model] = val.split('::')
+                      setAIFeatureProvider(feature, { providerId, model: model || undefined })
+                    }}
+                    className="bg-bg-app text-tx-main text-xs rounded-md px-2 py-1.5 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 min-w-[200px]"
                   >
-                    <option value="">Default ({ai.providers.find((p) => p.id === ai.activeProviderId)?.name || 'none'})</option>
-                    {ai.providers.filter((p) => p.enabled).map((p) => (
-                      <option key={p.id} value={p.id}>{p.name} ({p.model})</option>
-                    ))}
+                    <option value="">
+                      Default ({ai.providers.find((p) => p.id === ai.activeProviderId)?.name || 'none'})
+                    </option>
+                    {ai.providers.filter((p) => p.enabled).flatMap((p) => {
+                      const modelList = p.models?.length ? p.models : p.model ? [p.model] : []
+                      return modelList.map((m) => (
+                        <option key={`${p.id}::${m}`} value={`${p.id}::${m}`}>
+                          {p.name} · {m}
+                        </option>
+                      ))
+                    })}
                   </select>
                 </div>
               )
@@ -1238,6 +1381,9 @@ const AppToolsSection: React.FC = () => {
   const [serverPort, setServerPort] = useState<number | null>(null)
   const [serverLoading, setServerLoading] = useState(false)
 
+  // Subscribe to apps version so tools re-filter when apps are enabled/disabled
+  const appsVersion = useUIStore((s) => s.appsVersion)
+
   useEffect(() => {
     // Load disabled tools + server status
     window.api.state.get().then((res) => {
@@ -1248,19 +1394,27 @@ const AppToolsSection: React.FC = () => {
     window.api.bus.serverStatus().then((res: any) => {
       if (res.ok) { setServerRunning(res.data.running); setServerPort(res.data.port) }
     })
-    // Load available tools from Bus
+    // Load available tools from Bus — filter to enabled apps only.
+    // When an app is disabled, its tools shouldn't show here as "on",
+    // because they aren't actually exposed to AI / external clients.
     const loadTools = async () => {
       const bus = (await import('../../core/AppContext')).getAppBus()
+      const registry = getAppRegistry()
+      const enabledAppIds = new Set(registry.getEnabled().map((a) => a.definition.manifest.id))
       const busTools = bus.getTools()
-      setTools(busTools.map((t) => ({
-        name: t.name,
-        description: t.description,
-        appId: t.appId,
-        enabled: true,
-      })))
+      setTools(
+        busTools
+          .filter((t) => !t.appId || t.appId === 'system' || enabledAppIds.has(t.appId))
+          .map((t) => ({
+            name: t.name,
+            description: t.description,
+            appId: t.appId,
+            enabled: true,
+          })),
+      )
     }
     loadTools()
-  }, [])
+  }, [appsVersion])
 
   const toggleTool = (name: string) => {
     setDisabledTools((prev) => {
@@ -1298,7 +1452,7 @@ const AppToolsSection: React.FC = () => {
 
   return (
     <section className="mb-10">
-      <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">App Tools for AI</h2>
+      <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Koto MCP Server</h2>
 
       {/* MCP Server toggle */}
       <div className="flex items-center gap-3 mb-4 p-3 rounded-lg border border-border-subtle bg-bg-hover/50">
@@ -1313,7 +1467,7 @@ const AppToolsSection: React.FC = () => {
           <div className="text-[13px] text-tx-main font-medium">MCP Server</div>
           <div className="text-[11px] text-tx-faint">
             {serverRunning
-              ? <span>Running on <code className="text-accent-main">http://lite.localhost:{serverPort}/sse</code></span>
+              ? <span>Running on <code className="text-accent-main">http://koto.localhost:{serverPort}/sse</code></span>
               : 'Start to expose tools to Claude Code and other AI clients'}
           </div>
         </div>
@@ -1322,7 +1476,7 @@ const AppToolsSection: React.FC = () => {
       {serverRunning && (
         <div className="mb-4 p-3 rounded-lg border border-border-subtle text-[11px] text-tx-faint font-mono bg-bg-app">
           <div className="text-tx-muted text-[10px] uppercase tracking-wider mb-1">Claude Code config:</div>
-          <div className="select-all">{`"lite": { "url": "http://lite.localhost:${serverPort}/sse" }`}</div>
+          <div className="select-all">{`"koto": { "url": "http://koto.localhost:${serverPort}/sse" }`}</div>
         </div>
       )}
 
@@ -1594,6 +1748,187 @@ const SkillsSection: React.FC = () => {
   )
 }
 
+// ── Storage Section ──
+
+const StorageSection: React.FC = () => {
+  const [liteHome, setLiteHome] = useState<string>('')
+
+  useEffect(() => {
+    window.api.lite.getHome().then((res) => {
+      if (res.ok) setLiteHome(res.data)
+    })
+  }, [])
+
+  const handleReveal = useCallback(() => {
+    if (!liteHome) return
+    window.api.shell.revealPath(liteHome)
+  }, [liteHome])
+
+  const handleCopy = useCallback(() => {
+    if (!liteHome) return
+    navigator.clipboard.writeText(liteHome).catch(() => {})
+  }, [liteHome])
+
+  return (
+    <section className="mb-10">
+      <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Storage</h2>
+      <div className="rounded-lg border border-border-subtle p-3">
+        <div className="text-[11px] text-tx-faint mb-2 uppercase tracking-wider">Data Location</div>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 min-w-0 truncate text-[11px] font-mono text-tx-muted bg-bg-hover px-2 py-1.5 rounded">
+            {liteHome || '—'}
+          </code>
+          <button
+            onClick={handleCopy}
+            className="p-1.5 rounded text-tx-faint hover:text-tx-main hover:bg-bg-hover transition-colors"
+            title="Copy path"
+          >
+            <Copy size={12} />
+          </button>
+          <button
+            onClick={handleReveal}
+            className="flex items-center gap-1 px-2 py-1.5 rounded text-[11px] text-tx-muted hover:text-tx-main hover:bg-bg-hover transition-colors"
+            title="Reveal in file manager"
+          >
+            <FolderOpen size={12} />
+            Open
+          </button>
+        </div>
+        <p className="text-[11px] text-tx-faint mt-2 leading-relaxed">
+          All your notes, collected items, memories, and settings live here. Back up this folder to preserve everything.
+        </p>
+      </div>
+    </section>
+  )
+}
+
+// ── Keyboard Shortcuts Section ──
+
+const SHORTCUTS: { group: string; items: { keys: string; label: string }[] }[] = [
+  {
+    group: 'Global',
+    items: [
+      { keys: '⌘K', label: 'Open command palette (search everything)' },
+      { keys: '⌘P', label: 'Open command palette (same as ⌘K)' },
+      { keys: '⌘⇧P', label: 'Open command palette in command mode' },
+      { keys: '⌘⇧K', label: 'Open context panel (inject files/links into terminal)' },
+      { keys: '⌘\\', label: 'Toggle sidebar' },
+      { keys: 'Esc', label: 'Close command palette / file switcher / modal' },
+    ],
+  },
+  {
+    group: 'Navigation',
+    items: [
+      { keys: '⌃Tab', label: 'Switch between recent files & terminals (forward)' },
+      { keys: '⌃⇧Tab', label: 'Switch to previous file / terminal' },
+      { keys: '⌃-', label: 'Go back in navigation history' },
+      { keys: '⌃⇧-', label: 'Go forward in navigation history' },
+    ],
+  },
+  {
+    group: 'Command Palette prefixes — type after ⌘K',
+    items: [
+      { keys: '>', label: 'Run a command (new note, toggle sidebar, etc.)' },
+      { keys: '#', label: 'Search inside file contents (ripgrep)' },
+      { keys: ':', label: 'Jump to line number in current file' },
+      { keys: 'n ', label: 'Restrict search to Notes only' },
+      { keys: 'c ', label: 'Restrict search to Collector only' },
+      { keys: 't ', label: 'Restrict search to Terminal sessions only' },
+    ],
+  },
+  {
+    group: 'Notes editor',
+    items: [
+      { keys: '⌘S', label: 'Save current file (auto-save is on by default)' },
+      { keys: '⌘Z / ⌘⇧Z', label: 'Undo / Redo' },
+      { keys: '⌘B', label: 'Bold selected text' },
+      { keys: '⌘I', label: 'Italic selected text' },
+      { keys: '/', label: 'Open slash menu (block commands)' },
+      { keys: 'Tab', label: 'Accept AI ghost-text completion' },
+    ],
+  },
+  {
+    group: 'Code editor',
+    items: [
+      { keys: '⌘/', label: 'Toggle line comment' },
+      { keys: '⌘D', label: 'Select next occurrence' },
+      { keys: '⌘F', label: 'Find in file' },
+      { keys: '⌘G', label: 'Go to next match' },
+      { keys: 'Tab', label: 'Accept AI ghost-text completion' },
+    ],
+  },
+  {
+    group: 'Terminal',
+    items: [
+      { keys: '⌘⌥←/→', label: 'Focus previous / next split pane' },
+      { keys: '⌘⌥W', label: 'Close active terminal' },
+    ],
+  },
+  {
+    group: 'AI',
+    items: [
+      { keys: '⌘J', label: 'Open AI chat panel in notes' },
+      { keys: '⌘⇧L', label: 'Inline AI command (in notes editor)' },
+    ],
+  },
+]
+
+const KeyboardSection: React.FC = () => (
+  <section className="mb-10">
+    <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4 flex items-center gap-1.5">
+      <Keyboard size={12} />
+      Keyboard Shortcuts
+    </h2>
+    <div className="space-y-4">
+      {SHORTCUTS.map((group) => (
+        <div key={group.group} className="rounded-lg border border-border-subtle overflow-hidden">
+          <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-tx-faint bg-bg-hover/40 border-b border-border-subtle">
+            {group.group}
+          </div>
+          {group.items.map((item) => (
+            <div
+              key={item.keys}
+              className="flex items-center gap-3 px-3 py-2 border-b border-border-subtle last:border-b-0"
+            >
+              <kbd className="shrink-0 min-w-[60px] px-2 py-0.5 rounded text-[10px] font-mono bg-bg-hover border border-border-subtle text-tx-main text-center">
+                {item.keys}
+              </kbd>
+              <span className="text-[12px] text-tx-muted">{item.label}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+    <p className="text-[10px] text-tx-faint mt-3">
+      Custom key bindings coming in v1.1.
+    </p>
+  </section>
+)
+
+// ── About Section ──
+
+const AboutSection: React.FC = () => {
+  const version = '1.0.0'
+  return (
+    <section className="mb-10">
+      <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4 flex items-center gap-1.5">
+        <Info size={12} />
+        About
+      </h2>
+      <div className="rounded-lg border border-border-subtle p-4">
+        <div className="text-[15px] text-tx-main font-medium mb-1">Koto</div>
+        <div className="text-[11px] text-tx-faint mb-3">A quiet workspace for every thing you think.</div>
+        <div className="space-y-1 text-[11px] text-tx-muted font-mono">
+          <div>Version <span className="text-tx-main">{version}</span></div>
+          <div>Electron <span className="text-tx-main">{window.electron?.process?.versions?.electron ?? '—'}</span></div>
+          <div>Chrome <span className="text-tx-main">{window.electron?.process?.versions?.chrome ?? '—'}</span></div>
+          <div>Node <span className="text-tx-main">{window.electron?.process?.versions?.node ?? '—'}</span></div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 // ── Main Settings Component ──
 
 const SettingsApp: React.FC = () => {
@@ -1611,7 +1946,7 @@ const SettingsApp: React.FC = () => {
 
   // Determine current group and dark/light state
   const currentTheme = builtinThemes[currentThemeId]
-  const currentGroup = currentTheme?.group ?? 'Lite'
+  const currentGroup = currentTheme?.group ?? 'Koto'
   const isDark = currentTheme?.isDark ?? true
 
   // Switch group: keep current dark/light preference, find matching theme in new group
@@ -1632,8 +1967,11 @@ const SettingsApp: React.FC = () => {
 
   const TABS = [
     { id: 'general', label: 'General' },
+    { id: 'apps', label: 'Apps' },
     { id: 'ai', label: 'AI' },
+    { id: 'extensions', label: 'Extensions' },
     { id: 'automation', label: 'Automation' },
+    { id: 'keyboard', label: 'Keyboard' },
   ] as const
   type TabId = typeof TABS[number]['id']
   const [activeTab, setActiveTab] = useState<TabId>('general')
@@ -1777,21 +2115,32 @@ const SettingsApp: React.FC = () => {
           </div>
         </section>
 
-          {/* ── Apps ── */}
+          <StorageSection />
+          <AboutSection />
+        </>)}
+
+        {activeTab === 'apps' && (<>
           <AppsSection />
         </>)}
 
+        {activeTab === 'keyboard' && (<>
+          <KeyboardSection />
+        </>)}
+
         {activeTab === 'ai' && (<>
-          <EmbeddingSection />
           <AISettingsSection />
-          <AIUsageSection />
+          <EmbeddingSection />
           <MCPServersSection />
+          <SkillsSection />
+          <AIUsageSection />
+        </>)}
+
+        {activeTab === 'extensions' && (<>
           <AppToolsSection />
         </>)}
 
         {activeTab === 'automation' && (<>
-          <SkillsSection />
-          <AutomationSection />
+          <ScheduledTasksSection />
         </>)}
 
         </div>

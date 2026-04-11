@@ -133,6 +133,15 @@ interface UIState {
   // MCP Servers
   mcpServers: MCPServerConfig[]
 
+  // First-run welcome dialog
+  hasSeenWelcome: boolean
+  setHasSeenWelcome: (seen: boolean) => void
+
+  // App registry change counter — bump to force sidebar re-render after
+  // enabling/disabling apps (e.g. from Welcome onboarding).
+  appsVersion: number
+  bumpAppsVersion: () => void
+
   // collector.app data version (bump to trigger sidebar + main refresh)
   collectorVersion: number
   bumpCollectorVersion: () => void
@@ -184,8 +193,9 @@ interface UIState {
   splitTerminalInWorkspace: (workspaceId: string, existingTermId: string, newTermId: string, direction?: 'horizontal' | 'vertical') => void
   unsplitTerminal: (terminalId: string) => void
 
-  // recent files
+  // recent files / terminals (unified MRU)
   trackRecentFile: (filePath: string, app: AppType) => void
+  trackRecentTerminal: (terminalId: string, title: string) => void
 
   // navigation
   navigateBack: () => void
@@ -198,8 +208,8 @@ interface UIState {
   updateAIProvider: (id: string, patch: Partial<AIProviderConfig>) => void
   removeAIProvider: (id: string) => void
   setActiveAIProvider: (id: string | null) => void
-  setAIFeatureProvider: (feature: AIFeature, providerId: string | null) => void
-  getAIProviderForFeature: (feature: AIFeature) => AIProviderConfig | null
+  setAIFeatureProvider: (feature: AIFeature, route: { providerId: string; model?: string } | null) => void
+  getAIProviderForFeature: (feature: AIFeature) => { provider: AIProviderConfig; model: string } | null
   trackAIUsage: (providerId: string, feature: AIFeature, usage: { promptTokens: number; completionTokens: number } | undefined, isError?: boolean) => void
   resetAIUsage: () => void
 
@@ -249,6 +259,13 @@ export const useUIStore = create<UIState>((set, get) => ({
   recentFiles: [],
   ai: { ...DEFAULT_AI_SETTINGS },
   mcpServers: [],
+  hasSeenWelcome: false,
+  setHasSeenWelcome: (seen: boolean) => {
+    set({ hasSeenWelcome: seen })
+    persistState({ hasSeenWelcome: seen })
+  },
+  appsVersion: 0,
+  bumpAppsVersion: () => set((s) => ({ appsVersion: s.appsVersion + 1 })),
   navBackStack: [],
   navForwardStack: [],
   collectorVersion: 0,
@@ -262,6 +279,15 @@ export const useUIStore = create<UIState>((set, get) => ({
     set({ currentApp: app })
     // Write immediately (no debounce) — app can close at any time
     window.api.state.update({ lastApp: app })
+    // Refresh MRU for whatever is active in the target app.
+    if (app === 'terminal.app') {
+      const activeId = get().activeTerminalId
+      const session = get().terminalSessions.find((s) => s.id === activeId)
+      if (session) get().trackRecentTerminal(session.id, session.title || 'Terminal')
+    } else {
+      const activePath = get().appStates[app]?.activeFilePath
+      if (activePath) get().trackRecentFile(activePath, app)
+    }
   },
 
   setShowCommandPalette: (show) => set({ showCommandPalette: show }),
@@ -446,7 +472,13 @@ export const useUIStore = create<UIState>((set, get) => ({
     persistState({ terminalSessions: nextSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })) })
   },
 
-  setActiveTerminalId: (id) => set({ activeTerminalId: id }),
+  setActiveTerminalId: (id) => {
+    set({ activeTerminalId: id })
+    if (id) {
+      const session = get().terminalSessions.find((s) => s.id === id)
+      if (session) get().trackRecentTerminal(id, session.title || 'Terminal')
+    }
+  },
 
   addTerminalWorkspace: (path) => {
     const prev = get()
@@ -595,6 +627,8 @@ export const useUIStore = create<UIState>((set, get) => ({
       appStates: updated,
     })
     persistState({ lastApp: target.app, appStates: updated })
+    // Also refresh MRU so the back-navigated file bubbles up in ⌃Tab.
+    if (target.filePath) get().trackRecentFile(target.filePath, target.app)
   },
 
   navigateForward: () => {
@@ -619,6 +653,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       appStates: updated,
     })
     persistState({ lastApp: target.app, appStates: updated })
+    if (target.filePath) get().trackRecentFile(target.filePath, target.app)
   },
 
   setShowFileSwitcher: (show) => set({ showFileSwitcher: show }),
@@ -629,7 +664,16 @@ export const useUIStore = create<UIState>((set, get) => ({
     const current = get().recentFiles
     const filtered = current.filter((f) => f.path !== filePath)
     filtered.unshift({ path: filePath, app, openedAt: Date.now() })
-    const next = filtered.slice(0, 20)
+    const next = filtered.slice(0, 30)
+    set({ recentFiles: next })
+    persistState({ recentFiles: next })
+  },
+
+  trackRecentTerminal: (terminalId, title) => {
+    const current = get().recentFiles
+    const filtered = current.filter((f) => f.terminalId !== terminalId)
+    filtered.unshift({ terminalId, title, app: 'terminal.app', openedAt: Date.now() })
+    const next = filtered.slice(0, 30)
     set({ recentFiles: next })
     persistState({ recentFiles: next })
   },
@@ -674,19 +718,27 @@ export const useUIStore = create<UIState>((set, get) => ({
     persistState({ ai })
   },
 
-  setAIFeatureProvider: (feature, providerId) => {
+  setAIFeatureProvider: (feature, route) => {
     const ai = { ...get().ai }
-    ai.featureRouting = { ...ai.featureRouting, [feature]: providerId }
+    ai.featureRouting = { ...ai.featureRouting, [feature]: route }
     set({ ai })
     persistState({ ai })
   },
 
   getAIProviderForFeature: (feature) => {
     const { ai } = get()
-    const routedId = ai.featureRouting[feature]
-    const targetId = routedId ?? ai.activeProviderId
+    const routed = ai.featureRouting[feature]
+    // Normalize in case old config has a plain string
+    const route = typeof routed === 'string'
+      ? { providerId: routed as unknown as string, model: undefined }
+      : routed
+    const targetId = route?.providerId ?? ai.activeProviderId
     if (!targetId) return null
-    return ai.providers.find((p) => p.id === targetId && p.enabled) ?? null
+    const provider = ai.providers.find((p) => p.id === targetId && p.enabled) ?? null
+    if (!provider) return null
+    // Resolve the active model: route override → provider.models[0] → legacy .model
+    const model = route?.model || provider.models?.[0] || provider.model || ''
+    return { provider, model }
   },
 
   trackAIUsage: (providerId, feature, usage, isError = false) => {

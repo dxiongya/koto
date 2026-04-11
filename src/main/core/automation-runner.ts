@@ -457,21 +457,27 @@ ${target.type === 'section' ? `- Include the heading line as the first line.` : 
 
       // 5. Resolve provider — use automation's own setting, fallback to chat routing
       let resolvedProviderId = automation.providerId
+      let resolvedModel: string | undefined
       if (!resolvedProviderId || resolvedProviderId === 'default') {
         try {
           const { loadConfig } = await import('./lite-home')
           const config = loadConfig()
           const enabled = config.ai.providers.filter(p => p.enabled)
-          const chatRouted = config.ai.featureRouting?.chat
-          if (chatRouted && enabled.some(p => p.id === chatRouted)) {
-            resolvedProviderId = chatRouted
+          // Normalize legacy string routing → object form
+          const chatRoutedRaw = config.ai.featureRouting?.chat as unknown
+          const chatRoute = typeof chatRoutedRaw === 'string'
+            ? { providerId: chatRoutedRaw, model: undefined }
+            : chatRoutedRaw as { providerId: string; model?: string } | null | undefined
+          if (chatRoute && enabled.some(p => p.id === chatRoute.providerId)) {
+            resolvedProviderId = chatRoute.providerId
+            resolvedModel = chatRoute.model
           } else if (enabled.length > 0) {
             resolvedProviderId = enabled[0].id
           }
         } catch { /* use original */ }
       }
 
-      // 6. Call AI with tool event tracking
+      // 6. Call AI with tool event tracking (resolvedModel may override provider default)
       const result = await aiChat(
         resolvedProviderId,
         messages,
@@ -491,7 +497,8 @@ ${target.type === 'section' ? `- Include the heading line as the first line.` : 
             })
             currentToolStart = null
           }
-        }
+        },
+        resolvedModel,
       )
 
       if (!result.ok) {

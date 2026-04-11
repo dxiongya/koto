@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react'
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal,
@@ -136,9 +136,19 @@ const AppSectionHeader: React.FC<{
   onClick: () => void
   actions?: React.ReactNode
 }> = ({ appId, icon, currentApp, expanded, onClick, actions }) => (
-  <button
-    type="button"
+  // NOTE: this is a div, not a button, because `actions` contains nested
+  // <button> elements (e.g. "New group", "New note") and buttons can't nest.
+  // Keyboard accessibility is preserved via role="button" + onKeyDown.
+  <div
+    role="button"
+    tabIndex={0}
     onClick={onClick}
+    onKeyDown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        onClick()
+      }
+    }}
     aria-expanded={expanded}
     className={`w-full px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
@@ -151,7 +161,7 @@ const AppSectionHeader: React.FC<{
       {actions}
       {expanded ? <ChevronDown size={14} className="text-tx-faint" /> : <ChevronRight size={14} className="text-tx-faint" />}
     </div>
-  </button>
+  </div>
 )
 
 // ── Notes App Section ──
@@ -1470,7 +1480,15 @@ export const Sidebar: React.FC = () => {
     }
   }, [liteHome])
 
-  const enabledApps = getAppRegistry().getEnabled()
+  // Subscribe to appsVersion so the sidebar re-renders when apps are
+  // enabled/disabled (e.g. from Welcome onboarding or Settings → Apps).
+  const appsVersion = useUIStore((s) => s.appsVersion)
+  const enabledApps = useMemo(
+    () => getAppRegistry().getEnabled(),
+    // appsVersion is the "invalidation key" — bump to force recompute
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [appsVersion],
+  )
   const [expandedSections, setExpandedSections] = useState<string[]>(['notes.app'])
   const [renameTrigger, setRenameTrigger] = useState(0)
   const [notesSelectedGroup, setNotesSelectedGroup] = useState<string | null>(null)

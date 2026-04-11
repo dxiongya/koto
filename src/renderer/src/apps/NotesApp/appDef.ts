@@ -39,12 +39,27 @@ export const notesAppDefinition: AppDefinition = {
         const liteHome = getLiteHome()
         const res = await window.api.search.content(query, [`${liteHome}/notes`], 20)
         if (!res.ok) return []
-        return res.data.map((match: any) => ({
-          file: match.filePath.replace(`${liteHome}/notes/`, ''),
-          path: match.filePath,
-          line: match.line,
-          content: match.content,
-        }))
+        return res.data.map((match: any, i: number) => {
+          const relPath = match.filePath.replace(`${liteHome}/notes/`, '')
+          const fileName = relPath.split('/').pop() || relPath
+          // content is the matched line — use it directly as snippet
+          const snippet = (match.content || '').trim().slice(0, 200)
+          return {
+            id: `note:${match.filePath}:${match.line}`,
+            title: fileName,
+            subtitle: relPath !== fileName ? relPath : `Line ${match.line}`,
+            snippet,
+            score: 100 - i,
+            source: 'notes.app',
+            icon: 'file-text',
+            action: { type: 'open-file', path: match.filePath, line: match.line },
+            // MCP-only fields:
+            file: relPath,
+            path: match.filePath,
+            line: match.line,
+            content: match.content,
+          }
+        })
       },
     })
 

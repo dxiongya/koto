@@ -34,6 +34,7 @@ export const CollectorApp: React.FC = () => {
   const [syncConfig, setSyncConfig] = useState<any>(null)
   const [syncing, setSyncing] = useState(false)
   const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  const [adapterPicker, setAdapterPicker] = useState<{ group: string; adapters: any[] } | null>(null)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -181,8 +182,8 @@ export const CollectorApp: React.FC = () => {
 
     setToast({ message: url ? `Collecting ${TYPE_LABELS[type].toLowerCase()} · ${domain}...` : 'Collecting text...', status: 'loading' })
 
-    let title = type === 'text' ? val.slice(0, 80) : domain
-    let description = ''
+    let title = type === 'text' ? val.split('\n')[0].slice(0, 120) : domain
+    let description = type === 'text' ? val : ''
     const meta: Record<string, unknown> = domain ? { domain } : {}
 
     if (url) {
@@ -211,10 +212,16 @@ export const CollectorApp: React.FC = () => {
     } else if (addRes.ok) {
       setToast({ message: `Collected · ${title.slice(0, 40)}${title.length > 40 ? '...' : ''}`, status: 'success' })
       const itemId = addRes.data.id
+      // Background enrichment (markdown fetch + embedding). We don't block
+      // the success toast on these — they're best-effort — but log failures
+      // so devs can see them in the console (not silent).
       if (url && (type === 'link' || type === 'tweet')) {
-        window.api.collector.fetchMarkdown(itemId, url).then(() => window.api.collector.embedItem(itemId)).catch(() => {})
+        window.api.collector.fetchMarkdown(itemId, url)
+          .then(() => window.api.collector.embedItem(itemId))
+          .catch((e) => console.warn('[Collector] background enrich failed:', e))
       } else {
-        window.api.collector.embedItem(itemId).catch(() => {})
+        window.api.collector.embedItem(itemId)
+          .catch((e) => console.warn('[Collector] embed failed:', e))
       }
     } else {
       setToast({ message: 'Failed to collect', status: 'error' })
@@ -244,7 +251,11 @@ export const CollectorApp: React.FC = () => {
       bumpVersion()
 
       if (addRes.ok && dupMeta.duplicateOf) setToast({ message: `Collected (duplicate) · ${title.slice(0, 35)}`, status: 'success' })
-      else if (addRes.ok) { setToast({ message: `Collected · ${title.slice(0, 40)}`, status: 'success' }); window.api.collector.embedItem(addRes.data.id).catch(() => {}) }
+      else if (addRes.ok) {
+        setToast({ message: `Collected · ${title.slice(0, 40)}`, status: 'success' })
+        window.api.collector.embedItem(addRes.data.id)
+          .catch((e) => console.warn('[Collector] embed failed:', e))
+      }
       else setToast({ message: 'Failed to collect file', status: 'error' })
     } catch {
       setToast({ message: 'Failed to collect file', status: 'error' })
@@ -376,24 +387,11 @@ export const CollectorApp: React.FC = () => {
             <button
               onClick={async () => {
                 const adapters = await window.api.collector.sync.listAdapters()
-                if (!adapters.ok) return
-                const choice = prompt(`Choose adapter for "${groupParam}":\n${adapters.data.map((a: any, i: number) => `${i + 1}. ${a.name} — ${a.description}`).join('\n')}\n\nEnter number:`)
-                if (!choice) return
-                const adapter = adapters.data[parseInt(choice) - 1]
-                if (!adapter) return
-                // Create config + install script
-                const { getAdapterTemplate } = await import('../../../../main/core/collector-sync-adapters')
-                const template = getAdapterTemplate?.(adapter.id)
-                await window.api.collector.sync.setConfig(groupParam, {
-                  adapter: adapter.id,
-                  schedule: 'manual',
-                  adapterConfig: adapter.defaultConfig,
-                })
-                if (template?.script) {
-                  await window.api.collector.sync.setScript(groupParam, template.script)
+                if (!adapters.ok || !adapters.data?.length) {
+                  setToast({ message: 'No adapters available', status: 'error' })
+                  return
                 }
-                const configRes = await window.api.collector.sync.getConfig(groupParam)
-                if (configRes.ok) setSyncConfig(configRes.data)
+                setAdapterPicker({ group: groupParam, adapters: adapters.data })
               }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-tx-faint border border-border-subtle rounded-md hover:bg-bg-hover hover:text-tx-muted transition-colors"
               title="Configure sync for this group"
@@ -407,8 +405,13 @@ export const CollectorApp: React.FC = () => {
               if (!confirm(`Remove duplicates${activeFilter !== 'all' ? ` in "${activeFilter}"` : ''}?`)) return
               const res = await window.api.collector.dedup(groupParam)
               if (res.ok) {
-                alert(`Removed ${res.data.removed} duplicates. ${res.data.kept} items remaining.`)
+                setToast({
+                  message: `Removed ${res.data.removed} duplicates · ${res.data.kept} remaining`,
+                  status: 'success',
+                })
                 loadItems()
+              } else {
+                setToast({ message: `Dedup failed: ${res.error || 'unknown'}`, status: 'error' })
               }
             }}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-tx-faint border border-border-subtle rounded-md hover:bg-bg-hover hover:text-status-warning transition-colors"
@@ -495,6 +498,59 @@ export const CollectorApp: React.FC = () => {
       )}
       {detailItem && createPortal(
         <DetailPanel item={detailItem} onClose={() => setDetailItem(null)} onOpenExternal={handleOpenExternal} />,
+        document.body
+      )}
+      {adapterPicker && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] bg-bg-app/70 flex items-center justify-center"
+          onClick={() => setAdapterPicker(null)}
+        >
+          <div
+            className="w-[480px] max-w-[90vw] bg-bg-popover border border-border-subtle rounded-lg shadow-[0_8px_32px_rgba(0,0,0,0.3)] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-border-subtle">
+              <div className="text-[13px] text-tx-main font-medium">Setup Sync</div>
+              <div className="text-[11px] text-tx-faint mt-0.5">
+                Choose a sync adapter for <span className="text-tx-muted font-mono">{adapterPicker.group}</span>
+              </div>
+            </div>
+            <div className="max-h-[60vh] overflow-y-auto scroll-thin py-1">
+              {adapterPicker.adapters.map((adapter) => (
+                <button
+                  key={adapter.id}
+                  onClick={async () => {
+                    const grp = adapterPicker.group
+                    setAdapterPicker(null)
+                    await window.api.collector.sync.setConfig(grp, {
+                      adapter: adapter.id,
+                      schedule: 'manual',
+                      adapterConfig: adapter.defaultConfig,
+                    })
+                    if (adapter.script) {
+                      await window.api.collector.sync.setScript(grp, adapter.script)
+                    }
+                    const configRes = await window.api.collector.sync.getConfig(grp)
+                    if (configRes.ok) setSyncConfig(configRes.data)
+                    setToast({ message: `Sync configured: ${adapter.name}`, status: 'success' })
+                  }}
+                  className="w-full text-left px-4 py-2.5 hover:bg-bg-hover transition-colors border-b border-border-subtle last:border-b-0"
+                >
+                  <div className="text-[13px] text-tx-main font-medium">{adapter.name}</div>
+                  <div className="text-[11px] text-tx-faint mt-0.5 leading-relaxed">{adapter.description}</div>
+                </button>
+              ))}
+            </div>
+            <div className="px-4 py-2 border-t border-border-subtle flex justify-end">
+              <button
+                onClick={() => setAdapterPicker(null)}
+                className="px-3 py-1 text-[11px] text-tx-muted hover:text-tx-main transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>,
         document.body
       )}
     </div>

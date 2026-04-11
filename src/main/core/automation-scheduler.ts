@@ -1,8 +1,12 @@
 /**
- * Automation Scheduler — checks for due automations every 60 seconds
+ * Automation Scheduler — checks for due automations every 60 seconds.
+ *
+ * Also syncs automations into the unified task store on start,
+ * so they appear in the unified task list and can be managed via task.* API.
  */
 import { loadAutomations } from './automation-store'
 import { runAutomation } from './automation-runner'
+import { findTaskByName, createTask } from './task-store'
 
 const TICK_INTERVAL = 60_000 // 60 seconds
 
@@ -14,6 +18,9 @@ class AutomationScheduler {
   start(): void {
     if (this.timer) return
     console.log('[Automation] Scheduler started')
+
+    // Sync existing automations to unified task store
+    this.syncToTaskStore()
 
     // Check immediately for overdue automations
     this.tick()
@@ -29,6 +36,35 @@ class AutomationScheduler {
       this.timer = null
     }
     console.log('[Automation] Scheduler stopped')
+  }
+
+  /** Mirror automations into the unified task store (idempotent) */
+  private syncToTaskStore(): void {
+    try {
+      const automations = loadAutomations()
+      for (const auto of automations) {
+        const existing = findTaskByName(auto.name, 'notes.app')
+        if (existing) continue
+
+        createTask({
+          name: auto.name,
+          type: 'ai-prompt',
+          appId: 'notes.app',
+          enabled: auto.enabled,
+          schedule: `interval:${auto.interval}`,
+          config: {
+            automationId: auto.id,
+            target: auto.target,
+            promptTemplate: auto.promptTemplate,
+            providerId: auto.providerId,
+            enableTools: auto.enableTools,
+          },
+        })
+        console.log(`[Automation] Synced "${auto.name}" to task store`)
+      }
+    } catch (e) {
+      console.error('[Automation] Failed to sync to task store:', e)
+    }
   }
 
   /** Check for due automations and run them */

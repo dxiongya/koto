@@ -93,7 +93,66 @@ function getDb(): Database.Database {
   // Backfill content hashes for existing asset items
   backfillContentHashes(db)
 
+  // Backfill searchable note column (merge meta description/ocrText into note)
+  backfillSearchableNote(db)
+
   return db
+}
+
+/**
+ * One-time: merge meta.description / meta.imageDescription / meta.ocrText
+ * into the `note` column so FTS5/LIKE search can find them via the high-weight
+ * `note` column instead of the low-weight raw `meta` JSON blob.
+ *
+ * Uses PRAGMA user_version to run only once. Bump version when schema/backfill
+ * logic changes so migrations re-run as needed.
+ */
+const SEARCH_INDEX_VERSION = 1
+function backfillSearchableNote(database: Database.Database): void {
+  const row = database.prepare('PRAGMA user_version').get() as { user_version: number }
+  if (row.user_version >= SEARCH_INDEX_VERSION) return
+
+  const items = database.prepare('SELECT id, note, meta FROM items').all() as Array<{
+    id: string; note: string; meta: string
+  }>
+  if (items.length === 0) {
+    database.pragma(`user_version = ${SEARCH_INDEX_VERSION}`)
+    return
+  }
+
+  const update = database.prepare('UPDATE items SET note = ? WHERE id = ?')
+  let updated = 0
+
+  database.transaction(() => {
+    for (const item of items) {
+      let meta: Record<string, unknown> = {}
+      try { meta = JSON.parse(item.meta || '{}') } catch { /* ignore */ }
+
+      // Collect all searchable text (dedupe)
+      const parts: string[] = []
+      const seen = new Set<string>()
+      const push = (s: unknown): void => {
+        if (typeof s !== 'string') return
+        const trimmed = s.trim()
+        if (!trimmed || seen.has(trimmed)) return
+        seen.add(trimmed)
+        parts.push(trimmed)
+      }
+      push(item.note)
+      push(meta.description)
+      push(meta.imageDescription)  // from AI description
+      push(meta.ocrText)
+
+      const newNote = parts.join('\n')
+      if (newNote !== item.note) {
+        update.run(newNote, item.id)
+        updated++
+      }
+    }
+  })()
+
+  database.pragma(`user_version = ${SEARCH_INDEX_VERSION}`)
+  if (updated > 0) console.log(`[Collector] Backfilled searchable note for ${updated} items`)
 }
 
 /** One-time: add contentHash to items that have assets but no hash */
@@ -236,6 +295,31 @@ export function computeContentHash(data: Buffer): string {
   return crypto.createHash('sha256').update(data).digest('hex').slice(0, 16)
 }
 
+/**
+ * Build the effective searchable note content by merging:
+ *   - the original note (if any)
+ *   - meta.description (for images and links — often the most useful text)
+ *   - meta.ocrText (extracted OCR for images)
+ * Duplicates are avoided so the same text isn't repeated.
+ * This ensures FTS5/LIKE index finds matches in all these fields via the
+ * high-weight `note` column instead of the low-weight raw `meta` JSON blob.
+ */
+function buildSearchableNote(note: string, meta: Record<string, unknown>): string {
+  const parts: string[] = []
+  const seen = new Set<string>()
+  const push = (s: unknown): void => {
+    if (typeof s !== 'string') return
+    const trimmed = s.trim()
+    if (!trimmed || seen.has(trimmed)) return
+    seen.add(trimmed)
+    parts.push(trimmed)
+  }
+  push(note)
+  push(meta.description)
+  push(meta.ocrText)
+  return parts.join('\n')
+}
+
 export function addCollectedItem(input: CollectorAddInput): CollectedItem {
   const dir = path.join(getLiteHome(), 'collected')
   fs.mkdirSync(path.join(dir, 'assets'), { recursive: true })
@@ -255,18 +339,20 @@ export function addCollectedItem(input: CollectorAddInput): CollectedItem {
     assetPath = `assets/${filename}`
   }
 
+  const effectiveNote = buildSearchableNote(input.note || '', meta)
+
   getDb().prepare(`
     INSERT INTO items (id, type, title, note, url, asset_path, "group", source, meta, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    id, input.type, input.title, input.note || '',
+    id, input.type, input.title, effectiveNote,
     input.url || null, assetPath || null,
     input.group || 'all', input.source || 'paste',
     JSON.stringify(meta), now, now
   )
 
   return {
-    id, type: input.type, title: input.title, note: input.note || '',
+    id, type: input.type, title: input.title, note: effectiveNote,
     url: input.url, assetPath, thumbnailPath: undefined,
     group: input.group || 'all', source: input.source || 'paste',
     meta, createdAt: now, updatedAt: now,
@@ -281,8 +367,21 @@ export function updateCollectedItem(id: string, patch: Partial<CollectedItem>): 
   const updates: string[] = []
   const values: unknown[] = []
 
+  // Determine effective final note/meta after patch so we can re-sync
+  // the searchable note column when meta.description/ocrText change.
+  let nextMeta: Record<string, unknown> = {}
+  if (patch.meta !== undefined) {
+    nextMeta = patch.meta
+  } else {
+    try { nextMeta = JSON.parse((existing.meta as string) || '{}') } catch { /* ignore */ }
+  }
+  const baseNote = patch.note !== undefined ? patch.note : (existing.note as string) || ''
+  const effectiveNote = (patch.note !== undefined || patch.meta !== undefined)
+    ? buildSearchableNote(baseNote, nextMeta)
+    : undefined
+
   if (patch.title !== undefined) { updates.push('title = ?'); values.push(patch.title) }
-  if (patch.note !== undefined) { updates.push('note = ?'); values.push(patch.note) }
+  if (effectiveNote !== undefined) { updates.push('note = ?'); values.push(effectiveNote) }
   if (patch.url !== undefined) { updates.push('url = ?'); values.push(patch.url) }
   if (patch.group !== undefined) { updates.push('"group" = ?'); values.push(patch.group) }
   if (patch.meta !== undefined) { updates.push('meta = ?'); values.push(JSON.stringify(patch.meta)) }
@@ -425,40 +524,108 @@ export interface FtsSearchResult {
   rank: number
 }
 
+/** True if the string contains CJK (Chinese/Japanese/Korean) characters */
+function hasCjk(s: string): boolean {
+  return /[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]/.test(s)
+}
+
+/**
+ * LIKE-based substring search with tiered ranking.
+ *
+ * We use MAX (not SUM) of per-column scores so items don't get inflated
+ * just because the same content was duplicated across multiple columns
+ * (e.g. tweets where title contains the full body, making note+title both hit).
+ *
+ * Tiers (higher = better, descending priority):
+ *   - title starts with query → 1000 (strongest "this IS about X" signal)
+ *   - title contains query    → 500
+ *   - note contains query     → 200
+ *   - url contains query      → 50
+ *   - meta contains query     → 10
+ * Tie-breaker: created_at DESC (newer first).
+ */
+function likeSearch(db: Database.Database, query: string, limit: number): FtsSearchResult[] {
+  const likeQuery = `%${query}%`
+  const prefixQuery = `${query}%`
+  const rows = db.prepare(`
+    SELECT *,
+      MAX(
+        CASE WHEN title LIKE ? THEN 1000 ELSE 0 END,
+        CASE WHEN title LIKE ? THEN 500  ELSE 0 END,
+        CASE WHEN note  LIKE ? THEN 200  ELSE 0 END,
+        CASE WHEN url   LIKE ? THEN 50   ELSE 0 END,
+        CASE WHEN meta  LIKE ? THEN 10   ELSE 0 END
+      ) AS match_score
+    FROM items
+    WHERE title LIKE ? OR note LIKE ? OR url LIKE ? OR meta LIKE ?
+    ORDER BY match_score DESC, created_at DESC
+    LIMIT ?
+  `).all(
+    prefixQuery, likeQuery, likeQuery, likeQuery, likeQuery, // score tiers
+    likeQuery, likeQuery, likeQuery, likeQuery,              // WHERE
+    limit,
+  ) as (Record<string, unknown> & { match_score: number })[]
+
+  return rows.map((row) => ({
+    item: rowToItem(row),
+    // Negate so caller can sort ascending (smaller = better, matching FTS5 rank convention)
+    rank: -row.match_score,
+  }))
+}
+
+/** Fetch multiple items by ID in a single query. Preserves input order when possible. */
+export function getItemsByIds(ids: string[]): CollectedItem[] {
+  if (ids.length === 0) return []
+  const db = getDb()
+  const placeholders = ids.map(() => '?').join(',')
+  const rows = db.prepare(`SELECT * FROM items WHERE id IN (${placeholders})`).all(...ids) as Record<string, unknown>[]
+  const map = new Map(rows.map((r) => [r.id as string, rowToItem(r)]))
+  // Preserve input order
+  return ids.map((id) => map.get(id)).filter((i): i is CollectedItem => !!i)
+}
+
 export function ftsSearch(query: string, limit = 30): FtsSearchResult[] {
   const db = getDb()
-  // FTS5 match query — escape special chars
   const safeQuery = query.replace(/['"]/g, ' ').trim()
   if (!safeQuery) return []
 
+  // CJK characters: FTS5 default tokenizer treats contiguous CJK as one token,
+  // so partial matches fail. Use LIKE substring search instead.
+  if (hasCjk(safeQuery)) {
+    return likeSearch(db, safeQuery, limit)
+  }
+
   try {
+    // Use OR between terms (not implicit AND) so items matching SOME terms
+    // still surface. BM25 naturally ranks items matching MORE terms higher,
+    // so we get AND-like behavior at the top without AND's strict filtering.
+    // "musk*" also matches "musky" via prefix.
+    const terms = safeQuery.split(/\s+/).filter((t) => t.length > 0).map((t) => `${t}*`)
+    if (terms.length === 0) return []
+    const ftsQuery = terms.join(' OR ')
+
+    // BM25 column weights: title(10) > note(5) > url(2) > meta(1).
+    // Smaller bm25 = more relevant (SQLite FTS5 convention).
     const rows = db.prepare(`
-      SELECT items.*, items_fts.rank
+      SELECT items.*, bm25(items_fts, 10.0, 5.0, 2.0, 1.0) AS match_rank
       FROM items_fts
       JOIN items ON items.rowid = items_fts.rowid
       WHERE items_fts MATCH ?
-      ORDER BY items_fts.rank
+      ORDER BY match_rank
       LIMIT ?
-    `).all(safeQuery, limit) as (Record<string, unknown> & { rank: number })[]
+    `).all(ftsQuery, limit) as (Record<string, unknown> & { match_rank: number })[]
 
-    return rows.map((row) => ({
-      item: rowToItem(row),
-      rank: row.rank,
-    }))
+    if (rows.length > 0) {
+      return rows.map((row) => ({
+        item: rowToItem(row),
+        rank: row.match_rank,
+      }))
+    }
+    // Zero FTS hits → try LIKE as fallback
+    return likeSearch(db, safeQuery, limit)
   } catch {
-    // Fallback: simple LIKE search if FTS query syntax fails
-    const likeQuery = `%${safeQuery}%`
-    const rows = db.prepare(`
-      SELECT * FROM items
-      WHERE title LIKE ? OR note LIKE ? OR url LIKE ? OR meta LIKE ?
-      ORDER BY created_at DESC
-      LIMIT ?
-    `).all(likeQuery, likeQuery, likeQuery, likeQuery, limit) as Record<string, unknown>[]
-
-    return rows.map((row, i) => ({
-      item: rowToItem(row),
-      rank: -(rows.length - i),
-    }))
+    // FTS query syntax error → LIKE fallback
+    return likeSearch(db, safeQuery, limit)
   }
 }
 

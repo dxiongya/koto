@@ -209,8 +209,9 @@ const api = {
       messages: Array<{ role: string; content: string }>,
       temperature?: number,
       maxTokens?: number,
-      enableTools?: boolean
-    ) => ipcRenderer.invoke(IpcChannels.AI_CHAT, providerId, messages, temperature, maxTokens, enableTools),
+      enableTools?: boolean,
+      modelOverride?: string,
+    ) => ipcRenderer.invoke(IpcChannels.AI_CHAT, providerId, messages, temperature, maxTokens, enableTools, modelOverride),
     testConnection: (provider: Record<string, unknown>) =>
       ipcRenderer.invoke(IpcChannels.AI_TEST_CONNECTION, provider),
     onToolEvent: (callback: (event: { type: string; toolName: string; toolInput?: Record<string, unknown>; result?: string; durationMs?: number }) => void) => {
@@ -288,11 +289,31 @@ const api = {
     deleteGroup: (name: string) =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_DELETE_GROUP, name),
   },
+  task: {
+    list: (appId?: string) => ipcRenderer.invoke(IpcChannels.TASK_LIST, appId),
+    create: (input: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.TASK_CREATE, input),
+    update: (id: string, patch: Record<string, unknown>) =>
+      ipcRenderer.invoke(IpcChannels.TASK_UPDATE, id, patch),
+    delete: (id: string) =>
+      ipcRenderer.invoke(IpcChannels.TASK_DELETE, id),
+    trigger: (id: string) =>
+      ipcRenderer.invoke(IpcChannels.TASK_TRIGGER, id),
+    onRunEvent: (callback: (event: { taskId: string; taskName: string; status: string; timestamp: number; message?: string }) => void) => {
+      const handler = (_: unknown, event: { taskId: string; taskName: string; status: string; timestamp: number; message?: string }): void => callback(event)
+      ipcRenderer.on(IpcChannels.TASK_RUN_EVENT, handler)
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.TASK_RUN_EVENT, handler)
+      }
+    },
+  },
   apps: {
     discover: () => ipcRenderer.invoke(IpcChannels.APPS_DISCOVER),
   },
   shell: {
     openExternal: (url: string) => ipcRenderer.invoke(IpcChannels.SHELL_OPEN_EXTERNAL, url),
+    openPath: (filePath: string) => ipcRenderer.invoke(IpcChannels.SHELL_OPEN_PATH, filePath),
+    revealPath: (filePath: string) => ipcRenderer.invoke(IpcChannels.SHELL_REVEAL_PATH, filePath),
   },
   shortcut: {
     onShortcut: (callback: (shortcut: string) => void) => {

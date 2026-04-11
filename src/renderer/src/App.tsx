@@ -6,6 +6,7 @@ import { SettingsApp } from './apps/SettingsApp'
 import { ContextMenuProvider } from './components/ContextMenu'
 import { FileSwitcher } from './components/FileSwitcher'
 import { ContextPanel } from './components/ContextPanel'
+import { WelcomeDialog } from './components/WelcomeDialog'
 import { builtinThemes, applyTheme, applyFont } from './themes'
 import type { FontId } from './themes'
 import { getAppRegistry, getAppBus } from './core/AppContext'
@@ -48,8 +49,26 @@ export default function App() {
         if (c.codeProjectPath) useUIStore.setState({ codeProjectPath: c.codeProjectPath })
         if (c.recentProjects) useUIStore.setState({ recentProjects: c.recentProjects })
         if (c.recentFiles) useUIStore.setState({ recentFiles: c.recentFiles })
-        if (c.ai) useUIStore.setState({ ai: { ...useUIStore.getState().ai, ...c.ai } })
+        if (c.ai) {
+          // Migrate old featureRouting (plain providerId strings → {providerId, model?} objects)
+          const migratedAi = { ...c.ai }
+          if (migratedAi.featureRouting) {
+            const fr = migratedAi.featureRouting as Record<string, unknown>
+            const migrate = (v: unknown): { providerId: string; model?: string } | null => {
+              if (!v) return null
+              if (typeof v === 'string') return { providerId: v }
+              if (typeof v === 'object' && v !== null && 'providerId' in (v as any)) return v as any
+              return null
+            }
+            migratedAi.featureRouting = {
+              completion: migrate(fr.completion),
+              chat: migrate(fr.chat),
+            } as any
+          }
+          useUIStore.setState({ ai: { ...useUIStore.getState().ai, ...migratedAi } })
+        }
         if (c.mcpServers) useUIStore.setState({ mcpServers: c.mcpServers })
+        if (c.hasSeenWelcome !== undefined) useUIStore.setState({ hasSeenWelcome: c.hasSeenWelcome })
 
         // terminal.app — recreate PTY sessions with saved cwd + buffer
         if (c.terminalSessions?.length > 0) {
@@ -390,6 +409,7 @@ export default function App() {
       <ContextMenuProvider />
       <FileSwitcher />
       <ContextPanel />
+      <WelcomeDialog />
     </>
   )
 }

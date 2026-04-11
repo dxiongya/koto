@@ -102,13 +102,47 @@ export interface SkillsAPI {
   importUrl: (url: string) => Promise<IpcResult<Skill>>
 }
 
+export interface ScheduledTask {
+  id: string
+  name: string
+  type: string
+  appId: string | null
+  enabled: boolean
+  schedule: string
+  config: Record<string, unknown>
+  lastRunAt: number | null
+  lastRunStatus: string | null
+  lastRunError: string | null
+  runCount: number
+  createdAt: number
+  updatedAt: number
+}
+
+export interface TaskRunEvent {
+  taskId: string
+  taskName: string
+  status: string
+  timestamp: number
+  message?: string
+}
+
+export interface TaskAPI {
+  list: (appId?: string) => Promise<IpcResult<ScheduledTask[]>>
+  create: (input: Record<string, unknown>) => Promise<IpcResult<ScheduledTask>>
+  update: (id: string, patch: Record<string, unknown>) => Promise<IpcResult<ScheduledTask>>
+  delete: (id: string) => Promise<IpcResult<void>>
+  trigger: (id: string) => Promise<IpcResult<{ success: boolean; error?: string }>>
+  onRunEvent: (callback: (event: TaskRunEvent) => void) => () => void
+}
+
 export interface AIAPI {
   chat: (
     providerId: string,
     messages: AIChatMessage[],
     temperature?: number,
     maxTokens?: number,
-    enableTools?: boolean
+    enableTools?: boolean,
+    modelOverride?: string,
   ) => Promise<IpcResult<AIChatResponse>>
   testConnection: (provider: Record<string, unknown>) => Promise<IpcResult<string>>
   onToolEvent: (callback: (event: AIToolEvent) => void) => () => void
@@ -133,6 +167,7 @@ declare global {
       mcp: MCPAPI
       skills: SkillsAPI
       ai: AIAPI
+      task: TaskAPI
     }
   }
 }

@@ -7,6 +7,7 @@ import type {
   AIToolEvent,
   IpcResult
 } from '../../shared/types'
+import { getProviderModel } from '../../shared/types'
 import { loadConfig, loadIdentityFiles } from './lite-home'
 import { getAnthropicTools, getOpenAITools, executeTool } from './ai-tools'
 import { loadSkills } from './skills-loader'
@@ -89,19 +90,25 @@ export async function aiChat(
   temperature = 0.7,
   maxTokens = 4096,
   enableTools = false,
-  onToolEvent?: (event: AIToolEvent) => void
+  onToolEvent?: (event: AIToolEvent) => void,
+  modelOverride?: string,
 ): Promise<IpcResult<AIChatResponse>> {
   const provider = getProvider(providerId)
   if (!provider) return { ok: false, error: 'Provider not found' }
   if (!provider.enabled) return { ok: false, error: 'Provider is disabled' }
   if (!provider.apiKey) return { ok: false, error: 'API key not configured' }
 
+  // If caller specifies a model that's in the provider's list, use it;
+  // otherwise fall back to the provider's primary model.
+  const effectiveModel = modelOverride || getProviderModel(provider)
+  const effectiveProvider: AIProviderConfig = { ...provider, model: effectiveModel }
+
   try {
     if (provider.type === 'anthropic') {
-      return await callAnthropic(provider, messages, temperature, maxTokens, enableTools, onToolEvent)
+      return await callAnthropic(effectiveProvider, messages, temperature, maxTokens, enableTools, onToolEvent)
     }
     // openai, google, openai-compatible all use OpenAI SDK
-    return await callOpenAICompatible(provider, messages, temperature, maxTokens, enableTools, onToolEvent)
+    return await callOpenAICompatible(effectiveProvider, messages, temperature, maxTokens, enableTools, onToolEvent)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { ok: false, error: msg }
@@ -115,10 +122,11 @@ export async function aiTestConnection(
   if (!provider.apiKey) return { ok: false, error: 'API key is empty' }
 
   try {
+    const primaryModel = getProviderModel(provider)
     if (provider.type === 'anthropic') {
       const client = new Anthropic({ apiKey: provider.apiKey })
       const resp = await client.messages.create({
-        model: provider.model || 'claude-sonnet-4-20250514',
+        model: primaryModel || 'claude-sonnet-4-20250514',
         max_tokens: 16,
         messages: [{ role: 'user', content: 'Hi' }],
       })
@@ -131,7 +139,7 @@ export async function aiTestConnection(
       baseURL: provider.baseUrl || undefined,
     })
     const resp = await client.chat.completions.create({
-      model: provider.model || 'gpt-4o-mini',
+      model: primaryModel || 'gpt-4o-mini',
       max_tokens: 16,
       messages: [{ role: 'user', content: 'Hi' }],
     })
@@ -171,9 +179,10 @@ async function callOpenAICompatible(
   let totalPromptTokens = 0
   let totalCompletionTokens = 0
 
+  const activeModel = getProviderModel(provider)
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     const resp = await client.chat.completions.create({
-      model: provider.model,
+      model: activeModel,
       messages: oaiMessages,
       temperature,
       max_tokens: maxTokens,
@@ -260,9 +269,10 @@ async function callAnthropic(
   let totalInputTokens = 0
   let totalOutputTokens = 0
 
+  const activeModel = getProviderModel(provider)
   for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
     const resp = await client.messages.create({
-      model: provider.model,
+      model: activeModel,
       max_tokens: maxTokens,
       temperature,
       system: (systemMsgs.map((m) => m.content).join('\n') + identityContext + capabilitiesCatalog) || undefined,

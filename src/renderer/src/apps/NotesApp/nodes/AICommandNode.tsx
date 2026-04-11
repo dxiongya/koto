@@ -260,19 +260,20 @@ function AICommandComponent({
     setError(null)
 
     try {
-      const provider = useUIStore.getState().getAIProviderForFeature('chat')
-      if (!provider) {
+      const routed = useUIStore.getState().getAIProviderForFeature('chat')
+      if (!routed) {
         setError('No AI provider configured. Go to Settings to add one.')
         setLoading(false)
         return
       }
+      const { provider, model } = routed
 
       const { prompt: resolvedPrompt } = await resolveReferences(prompt, attachedRefs)
 
       const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath || ''
 
       const hasContext = !!selectedText.trim()
-      const systemPrompt = `You are Lite — an AI content writer embedded in a markdown notes editor.
+      const systemPrompt = `You are Koto — an AI content writer embedded in a markdown notes editor.
 
 ## Context
 - Active file: ${activeFilePath}
@@ -314,7 +315,7 @@ Use \`use_skill(name)\` to load each skill. Then follow their instructions preci
         }
       })
 
-      const result = await window.api.ai.chat(provider.id, messages, 0.7, 8192, true)
+      const result = await window.api.ai.chat(provider.id, messages, 0.7, 8192, true, model)
       unsubToolEvent()
 
       if (result.ok) {

@@ -126,25 +126,55 @@ const schemes: Record<TerminalThemeId, TerminalThemeOption> = {
 export const terminalThemes = Object.values(schemes)
 export const DEFAULT_TERMINAL_THEME: TerminalThemeId = 'snazzy'
 
+/** ANSI colors for light backgrounds — readable contrast on white/cream */
+const lightAnsiColors: Omit<ITheme, 'background' | 'foreground' | 'cursor' | 'cursorAccent' | 'selectionBackground'> = {
+  black: '#3c3836',
+  red: '#cc241d',
+  green: '#157a3e',
+  yellow: '#b57614',
+  blue: '#076678',
+  magenta: '#8f3f71',
+  cyan: '#427b58',
+  white: '#7c6f64',
+  brightBlack: '#928374',
+  brightRed: '#9d0006',
+  brightGreen: '#79740e',
+  brightYellow: '#b57614',
+  brightBlue: '#076678',
+  brightMagenta: '#8f3f71',
+  brightCyan: '#427b58',
+  brightWhite: '#3c3836',
+}
+
 /** Read a CSS custom property from :root, with fallback */
 function cssVar(name: string, fallback: string): string {
   const value = getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim()
   return value || fallback
 }
 
+/** Detect if the current theme is dark by checking the :root class */
+function isCurrentThemeDark(): boolean {
+  return document.documentElement.classList.contains('dark')
+}
+
 /** Build xterm theme: app colors (bg/fg/cursor) + selected ANSI color scheme */
 export function buildXtermTheme(schemeId?: TerminalThemeId): ITheme {
-  const bg = cssVar('bg-app', '#111111')
-  const fg = cssVar('tx-main', '#e0e0e0')
-  const accent = cssVar('accent-main', '#5eead4')
-  const scheme = schemes[schemeId ?? DEFAULT_TERMINAL_THEME] ?? schemes[DEFAULT_TERMINAL_THEME]
+  const isDark = isCurrentThemeDark()
+  const bg = cssVar('bg-app', isDark ? '#111111' : '#FCFBF9')
+  const fg = cssVar('tx-main', isDark ? '#e0e0e0' : '#2b2b2b')
+  const accent = cssVar('accent-main', isDark ? '#5eead4' : '#2b8a73')
+
+  // Use light-friendly ANSI colors when on light background
+  const ansiColors = isDark
+    ? (schemes[schemeId ?? DEFAULT_TERMINAL_THEME] ?? schemes[DEFAULT_TERMINAL_THEME]).colors
+    : lightAnsiColors
 
   return {
     background: bg,
     foreground: fg,
     cursor: accent,
     cursorAccent: bg,
-    selectionBackground: 'rgba(91,164,164,0.35)',
-    ...scheme.colors,
+    selectionBackground: isDark ? 'rgba(91,164,164,0.35)' : 'rgba(43,138,115,0.20)',
+    ...ansiColors,
   }
 }

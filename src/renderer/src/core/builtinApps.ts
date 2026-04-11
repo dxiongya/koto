@@ -1,7 +1,7 @@
 /**
  * App Registration — registers built-in apps + discovers third-party apps.
  */
-import type { AppDefinition, LiteAppAPI } from '../../../shared/app-interface'
+import type { AppBus, AppDefinition, LiteAppAPI } from '../../../shared/app-interface'
 import type { AppRegistry } from './AppRegistry'
 import { getAppBus } from './AppContext'
 
@@ -70,6 +70,9 @@ export async function registerBuiltinApps(registry: AppRegistry): Promise<void> 
     registry.reorder(savedAppOrder)
   }
 
+  // ── System-level Bus tools (not app-specific) ──
+  registerSystemTools(bus)
+
   // 2. Discover third-party apps from {liteHome}/apps/
   try {
     const res = await window.api.apps.discover()
@@ -106,4 +109,95 @@ export async function registerBuiltinApps(registry: AppRegistry): Promise<void> 
   } catch (e) {
     console.warn('[Apps] Failed to discover third-party apps:', e)
   }
+}
+
+/** Register system-level Bus tools (task scheduler) */
+function registerSystemTools(bus: AppBus): void {
+  bus.provideTool({
+    name: 'task.list',
+    appId: 'system',
+    description: 'List all scheduled tasks. Can filter by appId.',
+    parameters: {
+      appId: { type: 'string', description: 'Filter by app ID (e.g. "notes.app", "collector.app")' },
+    },
+    handler: async (params) => {
+      const res = await window.api.task.list(params.appId as string | undefined)
+      return res.ok ? res.data : []
+    },
+  })
+
+  bus.provideTool({
+    name: 'task.create',
+    appId: 'system',
+    description: 'Create a new scheduled task. Types: ai-prompt, script, shell, mcp-tool.',
+    parameters: {
+      name: { type: 'string', description: 'Task name', required: true },
+      type: { type: 'string', description: 'Task type', required: true, enum: ['ai-prompt', 'script', 'shell', 'mcp-tool'] },
+      schedule: { type: 'string', description: 'Schedule: "manual", "hourly", "daily", "weekly", or "interval:N" (minutes)' },
+      config: { type: 'string', description: 'JSON config string (type-specific). shell: {"command":"..."}, mcp-tool: {"toolName":"...","toolParams":{...}}', required: true },
+      appId: { type: 'string', description: 'Associated app ID (optional)' },
+    },
+    handler: async (params) => {
+      let config: Record<string, unknown> = {}
+      try { config = JSON.parse(params.config as string) } catch { /* ignore */ }
+      const res = await window.api.task.create({
+        name: params.name as string,
+        type: params.type as string,
+        schedule: (params.schedule as string) || 'manual',
+        config,
+        appId: (params.appId as string) || null,
+      })
+      return res.ok ? res.data : { error: res.error }
+    },
+  })
+
+  bus.provideTool({
+    name: 'task.update',
+    appId: 'system',
+    description: 'Update a scheduled task (name, enabled, schedule, config).',
+    parameters: {
+      id: { type: 'string', description: 'Task ID', required: true },
+      name: { type: 'string', description: 'New name' },
+      enabled: { type: 'boolean', description: 'Enable/disable' },
+      schedule: { type: 'string', description: 'New schedule' },
+      config: { type: 'string', description: 'JSON config string to replace' },
+    },
+    handler: async (params) => {
+      const patch: Record<string, unknown> = {}
+      if (params.name !== undefined) patch.name = params.name
+      if (params.enabled !== undefined) patch.enabled = params.enabled
+      if (params.schedule !== undefined) patch.schedule = params.schedule
+      if (params.config !== undefined) {
+        try { patch.config = JSON.parse(params.config as string) } catch { /* ignore */ }
+      }
+      const res = await window.api.task.update(params.id as string, patch)
+      return res.ok ? res.data : { error: res.error }
+    },
+  })
+
+  bus.provideTool({
+    name: 'task.delete',
+    appId: 'system',
+    description: 'Delete a scheduled task by ID.',
+    parameters: {
+      id: { type: 'string', description: 'Task ID', required: true },
+    },
+    handler: async (params) => {
+      const res = await window.api.task.delete(params.id as string)
+      return res.ok ? { success: true } : { error: res.error }
+    },
+  })
+
+  bus.provideTool({
+    name: 'task.trigger',
+    appId: 'system',
+    description: 'Manually trigger (run now) a scheduled task by ID.',
+    parameters: {
+      id: { type: 'string', description: 'Task ID', required: true },
+    },
+    handler: async (params) => {
+      const res = await window.api.task.trigger(params.id as string)
+      return res.ok ? res.data : { error: res.error }
+    },
+  })
 }

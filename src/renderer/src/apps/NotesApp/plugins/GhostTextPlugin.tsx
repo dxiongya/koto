@@ -453,12 +453,13 @@ export function GhostTextPlugin(): null {
     if (requestingRef.current) return
     requestingRef.current = true
 
-    const provider = useUIStore.getState().getAIProviderForFeature('completion')
-    if (!provider) {
+    const routed = useUIStore.getState().getAIProviderForFeature('completion')
+    if (!routed) {
       dbgWarn('request', 'no AI provider for "completion"')
       requestingRef.current = false
       return
     }
+    const { provider, model } = routed
 
     let ctx: CompletionContext | null = null
     editor.getEditorState().read(() => { ctx = $detectContext() })
@@ -484,7 +485,7 @@ export function GhostTextPlugin(): null {
       dbg('request', `[code] saved caret rect: ${savedCaretRectRef.current ? `top=${Math.round(savedCaretRectRef.current.top)} left=${Math.round(savedCaretRectRef.current.left)}` : 'null'}`)
     }
 
-    dbg('request', `type=${type}${lang ? ` lang=${lang}` : ''} provider=${provider.name}`)
+    dbg('request', `type=${type}${lang ? ` lang=${lang}` : ''} provider=${provider.name} model=${model}`)
     dbg('request', `context (${contextBefore.length} chars): "…${contextBefore.slice(-80)}"`)
 
     if (abortRef.current) abortRef.current.abort()
@@ -496,7 +497,7 @@ export function GhostTextPlugin(): null {
 
     try {
       const t0 = performance.now()
-      const result = await window.api.ai.chat(provider.id, messages, 0.3, maxTokens)
+      const result = await window.api.ai.chat(provider.id, messages, 0.3, maxTokens, false, model)
       const ms = Math.round(performance.now() - t0)
 
       if (controller.signal.aborted) { dbg('request', `aborted (${ms}ms)`); return }

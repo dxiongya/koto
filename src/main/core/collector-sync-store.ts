@@ -7,12 +7,32 @@ import path from 'path'
 import Database from 'better-sqlite3'
 import { getLiteHome } from './lite-home'
 
-// Reuse the collector DB (tables created in collector-store.ts)
+// Reuse the collector DB (shared with collector-store.ts). On fresh install
+// this module may be the first caller, so we must ensure our own tables
+// exist — we can't assume collector-store.ts has run yet.
 let db: Database.Database | null = null
 function getDb(): Database.Database {
   if (db) return db
-  const dbPath = path.join(getLiteHome(), 'collected', 'collector.db')
-  db = new Database(dbPath)
+  const dir = path.join(getLiteHome(), 'collected')
+  fs.mkdirSync(dir, { recursive: true })
+  db = new Database(path.join(dir, 'collector.db'))
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS group_sync_configs (
+      group_name TEXT PRIMARY KEY,
+      adapter TEXT NOT NULL DEFAULT 'custom',
+      script_path TEXT,
+      schedule TEXT NOT NULL DEFAULT 'manual',
+      enabled INTEGER NOT NULL DEFAULT 1,
+      last_sync_at INTEGER,
+      last_sync_status TEXT,
+      last_sync_error TEXT,
+      last_sync_items_added INTEGER DEFAULT 0,
+      sync_count INTEGER DEFAULT 0,
+      adapter_config TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+  `)
   return db
 }
 

@@ -396,12 +396,13 @@ function TableAIPanel({
     setExpandedTool(null)
 
     try {
-      const provider = useUIStore.getState().getAIProviderForFeature('chat')
-      if (!provider) {
+      const routed = useUIStore.getState().getAIProviderForFeature('chat')
+      if (!routed) {
         setError('No AI provider configured. Go to Settings.')
         setLoading(false)
         return
       }
+      const { provider, model } = routed
 
       const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath || ''
       const systemPrompt = `## Context
@@ -442,7 +443,7 @@ function TableAIPanel({
         }
       })
 
-      const res = await window.api.ai.chat(provider.id, messages, 0.7, 2048, true)
+      const res = await window.api.ai.chat(provider.id, messages, 0.7, 2048, true, model)
       unsubToolEvent()
 
       if (res.ok) {
