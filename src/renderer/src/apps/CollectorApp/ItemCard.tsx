@@ -1,9 +1,14 @@
 import { useRef, useState, useEffect } from 'react'
-import { Globe, Twitter, Play, Monitor, Image, X } from 'lucide-react'
+import { Globe, Twitter, Play, Monitor, Image, X, BookOpen } from 'lucide-react'
 import type { CollectedItem } from '../../../../shared/types'
 import { getDomain, TYPE_ICONS, TYPE_LABELS } from './shared'
 
-export const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; onOpen: (item: CollectedItem) => void }> = ({ item, onDelete, onOpen }) => {
+export const ItemCard: React.FC<{
+  item: CollectedItem
+  onDelete: (id: string) => void
+  onOpen: (item: CollectedItem) => void
+  onSendToWiki?: (id: string) => void
+}> = ({ item, onDelete, onOpen, onSendToWiki }) => {
   const Icon = TYPE_ICONS[item.type]
   const localAsset = item.assetPath ? `lite-asset://collected/${item.assetPath}` : null
   const ogImage = item.meta?.ogImage as string | undefined
@@ -59,8 +64,15 @@ export const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) =>
               {item.type === 'image' && <Image size={22} className="text-tx-faint" />}
             </>
           )}
-          <button onClick={(e) => { e.stopPropagation(); onDelete(item.id) }} aria-label="Delete"
-            className="absolute top-1.5 right-1.5 p-1 rounded bg-bg-app/60 text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity"><X size={10} /></button>
+          <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {onSendToWiki && (
+              <button onClick={(e) => { e.stopPropagation(); onSendToWiki(item.id) }} aria-label="Send to Wiki"
+                title="Send to Wiki"
+                className="p-1 rounded bg-bg-app/60 text-tx-faint hover:text-accent-main transition-colors"><BookOpen size={10} /></button>
+            )}
+            <button onClick={(e) => { e.stopPropagation(); onDelete(item.id) }} aria-label="Delete"
+              className="p-1 rounded bg-bg-app/60 text-tx-faint hover:text-tx-main transition-colors"><X size={10} /></button>
+          </div>
         </div>
       )}
       <div className={`p-2.5 flex flex-col gap-1 ${item.type === 'text' ? 'relative' : ''}`}>
@@ -78,8 +90,15 @@ export const ItemCard: React.FC<{ item: CollectedItem; onDelete: (id: string) =>
           </div>
         )}
         {item.type === 'text' && (
-          <button onClick={(e) => { e.stopPropagation(); onDelete(item.id) }} aria-label="Delete"
-            className="absolute top-2 right-2 p-0.5 rounded text-tx-faint hover:text-tx-main opacity-0 group-hover:opacity-100 transition-opacity"><X size={10} /></button>
+          <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {onSendToWiki && (
+              <button onClick={(e) => { e.stopPropagation(); onSendToWiki(item.id) }} aria-label="Send to Wiki"
+                title="Send to Wiki"
+                className="p-0.5 rounded text-tx-faint hover:text-accent-main transition-colors"><BookOpen size={10} /></button>
+            )}
+            <button onClick={(e) => { e.stopPropagation(); onDelete(item.id) }} aria-label="Delete"
+              className="p-0.5 rounded text-tx-faint hover:text-tx-main transition-colors"><X size={10} /></button>
+          </div>
         )}
       </div>
     </div>

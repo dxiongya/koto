@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { Plus, Globe, X, ChevronDown, Layers, Folder } from 'lucide-react'
+import { Plus, Globe, X, ChevronDown, Layers, Folder, FileEdit } from 'lucide-react'
 import type { CollectedItemType } from '../../../../shared/types'
 import { TYPE_ICONS, TYPE_LABELS } from './shared'
+import { trackEnrichment } from './enrichment-store'
+import { useUIStore } from '../../store/useUIStore'
 
 export const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; groups: string[] }> = ({ onClose, onCollected, groups }) => {
   const [inputValue, setInputValue] = useState('')
@@ -71,17 +73,61 @@ export const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => vo
 
       if (addRes.ok) {
         const itemId = addRes.data.id
+        const itemTitle = detected.title || 'Untitled'
         if (detected.url && (detected.type === 'link' || detected.type === 'tweet')) {
-          window.api.collector.fetchMarkdown(itemId, detected.url)
-            .then(() => window.api.collector.embedItem(itemId)).catch(() => {})
+          trackEnrichment(itemId, itemTitle, 'markdown', async () => {
+            await window.api.collector.fetchMarkdown(itemId, detected!.url!)
+            await window.api.collector.embedItem(itemId)
+          }).catch(() => {})
         } else {
-          window.api.collector.embedItem(itemId).catch(() => {})
+          trackEnrichment(itemId, itemTitle, 'embedding', () =>
+            window.api.collector.embedItem(itemId),
+          ).catch(() => {})
         }
       }
     } finally {
       setSubmitting(false)
     }
   }, [detected, selectedGroup, submitting, onCollected, onClose])
+
+  const handleEditInNotes = useCallback(async () => {
+    if (!detected || detected.type !== 'text' || submitting) return
+    setSubmitting(true)
+    try {
+      const text = inputValue.trim()
+      const titleLine = text.split('\n')[0].slice(0, 120)
+
+      // Create collector item
+      const addRes = await window.api.collector.add({
+        type: 'text', title: titleLine, note: text,
+        group: selectedGroup, source: 'paste', meta: {},
+      })
+
+      // Create note file in notes workspace
+      const liteHome = useUIStore.getState().liteHome
+      const slug = titleLine
+        .replace(/[^a-zA-Z0-9\u4e00-\u9fff\s-]/g, '')
+        .trim().replace(/\s+/g, '-') || 'untitled'
+      const notePath = `${liteHome}/notes/${slug}.md`
+
+      await window.api.fs.writeFile(notePath, text)
+
+      // Link collector item to note file
+      if (addRes.ok) {
+        await window.api.collector.update(addRes.data.id, {
+          meta: { noteFilePath: notePath },
+        }).catch(() => {})
+      }
+
+      onCollected()
+      onClose()
+
+      // Switch to notes.app and open the note
+      useUIStore.getState().openInApp('notes.app', notePath)
+    } finally {
+      setSubmitting(false)
+    }
+  }, [detected, inputValue, selectedGroup, submitting, onCollected, onClose])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
@@ -99,8 +145,8 @@ export const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => vo
 
         <div className={`rounded-md border ${detected ? 'border-accent-main' : 'border-border-subtle'} bg-bg-hover p-3 transition-colors`}>
           <textarea ref={inputRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Paste or type a URL, text, or drop an image here..." rows={3}
-            className="w-full bg-transparent text-[12px] text-tx-main placeholder-tx-faint outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 resize-none" />
+            placeholder="Paste or type a URL, text, or drop an image here..." rows={detected?.type === 'text' ? 8 : 3}
+            className={`w-full bg-transparent text-[12px] text-tx-main placeholder-tx-faint outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 ${detected?.type === 'text' ? 'resize-y min-h-[80px]' : 'resize-none'}`} />
           {detected && (
             <div className="flex items-center gap-1.5 mt-1.5">
               {(() => { const Icon = TYPE_ICONS[detected.type]; return <Icon size={10} className="text-accent-main" /> })()}
@@ -153,6 +199,12 @@ export const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => vo
 
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-3.5 py-1.5 text-[12px] text-tx-muted rounded-md border border-border-strong hover:bg-bg-hover transition-colors">Cancel</button>
+          {detected?.type === 'text' && (
+            <button onClick={handleEditInNotes} disabled={!detected || submitting}
+              className="px-3.5 py-1.5 text-[12px] text-accent-main rounded-md border border-accent-main/30 hover:bg-accent-main/10 transition-colors flex items-center gap-1.5 disabled:opacity-40">
+              <FileEdit size={12} />Edit in Notes
+            </button>
+          )}
           <button onClick={handleSubmit} disabled={!detected || submitting}
             className="px-3.5 py-1.5 text-[12px] text-bg-app font-medium rounded-md bg-accent-main hover:opacity-90 transition-opacity flex items-center gap-1.5 disabled:opacity-40">
             <Plus size={12} />{submitting ? 'Saving...' : 'Collect'}

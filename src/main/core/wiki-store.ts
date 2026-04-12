@@ -31,7 +31,21 @@ export interface WikiStats {
   lastLogEntry: string | null
 }
 
-const WIKI_DIRS = ['entities', 'concepts', 'sources', 'comparisons', 'queries', 'synthesis']
+// Source files are split by resource type so the file tree mirrors the
+// collector's taxonomy (image/video/link/text). Keeps directory listings
+// scannable and lets the lint pass check type-specific frontmatter.
+const WIKI_DIRS = [
+  'entities',
+  'concepts',
+  'sources',
+  'sources/links',
+  'sources/images',
+  'sources/videos',
+  'sources/notes',
+  'comparisons',
+  'queries',
+  'synthesis',
+]
 
 /** Absolute path to the wiki root directory. */
 export function wikiRoot(): string {
@@ -93,7 +107,20 @@ export function initWiki(): { created: boolean; root: string } {
     '- Related concepts',
     '',
     '### Source',
-    'One summary per raw source ingested. Include:',
+    'One summary per raw source ingested. Source files are split by resource type:',
+    '- `sources/links/` — articles, web pages, tweets (extracted markdown)',
+    '- `sources/images/` — images & screenshots (visual description + OCR text)',
+    '- `sources/videos/` — video clips (title + description; no transcript yet)',
+    '- `sources/notes/` — plain text notes pasted into the collector',
+    '',
+    'Source pages carry extra frontmatter so consumers (lint, graph, retrieval)',
+    'can filter by resource type:',
+    '  ```yaml',
+    '  resourceType: link | image | video | text',
+    '  asset: "relative/path"   # only for image/video types',
+    '  ```',
+    '',
+    'Include:',
     '- Core claims',
     '- Key takeaways',
     '- Links to entities / concepts extracted',
@@ -290,4 +317,129 @@ export function readWikiFile(relPath: string): string | null {
   const full = path.join(wikiRoot(), relPath)
   if (!fs.existsSync(full)) return null
   try { return fs.readFileSync(full, 'utf-8') } catch { return null }
+}
+
+// ── Graph data ────────────────────────────────────────────────────────
+
+export interface WikiGraphNode {
+  id: string        // relPath without .md (slug)
+  relPath: string
+  title: string
+  type: string       // entity | concept | source | page
+  resourceType?: string  // link | image | video | text (only for source pages)
+}
+
+export interface WikiGraphEdge {
+  source: string
+  target: string
+  type: 'wikilink' | 'source-ref'
+}
+
+export interface WikiGraphData {
+  nodes: WikiGraphNode[]
+  edges: WikiGraphEdge[]
+}
+
+/** Build graph data from all wiki pages: nodes from pages, edges from [[wikilinks]] + sources[]. */
+export function getWikiGraph(): WikiGraphData {
+  const root = wikiRoot()
+  if (!fs.existsSync(root)) return { nodes: [], edges: [] }
+
+  const pages = listWikiPages()
+  const SYSTEM = new Set(['SCHEMA.md', 'index.md', 'log.md', 'overview.md', 'purpose.md'])
+
+  // Build node map (slug → node)
+  const nodeMap = new Map<string, WikiGraphNode>()
+  const pathToSlug = (relPath: string): string => relPath.replace(/\.md$/, '')
+
+  for (const p of pages) {
+    if (SYSTEM.has(p.relPath)) continue
+    const slug = pathToSlug(p.relPath)
+    const content = tryRead(p.path)
+    const fm = parseFrontmatter(content)
+    const rtMatch = content.match(/^resourceType:\s*(.+)$/m)
+    nodeMap.set(slug, {
+      id: slug,
+      relPath: p.relPath,
+      title: fm.title || p.title,
+      type: fm.type || p.type,
+      resourceType: rtMatch?.[1]?.trim(),
+    })
+  }
+
+  // Extract edges — use global dedup set to prevent bidirectional duplicates (A↔B)
+  const edges: WikiGraphEdge[] = []
+  const seenEdges = new Set<string>()
+  const WIKILINK_RE = /\[\[([^\]]+)\]\]/g
+
+  for (const p of pages) {
+    if (SYSTEM.has(p.relPath)) continue
+    const slug = pathToSlug(p.relPath)
+    const content = tryRead(p.path)
+
+    // Wikilink edges: [[target-slug]]
+    let m: RegExpExecArray | null
+    WIKILINK_RE.lastIndex = 0
+    while ((m = WIKILINK_RE.exec(content)) !== null) {
+      const target = m[1].trim().toLowerCase()
+      if (target === slug) continue
+      const resolved = resolveWikilinkTarget(target, nodeMap)
+      if (resolved) {
+        // Direction-agnostic key: sort endpoints so A→B and B→A share one edge
+        const edgeKey = [slug, resolved].sort().join('↔')
+        if (!seenEdges.has(edgeKey)) {
+          seenEdges.add(edgeKey)
+          edges.push({ source: slug, target: resolved, type: 'wikilink' })
+        }
+      }
+    }
+
+    // Source-ref edges: frontmatter sources[] → linked pages that share the same source ID
+    const fm = parseFrontmatter(content)
+    for (const srcId of fm.sources) {
+      for (const [otherSlug, otherNode] of nodeMap) {
+        if (otherSlug === slug) continue
+        if (otherNode.type === 'source') continue
+        const otherContent = tryRead(path.join(root, otherNode.relPath))
+        const otherFm = parseFrontmatter(otherContent)
+        if (otherFm.sources.includes(srcId)) {
+          const edgeKey = [slug, otherSlug].sort().join('↔')
+          if (!seenEdges.has(edgeKey)) {
+            seenEdges.add(edgeKey)
+            edges.push({ source: slug, target: otherSlug, type: 'source-ref' })
+          }
+        }
+      }
+    }
+  }
+
+  return { nodes: Array.from(nodeMap.values()), edges }
+}
+
+/** Resolve a [[wikilink]] target slug to an actual node slug in the map.
+ *  Tries: exact match → filename-only match → partial path match. */
+function resolveWikilinkTarget(target: string, nodeMap: Map<string, WikiGraphNode>): string | null {
+  // Exact match
+  if (nodeMap.has(target)) return target
+  // Try with common prefixes
+  for (const prefix of ['entities/', 'concepts/', 'sources/links/', 'sources/images/', 'sources/videos/', 'sources/notes/', 'sources/']) {
+    const prefixed = prefix + target
+    if (nodeMap.has(prefixed)) return prefixed
+  }
+  // Filename-only match (last segment)
+  for (const slug of nodeMap.keys()) {
+    const parts = slug.split('/')
+    if (parts[parts.length - 1] === target) return slug
+  }
+  return null
+}
+
+/** Delete a wiki page. System files (SCHEMA, purpose, overview) cannot be deleted. */
+export function deleteWikiFile(relPath: string): boolean {
+  const PROTECTED = ['SCHEMA.md', 'purpose.md', 'overview.md']
+  if (PROTECTED.includes(relPath)) return false
+  const full = path.join(wikiRoot(), relPath)
+  if (!fs.existsSync(full)) return false
+  fs.unlinkSync(full)
+  return true
 }

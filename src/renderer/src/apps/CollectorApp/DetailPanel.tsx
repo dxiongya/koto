@@ -5,9 +5,10 @@
  * Image: full preview + OCR text + AI description
  */
 import { useEffect, useState, useCallback } from 'react'
-import { X, Copy, ExternalLink, Check, Link, Image, Video, Twitter, Monitor, Type, Clock, Folder, Tag } from 'lucide-react'
+import { X, Copy, ExternalLink, Check, Link, Image, Video, Twitter, Monitor, Type, Clock, Folder, Tag, FileEdit } from 'lucide-react'
 import type { CollectedItem } from '../../../../shared/types'
 import { getDomain, TYPE_ICONS, TYPE_LABELS } from './shared'
+import { useUIStore } from '../../store/useUIStore'
 
 export const DetailPanel: React.FC<{
   item: CollectedItem
@@ -145,17 +146,34 @@ export const DetailPanel: React.FC<{
               </div>
             )}
 
-            {/* Text content — full display with copy */}
+            {/* Text content — full display with copy + edit in notes */}
             {item.type === 'text' && (
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] text-tx-faint uppercase tracking-wider">Content</span>
-                  <button
-                    onClick={() => handleCopy(item.title)}
-                    className="flex items-center gap-1 px-2 py-1 text-[10px] text-tx-faint hover:text-accent-main border border-border-subtle rounded hover:border-accent-main/30 transition-colors"
-                  >
-                    {copied ? <><Check size={10} className="text-status-success" /> Copied</> : <><Copy size={10} /> Copy</>}
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={async () => {
+                        const liteHome = useUIStore.getState().liteHome
+                        const slug = item.title.split('\n')[0].slice(0, 50)
+                          .replace(/[^a-zA-Z0-9\u4e00-\u9fff\s-]/g, '')
+                          .trim().replace(/\s+/g, '-') || 'untitled'
+                        const notePath = `${liteHome}/notes/${slug}.md`
+                        await window.api.fs.writeFile(notePath, item.title)
+                        onClose()
+                        useUIStore.getState().openInApp('notes.app', notePath)
+                      }}
+                      className="flex items-center gap-1 px-2 py-1 text-[10px] text-tx-faint hover:text-accent-main border border-border-subtle rounded hover:border-accent-main/30 transition-colors"
+                    >
+                      <FileEdit size={10} /> Edit in Notes
+                    </button>
+                    <button
+                      onClick={() => handleCopy(item.title)}
+                      className="flex items-center gap-1 px-2 py-1 text-[10px] text-tx-faint hover:text-accent-main border border-border-subtle rounded hover:border-accent-main/30 transition-colors"
+                    >
+                      {copied ? <><Check size={10} className="text-status-success" /> Copied</> : <><Copy size={10} /> Copy</>}
+                    </button>
+                  </div>
                 </div>
                 <pre className="text-[13px] text-tx-main/90 leading-relaxed whitespace-pre-wrap bg-bg-app rounded-md p-3 max-h-[300px] overflow-y-auto">{item.title}</pre>
               </div>

@@ -180,6 +180,8 @@ export const IpcChannels = {
   WIKI_READ: 'wiki:read',
   WIKI_WRITE: 'wiki:write',
   WIKI_APPEND_LOG: 'wiki:appendLog',
+  WIKI_DELETE: 'wiki:delete',
+  WIKI_GRAPH: 'wiki:graph',
 
   // Task Scheduler
   TASK_LIST: 'task:list',

@@ -32,40 +32,104 @@ function getWikiProvider(): { provider: { id: string; name: string }; model: str
   return store.getAIProviderForFeature('chat')
 }
 
-/** Fetch a collector item's readable content (markdown, OCR, or note). */
-async function loadSourceContent(itemId: string): Promise<{
+/** Resource type categories the wiki cares about. */
+export type WikiResourceType = 'link' | 'image' | 'video' | 'text'
+
+/** Fully loaded source payload — type-aware, so the ingest pipeline can
+ *  branch on `resourceType` and pick an appropriate prompt + page layout. */
+export interface LoadedSource {
+  /** The underlying collector item type (link/image/video/tweet/text/screenshot). */
+  collectorType: string
+  /** Normalized high-level type the wiki reasons about. */
+  resourceType: WikiResourceType
   title: string
-  type: string
   url?: string
+  /** Main textual content — varies per type:
+   *    link/tweet → extracted markdown article
+   *    image/screenshot → visual description + OCR text
+   *    video → title + note/description
+   *    text → note body */
   content: string
-} | null> {
+  /** Image/video asset reference (wiki-internal path, for frontmatter). */
+  assetPath?: string
+  /** Raw image OCR text (only present for image/screenshot). */
+  ocrText?: string
+  /** Raw image visual description (only present for image/screenshot). */
+  imageDescription?: string
+}
+
+/** Map the 6 collector item types down to 4 wiki resource categories. */
+function classifyResource(collectorType: string): WikiResourceType {
+  if (collectorType === 'image' || collectorType === 'screenshot') return 'image'
+  if (collectorType === 'video') return 'video'
+  if (collectorType === 'link' || collectorType === 'tweet') return 'link'
+  return 'text'
+}
+
+/** Fetch a collector item and build a type-aware source payload. */
+async function loadSourceContent(itemId: string): Promise<LoadedSource | null> {
   // Use the collector Bus tool layer — respects the app's API surface
   const listRes = (await window.api.collector.list(1000, 0)) as { ok: boolean; data?: Array<Record<string, unknown>> }
   if (!listRes.ok || !listRes.data) return null
   const item = listRes.data.find((i) => i.id === itemId)
   if (!item) return null
 
-  const itemType = item.type as string
+  const collectorType = item.type as string
+  const resourceType = classifyResource(collectorType)
   const itemUrl = item.url as string | undefined
   const itemTitle = item.title as string
   const itemNote = item.note as string | undefined
+  const itemAssetPath = item.assetPath as string | undefined
+  const meta = (item.meta as Record<string, unknown>) || {}
+  const ocrText = typeof meta.ocrText === 'string' ? meta.ocrText : undefined
+  const imageDescription = typeof meta.imageDescription === 'string' ? meta.imageDescription : undefined
+  const metaDescription = typeof meta.description === 'string' ? meta.description : undefined
 
-  // For link/tweet types, try to get the extracted markdown
   let content = ''
-  if (itemUrl && (itemType === 'link' || itemType === 'tweet')) {
-    const mdRes = (await window.api.collector.getMarkdown(itemId)) as { ok: boolean; data?: string | null }
-    if (mdRes.ok && mdRes.data) content = mdRes.data
+
+  switch (resourceType) {
+    case 'link': {
+      // Prefer fetched markdown; fall back to og:description/note.
+      if (itemUrl) {
+        const mdRes = (await window.api.collector.getMarkdown(itemId)) as { ok: boolean; data?: string | null }
+        if (mdRes.ok && mdRes.data) content = mdRes.data
+      }
+      if (!content) content = [metaDescription, itemNote].filter(Boolean).join('\n\n')
+      break
+    }
+    case 'image': {
+      // Use visual description + OCR text (already merged into note by ocrAndDescribeItem,
+      // but build deterministically here so failure modes are predictable).
+      const parts: string[] = []
+      if (imageDescription) parts.push(`**Visual description:** ${imageDescription}`)
+      if (ocrText) parts.push(`**Extracted text:**\n${ocrText}`)
+      if (!parts.length && itemNote) parts.push(itemNote)
+      content = parts.join('\n\n')
+      break
+    }
+    case 'video': {
+      // No transcription pipeline yet — work with what's available.
+      content = [metaDescription, itemNote].filter(Boolean).join('\n\n')
+      break
+    }
+    case 'text': {
+      content = itemNote || ''
+      break
+    }
   }
-  // Fall back to note (which may contain description + OCR merged)
-  if (!content && itemNote) content = itemNote
-  // Last fallback: title
+
+  // Universal last-ditch fallback
   if (!content) content = itemTitle
 
   return {
+    collectorType,
+    resourceType,
     title: itemTitle,
-    type: itemType,
     url: itemUrl,
     content,
+    assetPath: itemAssetPath,
+    ocrText,
+    imageDescription,
   }
 }
 
@@ -98,12 +162,59 @@ async function callLLM(
 
 const LANGUAGE_RULE = 'Match the language of the source document. If the source is in Chinese, write in Chinese. If in English, write in English.'
 
-function buildAnalysisPrompt(purpose: string, index: string): string {
+/** Per-type guidance block injected into the analysis prompt. Each resource
+ *  type has different "what to extract" rules — e.g. an image's key entities
+ *  are visual objects, a link article's are people/orgs/technologies. */
+function resourceTypeGuidance(rt: WikiResourceType): string {
+  switch (rt) {
+    case 'link':
+      return [
+        '## Resource Type: LINK / ARTICLE',
+        'This source is an article or web page. Focus your extraction on:',
+        '- Named entities (people, orgs, products, tools, datasets)',
+        '- Concepts, methods, theories',
+        '- Main claims + cited evidence',
+        '- Publication/author context if derivable',
+      ].join('\n')
+    case 'image':
+      return [
+        '## Resource Type: IMAGE / SCREENSHOT',
+        'This source is a visual asset. You are given:',
+        '- A visual description (what the image depicts)',
+        '- OCR-extracted text (any readable text in the image)',
+        'Focus your extraction on:',
+        '- Visual subjects + setting (what / where / who is depicted)',
+        '- Text content (if it is a screenshot of an article, UI, slide, chart, etc.)',
+        '- Tools, UIs, brands, products visible in the frame',
+        '- Do NOT hallucinate details not present in the description or OCR',
+      ].join('\n')
+    case 'video':
+      return [
+        '## Resource Type: VIDEO',
+        'This source is a video clip. You only have its title + description — no transcript.',
+        'Be conservative: extract what the title/description reliably indicate, no more.',
+        'Mark anything uncertain as speculative.',
+      ].join('\n')
+    case 'text':
+      return [
+        '## Resource Type: TEXT / NOTE',
+        'This source is a user-authored note or pasted text. Treat it as first-person thinking.',
+        'Focus your extraction on:',
+        '- Core ideas and claims',
+        '- Entities the user references',
+        '- Questions or open threads the user is exploring',
+      ].join('\n')
+  }
+}
+
+function buildAnalysisPrompt(purpose: string, index: string, resourceType: WikiResourceType): string {
   return [
     'You are an expert research analyst building a personal wiki from source documents.',
     'Read the source and produce a structured analysis the wiki generator will use next.',
     '',
     LANGUAGE_RULE,
+    '',
+    resourceTypeGuidance(resourceType),
     '',
     'Your analysis MUST cover:',
     '',
@@ -137,14 +248,31 @@ function buildAnalysisPrompt(purpose: string, index: string): string {
   ].filter(Boolean).join('\n')
 }
 
+/** Each resource type lives under its own `sources/<type>/` subdirectory so
+ *  the wiki file tree mirrors the resource taxonomy. Slug stays the same so
+ *  source traceability (via frontmatter `sources: [<collectorItemId>]`) is
+ *  unaffected. */
+function sourceSubdirForType(rt: WikiResourceType): string {
+  switch (rt) {
+    case 'link':  return 'sources/links'
+    case 'image': return 'sources/images'
+    case 'video': return 'sources/videos'
+    case 'text':  return 'sources/notes'
+  }
+}
+
 function buildGenerationPrompt(
   schema: string,
   purpose: string,
   sourceTitle: string,
   sourceId: string,
+  resourceType: WikiResourceType,
+  assetPath: string | undefined,
 ): string {
   const today = new Date().toISOString().slice(0, 10)
   const baseName = sourceId.slice(0, 12)
+  const sourceDir = sourceSubdirForType(resourceType)
+  const sourcePath = `${sourceDir}/${baseName}.md`
 
   return [
     'You are a wiki maintainer. Based on the provided analysis, generate wiki files.',
@@ -161,13 +289,15 @@ function buildGenerationPrompt(
     '',
     '## What to Generate',
     '',
-    `1. **Source summary page** at \`sources/${baseName}.md\` — mandatory, always include`,
+    `1. **Source summary page** at \`${sourcePath}\` — mandatory, always include.`,
+    `   Resource type is **${resourceType}** — title/sections should reflect that.`,
     `2. **Entity pages** at \`entities/<slug>.md\` for each key entity from the analysis`,
     `3. **Concept pages** at \`concepts/<slug>.md\` for each key concept from the analysis`,
-    `4. **Updated \`index.md\`** — add new entries under their categories, PRESERVE existing entries, replace the entire index.md content`,
+    `4. **Updated \`index.md\`** — add new entries under their categories, PRESERVE existing entries, replace the entire index.md content.`,
+    `   IMPORTANT: sources are split by type under subfolders: \`sources/links/\`, \`sources/images/\`, \`sources/videos/\`, \`sources/notes/\`. Reflect that in the index.`,
     `5. **Log entry** at \`log.md\` — use the append format:`,
     `   ---FILE: log.md---`,
-    `   ## [${today}] ingest | ${sourceTitle}`,
+    `   ## [${today}] ingest ${resourceType} | ${sourceTitle}`,
     `   - (what was added)`,
     `   ---END FILE---`,
     `   (the system will append this to the existing log, do not include old entries)`,
@@ -187,11 +317,23 @@ function buildGenerationPrompt(
     '---',
     '```',
     '',
+    `Additional frontmatter required on the source summary page (\`${sourcePath}\`):`,
+    '```yaml',
+    `resourceType: ${resourceType}`,
+    assetPath ? `asset: "${assetPath}"` : '',
+    '```',
+    '',
     'Other rules:',
     '- Use `[[wikilink]]` syntax for cross-references (e.g. `[[alice]]`, `[[transformer-architecture]]`)',
     '- Use kebab-case slugs for filenames',
     '- Keep each page focused (≤ 500 words)',
     '- Cross-reference aggressively — the analysis found connections, encode them as wikilinks',
+    resourceType === 'image'
+      ? '- For the image source page: include the visual description AND the OCR text as separate sections. Do NOT invent details the description/OCR does not support.'
+      : '',
+    resourceType === 'video'
+      ? '- For the video source page: state clearly that no transcript is available, and keep claims conservative.'
+      : '',
     '',
     purpose ? `## Wiki Purpose (for context)\n${purpose}\n` : '',
     schema ? `## Wiki Schema (structural rules)\n${schema}\n` : '',
@@ -242,11 +384,13 @@ export async function runIngest(collectorItemId: string): Promise<IngestResult> 
       ? src.content.slice(0, 20000) + '\n\n[...truncated...]'
       : src.content
 
-    // 3. Step 1 — Analysis
-    const analysisSystem = buildAnalysisPrompt(purpose, index)
+    // 3. Step 1 — Analysis (resource-type aware)
+    const analysisSystem = buildAnalysisPrompt(purpose, index, src.resourceType)
     const analysisUser = [
       `Source title: **${src.title}**`,
+      `Resource type: **${src.resourceType}** (collector type: ${src.collectorType})`,
       src.url ? `Source URL: ${src.url}` : '',
+      src.assetPath ? `Asset path (wiki-internal): ${src.assetPath}` : '',
       '',
       '--- SOURCE CONTENT ---',
       '',
@@ -254,10 +398,18 @@ export async function runIngest(collectorItemId: string): Promise<IngestResult> 
     ].filter(Boolean).join('\n')
     const analysis = await callLLM(analysisSystem, analysisUser)
 
-    // 4. Step 2 — Generation
-    const generationSystem = buildGenerationPrompt(schema, purpose, src.title, collectorItemId)
+    // 4. Step 2 — Generation (resource-type aware)
+    const generationSystem = buildGenerationPrompt(
+      schema,
+      purpose,
+      src.title,
+      collectorItemId,
+      src.resourceType,
+      src.assetPath,
+    )
     const generationUser = [
       `Generate the wiki files for source **${src.title}** (ID: ${collectorItemId}).`,
+      `Resource type: **${src.resourceType}**`,
       '',
       '## Analysis from Step 1',
       '',
@@ -284,15 +436,20 @@ export async function runIngest(collectorItemId: string): Promise<IngestResult> 
       }
     }
 
-    // Fallback: if no source summary was generated, create a minimal one
+    // Fallback: if no source summary was generated, create a minimal one.
+    // Use the resource-type subdirectory so the file tree stays consistent.
     const hasSummary = writtenPaths.some((p) => p.startsWith('sources/'))
     if (!hasSummary) {
       const baseName = collectorItemId.slice(0, 12)
       const today = new Date().toISOString().slice(0, 10)
+      const subdir = sourceSubdirForType(src.resourceType)
+      const relPath = `${subdir}/${baseName}.md`
       const fallback = [
         '---',
         `title: "${src.title}"`,
         'type: source',
+        `resourceType: ${src.resourceType}`,
+        src.assetPath ? `asset: "${src.assetPath}"` : '',
         `created: ${today}`,
         `updated: ${today}`,
         'tags: []',
@@ -302,13 +459,19 @@ export async function runIngest(collectorItemId: string): Promise<IngestResult> 
         '',
         `# ${src.title}`,
         '',
-        src.url ? `**Source:** ${src.url}\n` : '',
+        src.url ? `**Source URL:** ${src.url}\n` : '',
+        src.resourceType === 'image' && src.imageDescription
+          ? `## Visual Description\n\n${src.imageDescription}\n`
+          : '',
+        src.resourceType === 'image' && src.ocrText
+          ? `## Extracted Text (OCR)\n\n${src.ocrText}\n`
+          : '',
         '## Analysis',
         '',
         analysis.slice(0, 3000),
       ].filter(Boolean).join('\n')
-      await window.api.wiki.write(`sources/${baseName}.md`, fallback)
-      writtenPaths.push(`sources/${baseName}.md`)
+      await window.api.wiki.write(relPath, fallback)
+      writtenPaths.push(relPath)
     }
 
     store.updateStatus(collectorItemId, {

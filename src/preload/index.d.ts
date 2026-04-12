@@ -161,6 +161,11 @@ export interface WikiAPI {
   read: (relPath: string) => Promise<IpcResult<string | null>>
   write: (relPath: string, content: string) => Promise<IpcResult<void>>
   appendLog: (entry: string) => Promise<IpcResult<void>>
+  delete: (relPath: string) => Promise<IpcResult<void>>
+  graph: () => Promise<IpcResult<{
+    nodes: Array<{ id: string; relPath: string; title: string; type: string; resourceType?: string }>
+    edges: Array<{ source: string; target: string; type: string }>
+  }>>
 }
 
 export interface EventsAPI {

@@ -297,6 +297,8 @@ const api = {
     write: (relPath: string, content: string) =>
       ipcRenderer.invoke(IpcChannels.WIKI_WRITE, relPath, content),
     appendLog: (entry: string) => ipcRenderer.invoke(IpcChannels.WIKI_APPEND_LOG, entry),
+    delete: (relPath: string) => ipcRenderer.invoke(IpcChannels.WIKI_DELETE, relPath),
+    graph: () => ipcRenderer.invoke(IpcChannels.WIKI_GRAPH),
   },
   task: {
     list: (appId?: string) => ipcRenderer.invoke(IpcChannels.TASK_LIST, appId),

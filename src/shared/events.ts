@@ -2,7 +2,7 @@
  * App Events — cross-app notifications broadcast via AppBus.
  *
  * Events flow main → renderer → AppBus. Any app can subscribe via
- * `bus.on('collector:item-enriched', handler)` in its `onRegister()`.
+ * `bus.on('collector:item-ready', handler)` in its `onRegister()`.
  *
  * Events are intentionally narrow. They carry IDs + type info, not full
  * payloads — subscribers fetch data via Bus tools (e.g. `collector.getMarkdown`)
@@ -19,15 +19,24 @@ export type CollectorItemAdded = {
   group: string
 }
 
-export type CollectorItemEnriched = {
-  type: 'collector:item-enriched'
+/**
+ * Fired when a collector item is "ready" — meaning all its background
+ * enrichment (OCR for images, markdown fetch for links, etc.) has completed
+ * and downstream consumers (wiki, search, AI) can safely use its content.
+ *
+ * Collector owns this state. A single `item-ready` event replaces the
+ * previous split of "added" + "enriched" — subscribers that just want usable
+ * content should listen here.
+ */
+export type CollectorItemReady = {
+  type: 'collector:item-ready'
   itemId: string
-  itemType: string
+  itemType: 'link' | 'image' | 'video' | 'tweet' | 'text' | 'screenshot'
   /** Whether markdown was fetched (for link/tweet types) */
   hasMarkdown: boolean
-  /** Whether OCR text was extracted (for image types) */
+  /** Whether OCR text was extracted (for image/screenshot types) */
   hasOcr: boolean
-  /** Whether the item's description was populated via og:description or AI */
+  /** Whether a description (og:description, AI summary, user note) is present */
   hasDescription: boolean
 }
 
@@ -45,7 +54,7 @@ export type CollectorItemDeleted = {
 
 export type CollectorEvent =
   | CollectorItemAdded
-  | CollectorItemEnriched
+  | CollectorItemReady
   | CollectorItemUpdated
   | CollectorItemDeleted
 

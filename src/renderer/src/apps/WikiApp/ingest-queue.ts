@@ -31,7 +31,8 @@ export const useWikiIngestStore = create<WikiIngestStore>((set) => ({
   queue: [],
   autoIngest: true, // default ON per user request
   enqueue: (item) => set((s) => {
-    if (s.queue.some((q) => q.itemId === item.itemId && q.status === 'pending')) return s
+    // Dedup: skip if already pending or running (not just pending)
+    if (s.queue.some((q) => q.itemId === item.itemId && (q.status === 'pending' || q.status === 'running'))) return s
     return { queue: [...s.queue, { ...item, status: 'pending' }] }
   }),
   updateStatus: (itemId, patch) => set((s) => ({

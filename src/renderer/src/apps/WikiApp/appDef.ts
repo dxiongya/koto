@@ -5,7 +5,9 @@
  *   - Collector holds raw sources (links, images, tweets, text)
  *   - Wiki reads those sources (via collector Bus tools) and maintains an
  *     interlinked markdown knowledge base at {liteHome}/wiki/
- *   - Triggered by `collector:item-enriched` events from Collector
+ *   - Triggered by `collector:item-ready` events from Collector
+ *     (Collector owns the "is this item fully enriched yet?" decision — we
+ *      just react. See main/core/event-bus.ts → isCollectorItemReady.)
  *   - Uses AI feature route `wiki` (user-configurable, typically a cheap model)
  *
  * This appDef subscribes to collector events and exposes Bus tools so other
@@ -33,6 +35,10 @@ export const wikiAppDefinition: AppDefinition = {
   onRegister: (api) => {
     const bus = api.bus
 
+    // Guard against double-registration (can happen during Vite HMR)
+    if ((window as Record<string, unknown>).__wikiAppRegistered) return
+    ;(window as Record<string, unknown>).__wikiAppRegistered = true
+
     // Initialize wiki directory lazily on first subscription
     let initialized = false
     const ensureInit = async (): Promise<void> => {
@@ -46,7 +52,8 @@ export const wikiAppDefinition: AppDefinition = {
 
     // ── Subscribe to collector events ────────────────────────────────
 
-    bus.on('collector:item-enriched', async (rawEvent: unknown) => {
+    bus.on('collector:item-ready', async (rawEvent: unknown) => {
+      console.log('[Wiki] received collector:item-ready', rawEvent)
       await ensureInit()
       const event = rawEvent as {
         itemId: string
@@ -56,6 +63,7 @@ export const wikiAppDefinition: AppDefinition = {
         hasDescription: boolean
       }
       if (!event?.itemId) return
+      console.log(`[Wiki] enqueuing ingest for ${event.itemId} (${event.itemType}), auto=${getAutoIngest()}`)
       // Enqueue for ingest. If auto-ingest is on, runIngest fires in background.
       enqueueIngest({
         itemId: event.itemId,

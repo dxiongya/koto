@@ -23,7 +23,7 @@ import { listCollectedItems, countCollectedItems, findDuplicateByUrl, findDuplic
 import { listTasks, createTask, updateTask, deleteTask, type TaskCreateInput, type ScheduledTask } from './task-store'
 import { taskScheduler } from './task-scheduler'
 import { embedAllPending, embedAndSave } from './collector-embedding'
-import { emitAppEvent } from './event-bus'
+import { emitAppEvent, emitItemReadyIfReady } from './event-bus'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
 
 /** Decode common HTML entities */
@@ -877,9 +877,7 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_ADD, (_, input: CollectorAddInput) => {
     try {
       const item = addCollectedItem(input)
-      // Emit an 'added' event. If the item has no further enrichment coming
-      // (text paste, image with no OCR pipeline), also emit 'enriched' so
-      // subscribers can treat it as ready-to-ingest.
+      // 'added' = UI reactivity signal (list refresh, toast).
       emitAppEvent({
         type: 'collector:item-added',
         itemId: item.id,
@@ -887,17 +885,11 @@ export function setupIpcHandlers(): void {
         title: item.title,
         group: item.group,
       })
-      const needsAsyncEnrichment = !!item.url && (item.type === 'link' || item.type === 'tweet')
-      if (!needsAsyncEnrichment) {
-        emitAppEvent({
-          type: 'collector:item-enriched',
-          itemId: item.id,
-          itemType: item.type,
-          hasMarkdown: false,
-          hasOcr: !!(item.meta as Record<string, unknown>)?.ocrText,
-          hasDescription: !!((item.meta as Record<string, unknown>)?.description) || !!item.note,
-        })
-      }
+      // 'ready' = content-is-usable signal. Emitted here ONLY if the item
+      // already satisfies its readiness rule on add (plain text, videos,
+      // items pasted with pre-filled OCR, etc.). Otherwise the enrichment
+      // pipeline (fetchMarkdown, ocrAndDescribeItem) emits it later.
+      emitItemReadyIfReady(item)
       return { ok: true, data: item }
     } catch (e) {
       return { ok: false, error: String(e) }
@@ -1014,19 +1006,13 @@ export function setupIpcHandlers(): void {
     try {
       const filePath = await fetchAndSaveMarkdown(itemId, url)
       if (filePath) {
-        // Markdown fetched — item is now "enriched" and ready for wiki ingest.
-        // Look up the item to populate event metadata.
-        const items = listCollectedItems()
-        const item = items.find((i) => i.id === itemId)
+        // Mark the item as having markdown so the readiness rule passes,
+        // then emit ready. This keeps the rule centralized in event-bus.
+        const item = listCollectedItems().find((i) => i.id === itemId)
         if (item) {
-          emitAppEvent({
-            type: 'collector:item-enriched',
-            itemId,
-            itemType: item.type,
-            hasMarkdown: true,
-            hasOcr: !!(item.meta as Record<string, unknown>)?.ocrText,
-            hasDescription: !!((item.meta as Record<string, unknown>)?.description) || !!item.note,
-          })
+          const meta = { ...(item.meta || {}), hasMarkdown: true, markdownFetched: true }
+          const updated = updateCollectedItem(itemId, { meta })
+          if (updated) emitItemReadyIfReady(updated)
         }
       }
       return filePath ? { ok: true, data: filePath } : { ok: false, error: 'Failed to fetch markdown' }
@@ -1120,6 +1106,25 @@ export function setupIpcHandlers(): void {
       const { appendLog } = await import('./wiki-store')
       appendLog(entry)
       return { ok: true, data: undefined }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_DELETE, async (_, relPath: string) => {
+    try {
+      const { deleteWikiFile } = await import('./wiki-store')
+      const ok = deleteWikiFile(relPath)
+      return ok ? { ok: true, data: undefined } : { ok: false, error: 'Protected or not found' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_GRAPH, async () => {
+    try {
+      const { getWikiGraph } = await import('./wiki-store')
+      return { ok: true, data: getWikiGraph() }
     } catch (e) {
       return { ok: false, error: String(e) }
     }
