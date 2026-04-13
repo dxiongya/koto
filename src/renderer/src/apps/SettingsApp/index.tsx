@@ -430,28 +430,28 @@ const AppsSection: React.FC = () => {
           const hasSettings = m.id === 'notes.app'
           const isExpanded = expandedApp === m.id
           return (
-            <div key={m.id} className={`group rounded-lg border transition-colors ${enabled ? 'border-border-subtle' : 'border-transparent opacity-50'}`}>
+            <div key={m.id} className={`rounded-lg border transition-colors ${enabled ? 'border-border-subtle' : 'border-transparent opacity-50'}`}>
               <div className="flex items-center gap-3 px-3 py-2.5">
-                <button
-                  onClick={() => hasSettings ? setExpandedApp(isExpanded ? null : m.id) : undefined}
-                  className={`flex-1 min-w-0 text-left ${hasSettings ? 'cursor-pointer' : 'cursor-default'}`}
-                >
+                <div className="flex flex-col gap-0.5 shrink-0">
+                  <button onClick={() => moveUp(m.id)} disabled={idx === 0} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▲</button>
+                  <button onClick={() => moveDown(m.id)} disabled={idx === allApps.length - 1} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▼</button>
+                </div>
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-[13px] text-tx-main font-medium">{m.name}</span>
                     {m.builtin !== false && <span className="text-[9px] text-tx-faint bg-bg-active px-1.5 py-0.5 rounded">built-in</span>}
-                    {hasSettings && (
-                      isExpanded
-                        ? <ChevronDown size={11} className="text-tx-faint" />
-                        : <ChevronRight size={11} className="text-tx-faint" />
-                    )}
                   </div>
                   <div className="text-[11px] text-tx-faint truncate mt-0.5">{m.description}</div>
-                </button>
-                {/* Reorder: only on hover */}
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button onClick={() => moveUp(m.id)} disabled={idx === 0} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none p-0.5">▲</button>
-                  <button onClick={() => moveDown(m.id)} disabled={idx === allApps.length - 1} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none p-0.5">▼</button>
                 </div>
+                {hasSettings && enabled && (
+                  <button
+                    onClick={() => setExpandedApp(isExpanded ? null : m.id)}
+                    className="shrink-0 text-[11px] text-tx-faint hover:text-accent-main transition-colors flex items-center gap-1"
+                  >
+                    {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                    Configure
+                  </button>
+                )}
                 <button
                   onClick={() => toggle(m.id)}
                   className={`shrink-0 w-9 h-5 rounded-full transition-colors relative ${enabled ? 'bg-accent-main' : 'bg-border-strong'}`}
