@@ -1,0 +1,36 @@
+/**
+ * Serif — reading-focused theme with serif font, relaxed spacing.
+ * Ideal for long-form writing and documentation.
+ */
+.markdown-body {
+  --md-font-family: 'Georgia', 'Noto Serif', 'Times New Roman', serif;
+  --md-font-size: 17px;
+  --md-line-height: 1.9;
+
+  --md-h1-size: 1.75em;
+  --md-h1-weight: 700;
+  --md-h1-mt: 2em;
+  --md-h1-mb: 0.8em;
+
+  --md-h2-size: 1.4em;
+  --md-h2-weight: 700;
+  --md-h2-mt: 1.6em;
+  --md-h2-mb: 0.6em;
+
+  --md-h3-size: 1.2em;
+  --md-h3-weight: 600;
+
+  --md-p-margin: 0.8em;
+
+  --md-quote-border-color: rgba(94, 234, 212, 0.3);
+  --md-quote-font-style: italic;
+  --md-quote-color: var(--tx-muted);
+
+  --md-link-decoration: underline;
+
+  --md-bold-weight: 700;
+
+  --md-list-indent: 1.8em;
+
+  --md-hr-margin: 2em 0;
+}

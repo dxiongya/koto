@@ -1,0 +1,107 @@
+/**
+ * Markdown CSS Variables — themeable foundation for the notes editor.
+ *
+ * Override any of these inside a theme CSS file:
+ *   .markdown-body { --md-font-size: 18px; }
+ *
+ * All visual markdown styles reference these variables.
+ * Default values inherit from the app theme (--tx-main, --bg-hover, etc.)
+ * so the markdown look stays consistent with the global palette.
+ */
+
+.markdown-body {
+  /* ── Typography ─────────────────────────────────────────── */
+  --md-font-family: inherit;
+  --md-font-family-code: 'SF Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --md-font-size: 15px;
+  --md-line-height: 1.8;
+  --md-color: var(--tx-main);
+
+  /* ── Headings ───────────────────────────────────────────── */
+  --md-h1-size: 1.6em;
+  --md-h1-weight: 700;
+  --md-h1-color: var(--tx-main);
+  --md-h1-mt: 1.5em;
+  --md-h1-mb: 0.6em;
+
+  --md-h2-size: 1.3em;
+  --md-h2-weight: 600;
+  --md-h2-color: var(--tx-main);
+  --md-h2-mt: 1.3em;
+  --md-h2-mb: 0.5em;
+
+  --md-h3-size: 1.125em;
+  --md-h3-weight: 600;
+  --md-h3-color: var(--tx-main);
+  --md-h3-mt: 1.1em;
+  --md-h3-mb: 0.4em;
+
+  --md-h4-size: 1em;
+  --md-h4-weight: 600;
+  --md-h4-color: var(--tx-muted);
+  --md-h4-mt: 1em;
+  --md-h4-mb: 0.3em;
+
+  /* ── Paragraph ──────────────────────────────────────────── */
+  --md-p-margin: 0.5em;
+
+  /* ── Blockquote ─────────────────────────────────────────── */
+  --md-quote-border-color: rgba(91, 164, 164, 0.4);
+  --md-quote-border-width: 4px;
+  --md-quote-bg: transparent;
+  --md-quote-padding: 0 0 0 1em;
+  --md-quote-color: var(--tx-muted);
+  --md-quote-font-style: italic;
+
+  /* ── Code Block ─────────────────────────────────────────── */
+  --md-code-bg: var(--bg-popover);
+  --md-code-border: 1px solid var(--border-subtle);
+  --md-code-radius: 0.5rem;
+  --md-code-padding: 1rem;
+  --md-code-font-size: 13px;
+
+  /* ── Inline Code ────────────────────────────────────────── */
+  --md-inline-code-bg: var(--bg-active);
+  --md-inline-code-color: var(--accent-main);
+  --md-inline-code-radius: 0.25rem;
+  --md-inline-code-padding: 0.1em 0.4em;
+  --md-inline-code-font-size: 0.9em;
+
+  /* ── Links ──────────────────────────────────────────────── */
+  --md-link-color: #5BA4A4;
+  --md-link-hover-color: #7ec8c8;
+  --md-link-decoration: underline;
+
+  /* ── Bold / Italic / Strikethrough ──────────────────────── */
+  --md-bold-weight: 700;
+  --md-bold-color: var(--tx-main);
+  --md-italic-style: italic;
+  --md-strike-decoration: line-through;
+  --md-strike-opacity: 0.6;
+
+  /* ── Highlight ──────────────────────────────────────────── */
+  --md-highlight-bg: rgba(94, 234, 212, 0.2);
+  --md-highlight-color: var(--accent-main);
+
+  /* ── Lists ──────────────────────────────────────────────── */
+  --md-list-indent: 1.5em;
+  --md-list-marker-color: var(--accent-main);
+  --md-list-item-margin: 0.25em;
+
+  /* ── Table ──────────────────────────────────────────────── */
+  --md-table-border-color: var(--border-strong);
+  --md-table-header-bg: var(--bg-hover);
+  --md-table-header-weight: 500;
+  --md-table-cell-padding: 0.4rem 0.75rem;
+  --md-table-font-size: 0.9em;
+
+  /* ── Horizontal Rule ────────────────────────────────────── */
+  --md-hr-color: var(--border-subtle);
+  --md-hr-height: 1px;
+  --md-hr-margin: 1.5em 0;
+
+  /* ── Hashtag ────────────────────────────────────────────── */
+  --md-hashtag-bg: rgba(94, 234, 212, 0.15);
+  --md-hashtag-color: var(--accent-main);
+  --md-hashtag-radius: 0.375rem;
+}

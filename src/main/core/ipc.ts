@@ -613,6 +613,21 @@ export function setupIpcHandlers(): void {
     return { ok: true, data: result.filePaths[0] }
   })
 
+  ipcMain.handle(IpcChannels.DIALOG_SELECT_FILE, async (_, filters?: Array<{ name: string; extensions: string[] }>) => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return { ok: false, error: 'No focused window' }
+
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      filters: filters || [{ name: 'All Files', extensions: ['*'] }],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, error: 'cancelled' }
+    }
+    return { ok: true, data: result.filePaths[0] }
+  })
+
   // ── AI ──
 
   ipcMain.handle(

@@ -1749,6 +1749,108 @@ const SkillsSection: React.FC = () => {
   )
 }
 
+// ── Markdown Theme Section ──
+
+const MarkdownThemeSection: React.FC = () => {
+  const markdownTheme = useUIStore((s) => s.markdownTheme)
+  const setMarkdownTheme = useUIStore((s) => s.setMarkdownTheme)
+  const liteHome = useUIStore((s) => s.liteHome)
+  const [userThemes, setUserThemes] = useState<string[]>([])
+
+  // Scan user themes directory
+  useEffect(() => {
+    if (!liteHome) return
+    window.api.fs.readDir(`${liteHome}/themes/md`).then((res) => {
+      if (res.ok && res.data) {
+        const cssFiles = (res.data as Array<{ name: string; isDirectory: boolean }>)
+          .filter((f) => !f.isDirectory && f.name.endsWith('.css'))
+          .map((f) => f.name)
+        setUserThemes(cssFiles)
+      }
+    }).catch(() => {})
+  }, [liteHome, markdownTheme])
+
+  const builtinThemes = [
+    { id: 'default', name: 'Default', desc: 'Inherits app theme — monospace, dark' },
+    { id: 'github', name: 'GitHub', desc: 'Sans-serif, larger headings' },
+    { id: 'serif', name: 'Serif', desc: 'Reading-focused, relaxed spacing' },
+    { id: 'compact', name: 'Compact', desc: 'Tight spacing, smaller text' },
+  ]
+
+  const handleImport = async () => {
+    const res = await window.api.dialog.selectFile([{ name: 'CSS Files', extensions: ['css'] }])
+    if (!res.ok || !res.data || !liteHome) return
+    const srcPath = res.data
+    const fileName = srcPath.split('/').pop() || 'imported.css'
+    // Read source file
+    const readRes = await window.api.fs.readFile(srcPath)
+    if (!readRes.ok) return
+    // Write to themes/md/
+    const destPath = `${liteHome}/themes/md/${fileName}`
+    await window.api.fs.writeFile(destPath, readRes.data)
+    setMarkdownTheme(fileName)
+  }
+
+  return (
+    <section className="mb-10">
+      <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Markdown Theme</h2>
+      <p className="text-xs text-tx-faint mb-3">
+        Controls how headings, text, code blocks, and other markdown elements look in the editor.
+        Import Typora-compatible CSS themes or create your own.
+      </p>
+      <div className="space-y-1 mb-3">
+        {builtinThemes.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setMarkdownTheme(t.id)}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md text-left transition-colors ${
+              markdownTheme === t.id
+                ? 'bg-accent-main/10 text-accent-main'
+                : 'text-tx-main hover:bg-bg-hover'
+            }`}
+          >
+            <div>
+              <div className="text-sm">{t.name}</div>
+              <div className="text-xs text-tx-faint mt-0.5">{t.desc}</div>
+            </div>
+            {markdownTheme === t.id && (
+              <Check size={14} className="text-accent-main shrink-0 ml-3" />
+            )}
+          </button>
+        ))}
+
+        {/* User themes */}
+        {userThemes.map((fileName) => (
+          <button
+            key={fileName}
+            onClick={() => setMarkdownTheme(fileName)}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md text-left transition-colors ${
+              markdownTheme === fileName
+                ? 'bg-accent-main/10 text-accent-main'
+                : 'text-tx-main hover:bg-bg-hover'
+            }`}
+          >
+            <div>
+              <div className="text-sm">{fileName.replace(/\.css$/, '')}</div>
+              <div className="text-xs text-tx-faint mt-0.5">Custom theme</div>
+            </div>
+            {markdownTheme === fileName && (
+              <Check size={14} className="text-accent-main shrink-0 ml-3" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      <button
+        onClick={handleImport}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-tx-muted border border-border-subtle rounded-md hover:text-tx-main hover:border-border-strong transition-colors"
+      >
+        Import CSS Theme
+      </button>
+    </section>
+  )
+}
+
 // ── Storage Section ──
 
 const StorageSection: React.FC = () => {
@@ -2116,6 +2218,7 @@ const SettingsApp: React.FC = () => {
           </div>
         </section>
 
+          <MarkdownThemeSection />
           <StorageSection />
           <AboutSection />
         </>)}

@@ -84,6 +84,9 @@ body {
   overflow: hidden;
 }
 
+/* ─── Markdown Theme (CSS Variables + Base Styles) ──────────────────── */
+@import '../apps/NotesApp/styles/md-base.css';
+
 /* ─── Callout blocks ─────────────────────────────────────────────────── */
 .editor-callout {
   position: relative;

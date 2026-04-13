@@ -133,6 +133,10 @@ interface UIState {
   // MCP Servers
   mcpServers: MCPServerConfig[]
 
+  // Markdown theme
+  markdownTheme: string
+  setMarkdownTheme: (themeId: string) => void
+
   // First-run welcome dialog
   hasSeenWelcome: boolean
   setHasSeenWelcome: (seen: boolean) => void
@@ -259,6 +263,11 @@ export const useUIStore = create<UIState>((set, get) => ({
   recentFiles: [],
   ai: { ...DEFAULT_AI_SETTINGS },
   mcpServers: [],
+  markdownTheme: 'default',
+  setMarkdownTheme: (themeId: string) => {
+    set({ markdownTheme: themeId })
+    persistState({ markdownTheme: themeId })
+  },
   hasSeenWelcome: false,
   setHasSeenWelcome: (seen: boolean) => {
     set({ hasSeenWelcome: seen })

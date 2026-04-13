@@ -67,6 +67,8 @@ const api = {
     selectImages: () => ipcRenderer.invoke(IpcChannels.DIALOG_SELECT_IMAGES),
     selectVideos: () => ipcRenderer.invoke(IpcChannels.DIALOG_SELECT_VIDEOS),
     selectFolder: () => ipcRenderer.invoke(IpcChannels.DIALOG_SELECT_FOLDER),
+    selectFile: (filters?: Array<{ name: string; extensions: string[] }>) =>
+      ipcRenderer.invoke(IpcChannels.DIALOG_SELECT_FILE, filters),
   },
   url: {
     fetchMeta: (url: string) =>
