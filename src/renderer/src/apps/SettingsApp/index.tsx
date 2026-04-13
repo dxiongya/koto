@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react'
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useUIStore } from '../../store/useUIStore'
 import { builtinThemes, getThemeGroups, fontList } from '../../themes'
 import type { FontId, ThemeDefinition } from '../../themes'
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { ScheduledTasksSection } from '../../components/ScheduledTasksSection'
 import { getAppRegistry } from '../../core/AppContext'
+import { builtinMdThemes } from '../NotesApp/themes'
 
 /** Mini app preview using a theme's colors */
 const ThemePreview: React.FC<{ t: ThemeDefinition }> = ({ t }) => (
@@ -1769,11 +1770,48 @@ const SkillsSection: React.FC = () => {
 
 // ── Per-App Settings: Notes ──
 
+// ── Markdown Theme Preview ──
+
+const MD_PREVIEW_HTML = `<h1>Heading One</h1>
+<h2>Second Heading</h2>
+<p>A paragraph with <strong>bold text</strong>, <em>italic text</em>, and <code class="editor-text-code">inline code</code>. Here's a <a href="#">link example</a> and <del>strikethrough</del>.</p>
+<blockquote><p>Blockquotes stand out from the main text with a distinctive border.</p></blockquote>
+<h3>Lists &amp; Code</h3>
+<ul><li>First item with <strong>emphasis</strong></li><li>Second item</li></ul>
+<pre style="padding:0.75rem;border-radius:0.375rem;overflow:hidden"><code>function greet(name) {
+  return \`Hello, \${name}!\`;
+}</code></pre>`
+
+const MdThemePreview: React.FC<{ themeCss: string }> = ({ themeCss }) => {
+  const previewRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!previewRef.current) return
+    let styleEl = previewRef.current.querySelector('style[data-preview]') as HTMLStyleElement | null
+    if (!styleEl) {
+      styleEl = document.createElement('style')
+      styleEl.setAttribute('data-preview', 'true')
+      previewRef.current.prepend(styleEl)
+    }
+    styleEl.textContent = themeCss
+  }, [themeCss])
+
+  return (
+    <div
+      ref={previewRef}
+      className="markdown-body rounded-lg border border-border-subtle bg-bg-app p-4 overflow-hidden max-h-[280px] overflow-y-auto scroll-thin"
+      dangerouslySetInnerHTML={{ __html: MD_PREVIEW_HTML }}
+    />
+  )
+}
+
 const NotesAppSettings: React.FC = () => {
   const markdownTheme = useUIStore((s) => s.markdownTheme)
   const setMarkdownTheme = useUIStore((s) => s.setMarkdownTheme)
   const liteHome = useUIStore((s) => s.liteHome)
   const [userThemes, setUserThemes] = useState<string[]>([])
+  const [previewThemeId, setPreviewThemeId] = useState<string | null>(null)
+  const [userThemeCssCache, setUserThemeCssCache] = useState<Record<string, string>>({})
 
   // Scan user themes directory
   useEffect(() => {
@@ -1795,6 +1833,25 @@ const NotesAppSettings: React.FC = () => {
     { id: 'compact', name: 'Compact', desc: 'Tight spacing, smaller text' },
   ]
 
+  // Resolve CSS for preview
+  const previewCss = useMemo(() => {
+    const tid = previewThemeId ?? markdownTheme
+    // Built-in?
+    const builtin = builtinMdThemes.find((t) => t.id === tid)
+    if (builtin) return builtin.css
+    // User theme from cache
+    return userThemeCssCache[tid] || ''
+  }, [previewThemeId, markdownTheme, userThemeCssCache])
+
+  // Load user theme CSS on hover
+  const handleHoverUserTheme = useCallback((fileName: string) => {
+    setPreviewThemeId(fileName)
+    if (userThemeCssCache[fileName] || !liteHome) return
+    window.api.fs.readFile(`${liteHome}/themes/md/${fileName}`).then((res) => {
+      if (res.ok) setUserThemeCssCache((prev) => ({ ...prev, [fileName]: res.data }))
+    }).catch(() => {})
+  }, [liteHome, userThemeCssCache])
+
   const handleImport = async () => {
     const res = await window.api.dialog.selectFile([{ name: 'CSS Files', extensions: ['css'] }])
     if (!res.ok || !res.data || !liteHome) return
@@ -1814,14 +1871,17 @@ const NotesAppSettings: React.FC = () => {
   return (
     <div>
       <h3 className="text-tx-muted text-[11px] font-medium uppercase tracking-wider mb-2">Markdown Theme</h3>
-      <p className="text-[11px] text-tx-faint mb-3">
-        Controls typography, spacing, and colors of markdown content. Supports Typora-compatible CSS.
-      </p>
-      <div className="space-y-0.5 mb-3">
+
+      {/* Live Preview */}
+      <MdThemePreview themeCss={previewCss} />
+
+      <div className="space-y-0.5 mt-3 mb-3">
         {mdThemes.map((t) => (
           <button
             key={t.id}
             onClick={() => setMarkdownTheme(t.id)}
+            onMouseEnter={() => setPreviewThemeId(t.id)}
+            onMouseLeave={() => setPreviewThemeId(null)}
             className={`w-full flex items-center justify-between px-2.5 py-2 rounded text-left transition-colors ${
               markdownTheme === t.id
                 ? 'bg-accent-main/10 text-accent-main'
@@ -1842,6 +1902,8 @@ const NotesAppSettings: React.FC = () => {
           <button
             key={fileName}
             onClick={() => setMarkdownTheme(fileName)}
+            onMouseEnter={() => handleHoverUserTheme(fileName)}
+            onMouseLeave={() => setPreviewThemeId(null)}
             className={`w-full flex items-center justify-between px-2.5 py-2 rounded text-left transition-colors ${
               markdownTheme === fileName
                 ? 'bg-accent-main/10 text-accent-main'
