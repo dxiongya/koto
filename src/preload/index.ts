@@ -259,6 +259,11 @@ const api = {
       getScript: (groupName: string) => ipcRenderer.invoke(IpcChannels.COLLECTOR_SYNC_GET_SCRIPT, groupName),
       setScript: (groupName: string, source: string) => ipcRenderer.invoke(IpcChannels.COLLECTOR_SYNC_SET_SCRIPT, groupName, source),
       listAdapters: () => ipcRenderer.invoke(IpcChannels.COLLECTOR_SYNC_LIST_ADAPTERS),
+      onEvent: (callback: (event: unknown) => void) => {
+        const handler = (_: unknown, data: unknown) => callback(data)
+        ipcRenderer.on(IpcChannels.COLLECTOR_SYNC_RUN_EVENT, handler)
+        return () => ipcRenderer.removeListener(IpcChannels.COLLECTOR_SYNC_RUN_EVENT, handler)
+      },
     },
     checkDuplicate: (url: string) => ipcRenderer.invoke(IpcChannels.COLLECTOR_CHECK_DUPLICATE, url),
     checkDuplicateHash: (data: ArrayBuffer) => ipcRenderer.invoke(IpcChannels.COLLECTOR_CHECK_DUPLICATE_HASH, data),
@@ -288,6 +293,7 @@ const api = {
       ipcRenderer.invoke(IpcChannels.COLLECTOR_RENAME_GROUP, oldName, newName),
     deleteGroup: (name: string) =>
       ipcRenderer.invoke(IpcChannels.COLLECTOR_DELETE_GROUP, name),
+    reset: () => ipcRenderer.invoke(IpcChannels.COLLECTOR_RESET),
   },
   wiki: {
     init: () => ipcRenderer.invoke(IpcChannels.WIKI_INIT),
@@ -299,6 +305,7 @@ const api = {
     appendLog: (entry: string) => ipcRenderer.invoke(IpcChannels.WIKI_APPEND_LOG, entry),
     delete: (relPath: string) => ipcRenderer.invoke(IpcChannels.WIKI_DELETE, relPath),
     graph: () => ipcRenderer.invoke(IpcChannels.WIKI_GRAPH),
+    reset: () => ipcRenderer.invoke(IpcChannels.WIKI_RESET),
   },
   task: {
     list: (appId?: string) => ipcRenderer.invoke(IpcChannels.TASK_LIST, appId),

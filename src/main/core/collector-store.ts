@@ -325,7 +325,9 @@ export function addCollectedItem(input: CollectorAddInput): CollectedItem {
   fs.mkdirSync(path.join(dir, 'assets'), { recursive: true })
 
   const id = generateId()
-  const now = Date.now()
+  // Use meta.postedAt as created_at if available (e.g. tweet timestamp)
+  const postedAt = input.meta?.postedAt ? new Date(input.meta.postedAt as string).getTime() : 0
+  const now = (postedAt && !isNaN(postedAt)) ? postedAt : Date.now()
 
   const meta = { ...(input.meta || {}) }
 
@@ -509,12 +511,53 @@ export function renameCollectorGroup(oldName: string, newName: string): string[]
 
 export function deleteCollectorGroup(name: string): string[] {
   const db = getDb()
+  const dir = path.join(getLiteHome(), 'collected')
   const tx = db.transaction(() => {
+    // Delete all items in the group (including assets + markdown)
+    const rows = db.prepare('SELECT id, asset_path FROM items WHERE "group" = ?').all(name) as { id: string; asset_path: string | null }[]
+    for (const row of rows) {
+      if (row.asset_path) {
+        const assetFile = path.join(dir, row.asset_path)
+        try { fs.unlinkSync(assetFile) } catch {}
+      }
+      const mdFile = path.join(dir, 'markdown', `${row.id}.md`)
+      try { fs.unlinkSync(mdFile) } catch {}
+    }
+    const ids = rows.map(r => r.id)
+    if (ids.length > 0) {
+      const placeholders = ids.map(() => '?').join(',')
+      db.prepare(`DELETE FROM vectors WHERE id IN (${placeholders})`).run(...ids)
+      db.prepare(`DELETE FROM items_fts WHERE rowid IN (SELECT rowid FROM items WHERE id IN (${placeholders}))`).run(...ids)
+      db.prepare(`DELETE FROM items WHERE "group" = ?`).run(name)
+    }
     db.prepare('DELETE FROM groups WHERE name = ?').run(name)
-    db.prepare('UPDATE items SET "group" = \'all\' WHERE "group" = ?').run(name)
   })
   tx()
   return getCollectorGroups()
+}
+
+/** Reset all collector data — items, groups, vectors, sync configs, assets, markdown */
+export function resetCollectorData(): void {
+  const db = getDb()
+  const dir = path.join(getLiteHome(), 'collected')
+
+  db.transaction(() => {
+    db.prepare('DELETE FROM items').run()
+    db.prepare('DELETE FROM groups').run()
+    db.prepare('DELETE FROM vectors').run()
+    db.prepare('DELETE FROM group_sync_configs').run()
+  })()
+
+  // Clean asset + markdown files
+  const assetsDir = path.join(dir, 'assets')
+  const mdDir = path.join(dir, 'markdown')
+  const scriptsDir = path.join(dir, 'sync-scripts')
+  for (const d of [assetsDir, mdDir, scriptsDir]) {
+    try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
+    try { fs.mkdirSync(d, { recursive: true }) } catch {}
+  }
+
+  console.log('[Collector] All data reset')
 }
 
 // ── FTS5 Search ──

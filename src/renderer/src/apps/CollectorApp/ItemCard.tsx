@@ -19,7 +19,10 @@ export const ItemCard: React.FC<{
       || item.meta?.authorProfileImageUrl as string
       || null)
     : null
-  const description = item.note || (item.meta?.description as string | undefined) || ''
+  const displayTitle = item.type === 'text' ? item.title.split('\n')[0].slice(0, 120) : item.title
+  const description = item.type === 'text'
+    ? (item.title.includes('\n') ? item.title.slice(item.title.indexOf('\n') + 1).trim() : '')
+    : (item.note || (item.meta?.description as string | undefined) || '')
   const domain = getDomain(item.url)
   const wasDragged = useRef(false)
 
@@ -80,8 +83,9 @@ export const ItemCard: React.FC<{
           <Icon size={9} className="text-tx-faint shrink-0" />
           <span className="text-[9px] text-tx-faint tracking-wide">{TYPE_LABELS[item.type]}</span>
           {domain && <><span className="text-[9px] text-tx-faint">·</span><span className="text-[9px] text-tx-faint truncate">{domain}</span></>}
+          {item.meta?.postedAt && <><span className="text-[9px] text-tx-faint">·</span><span className="text-[9px] text-tx-faint">{new Date(item.meta.postedAt as string).toLocaleDateString()}</span></>}
         </div>
-        <span className="text-[12px] text-tx-main font-medium leading-snug line-clamp-2">{item.title}</span>
+        <span className="text-[12px] text-tx-main font-medium leading-snug line-clamp-2">{displayTitle}</span>
         {description && <span className="text-[10px] text-tx-faint leading-relaxed line-clamp-2">{description}</span>}
         {item.meta?.duplicateOf && (
           <div className="flex items-center gap-1.5 mt-1 px-2 py-1 rounded bg-status-warning/10 text-[9px] text-status-warning cursor-pointer hover:bg-status-warning/15 transition-colors"

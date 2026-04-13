@@ -1053,6 +1053,28 @@ export function setupIpcHandlers(): void {
     }
   })
 
+  // ── Data Reset ──
+
+  ipcMain.handle(IpcChannels.COLLECTOR_RESET, async () => {
+    try {
+      const { resetCollectorData } = await import('./collector-store')
+      resetCollectorData()
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_RESET, async () => {
+    try {
+      const { resetWikiData } = await import('./wiki-store')
+      resetWikiData()
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
   // ── Wiki.app ──
 
   ipcMain.handle(IpcChannels.WIKI_INIT, async () => {

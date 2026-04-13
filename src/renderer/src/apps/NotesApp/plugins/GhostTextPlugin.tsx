@@ -49,6 +49,7 @@ interface CompletionContext {
   type: ContextType
   lang?: string
   contextBefore: string
+  contextAfter?: string
 }
 
 /** Markdown syntax patterns that should NOT trigger text completion */
@@ -122,12 +123,12 @@ function $detectContext(): CompletionContext | null {
   // ── Heading ──
   if ($isHeadingNode(topLevel)) {
     const tag = topLevel.getTag()
-    return { type: 'heading', contextBefore: `[${tag}] ${$collectParagraphContext(topLevel, anchor.offset)}` }
+    return { type: 'heading', contextBefore: `[${tag}] ${$collectParagraphContext(topLevel, anchor.offset)}`, contextAfter: $collectContextAfter() || undefined }
   }
 
   // ── Quote ──
   if ($isQuoteNode(topLevel)) {
-    return { type: 'quote', contextBefore: $collectParagraphContext(topLevel, anchor.offset) }
+    return { type: 'quote', contextBefore: $collectParagraphContext(topLevel, anchor.offset), contextAfter: $collectContextAfter() || undefined }
   }
 
   // ── List ──
@@ -139,6 +140,7 @@ function $detectContext(): CompletionContext | null {
       type: 'list',
       lang: listType,
       contextBefore: $collectListContext(listNode as ElementNode, listItem as ElementNode, anchor.offset),
+      contextAfter: $collectContextAfter() || undefined,
     }
   }
 
@@ -150,7 +152,7 @@ function $detectContext(): CompletionContext | null {
 
   // ── Callout ──
   if ($findAncestorByType(anchorNode, 'callout')) {
-    return { type: 'callout', contextBefore: $collectParagraphContext(topLevel, anchor.offset) }
+    return { type: 'callout', contextBefore: $collectParagraphContext(topLevel, anchor.offset), contextAfter: $collectContextAfter() || undefined }
   }
 
   // ── Regular text ──
@@ -158,7 +160,8 @@ function $detectContext(): CompletionContext | null {
   if (contextBefore.endsWith('  ')) return null
   const currentLineText = contextBefore.split('\n').pop()?.trim() ?? ''
   if (MD_SYNTAX_RE.test(currentLineText)) return null
-  return { type: 'text', contextBefore }
+  const contextAfter = $collectContextAfter()
+  return { type: 'text', contextBefore, contextAfter: contextAfter || undefined }
 }
 
 // ── Tree helpers ──
@@ -224,26 +227,89 @@ function $collectTableContext(cell: LexicalNode, cursorOffset: number): string {
   return parts.join('\n')
 }
 
+/** Collect text AFTER the cursor position (up to MAX_CONTEXT_CHARS) */
+function $collectContextAfter(): string {
+  const selection = $getSelection()
+  if (!$isRangeSelection(selection) || !selection.isCollapsed()) return ''
+
+  const anchor = selection.anchor
+  const anchorNode = anchor.getNode()
+  const topLevel = anchorNode.getTopLevelElement()
+  if (!topLevel) return ''
+
+  const root = topLevel.getParent()
+  if (!root) return ''
+
+  // Text after cursor in current top-level block
+  const fullText = topLevel.getTextContent()
+  const textInBlock = anchorNode.getTextContent()
+  // Find cursor position within the top-level block
+  const beforeCursor = topLevel.getTextContent().substring(0, (() => {
+    // Walk children to find offset
+    let off = 0
+    const walk = (node: LexicalNode): boolean => {
+      if (node === anchorNode) {
+        off += anchor.offset
+        return true
+      }
+      if ($isTextNode(node) || $isCodeHighlightNode(node)) {
+        off += node.getTextContent().length
+      } else if ($isLineBreakNode(node)) {
+        off += 1
+      } else if ('getChildren' in node) {
+        for (const child of (node as ElementNode).getChildren()) {
+          if (walk(child)) return true
+        }
+      }
+      return false
+    }
+    walk(topLevel)
+    return off
+  })())
+  const afterInBlock = fullText.substring(beforeCursor.length)
+
+  // Collect subsequent blocks
+  const children = root.getChildren()
+  const idx = children.indexOf(topLevel)
+  const parts: string[] = [afterInBlock]
+  let total = afterInBlock.length
+  for (let i = idx + 1; i < children.length && total < MAX_CONTEXT_CHARS; i++) {
+    const t = children[i].getTextContent()
+    parts.push(t)
+    total += t.length
+  }
+
+  const result = parts.join('\n').trim()
+  return result.length > 0 ? result : ''
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Prompt building
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function buildPrompt(ctx: CompletionContext): AIChatMessage[] {
+  const afterHint = ctx.contextAfter
+    ? `\n\n--- Text after cursor ---\n${ctx.contextAfter.slice(0, 500)}`
+    : ''
+  const fimRule = ctx.contextAfter
+    ? '\n- Text after the cursor is provided for context — your completion should flow naturally into it'
+    : ''
+
   switch (ctx.type) {
     case 'code':
       return [
-        { role: 'system', content: `You are an inline code completion assistant. Language: ${ctx.lang}. Continue the code naturally. Rules:\n- Output ONLY the code to insert — no markdown fences, no explanations\n- If you see "// todo:" or "# todo:", generate the described code\n- Respect indentation\n- Keep completions short: 1-3 lines unless a todo asks for more\n- If you cannot complete, respond with empty string` },
-        { role: 'user', content: ctx.contextBefore },
+        { role: 'system', content: `You are an inline code completion assistant. Language: ${ctx.lang}. Continue the code naturally. Rules:\n- Output ONLY the code to insert — no markdown fences, no explanations\n- If you see "// todo:" or "# todo:", generate the described code\n- Respect indentation\n- Keep completions short: 1-3 lines unless a todo asks for more\n- If you cannot complete, respond with empty string${fimRule}` },
+        { role: 'user', content: ctx.contextBefore + afterHint },
       ]
     case 'heading':
       return [
-        { role: 'system', content: 'Complete the heading concisely. Output ONLY the completion text, a few words max.' },
-        { role: 'user', content: `Complete this heading:\n\n${ctx.contextBefore}` },
+        { role: 'system', content: `Complete the heading concisely. Output ONLY the completion text, a few words max.${fimRule}` },
+        { role: 'user', content: `Complete this heading:\n\n${ctx.contextBefore}${afterHint}` },
       ]
     case 'list':
       return [
-        { role: 'system', content: `Complete the current ${ctx.lang === 'check' ? 'checklist' : ctx.lang === 'number' ? 'numbered' : 'bulleted'} list item. Output ONLY text to append — one line, no bullet markers.` },
-        { role: 'user', content: `Complete the last item:\n\n${ctx.contextBefore}` },
+        { role: 'system', content: `Complete the current ${ctx.lang === 'check' ? 'checklist' : ctx.lang === 'number' ? 'numbered' : 'bulleted'} list item. Output ONLY text to append — one line, no bullet markers.${fimRule}` },
+        { role: 'user', content: `Complete the last item:\n\n${ctx.contextBefore}${afterHint}` },
       ]
     case 'table':
       return [
@@ -252,19 +318,19 @@ function buildPrompt(ctx: CompletionContext): AIChatMessage[] {
       ]
     case 'quote':
       return [
-        { role: 'system', content: 'Continue the blockquote naturally. Output ONLY the text, no "> " prefix. 1 sentence max.' },
-        { role: 'user', content: `Continue:\n\n${ctx.contextBefore}` },
+        { role: 'system', content: `Continue the blockquote naturally. Output ONLY the text, no "> " prefix. 1 sentence max.${fimRule}` },
+        { role: 'user', content: `Continue:\n\n${ctx.contextBefore}${afterHint}` },
       ]
     case 'callout':
       return [
-        { role: 'system', content: 'Continue the callout text naturally. Output ONLY the completion. Keep concise.' },
-        { role: 'user', content: `Continue:\n\n${ctx.contextBefore}` },
+        { role: 'system', content: `Continue the callout text naturally. Output ONLY the completion. Keep concise.${fimRule}` },
+        { role: 'user', content: `Continue:\n\n${ctx.contextBefore}${afterHint}` },
       ]
     case 'text':
     default:
       return [
-        { role: 'system', content: 'You are an inline text completion assistant for markdown notes. Continue naturally. Rules:\n- Output ONLY the completion text\n- 1-2 sentences max\n- If the last word looks misspelled, output the corrected word + continuation\n- No markdown formatting unless user is mid-format\n- Empty string if no meaningful completion' },
-        { role: 'user', content: `Continue:\n\n${ctx.contextBefore}` },
+        { role: 'system', content: `You are an inline text completion assistant for markdown notes. Continue naturally. Rules:\n- Output ONLY the completion text\n- 1-2 sentences max\n- If the last word looks misspelled, output the corrected word + continuation\n- No markdown formatting unless user is mid-format\n- Empty string if no meaningful completion${fimRule}` },
+        { role: 'user', content: `Continue:\n\n${ctx.contextBefore}${afterHint}` },
       ]
   }
 }

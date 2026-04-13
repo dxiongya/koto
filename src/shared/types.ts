@@ -182,6 +182,10 @@ export const IpcChannels = {
   WIKI_APPEND_LOG: 'wiki:appendLog',
   WIKI_DELETE: 'wiki:delete',
   WIKI_GRAPH: 'wiki:graph',
+  WIKI_RESET: 'wiki:reset',
+
+  // Data management
+  COLLECTOR_RESET: 'collector:reset',
 
   // Task Scheduler
   TASK_LIST: 'task:list',

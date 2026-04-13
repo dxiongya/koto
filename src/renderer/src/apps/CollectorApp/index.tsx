@@ -111,21 +111,18 @@ export const CollectorApp: React.FC = () => {
     })
   }, [groupParam])
 
-  // Listen for sync progress events
+  // Listen for sync progress events from main process
   useEffect(() => {
-    const handler = (_: unknown, event: any) => {
+    const cleanup = window.api.collector.sync.onEvent((event: any) => {
       if (event.groupName !== groupParam) return
       if (event.status === 'started') { setSyncing(true); setSyncMessage('Syncing...') }
       else if (event.status === 'progress') setSyncMessage(event.message || 'Syncing...')
-      else if (event.status === 'completed') { setSyncing(false); setSyncMessage(null); loadItems() }
+      else if (event.status === 'completed') { setSyncing(false); setSyncMessage(null); bumpVersion() }
       else if (event.status === 'error') { setSyncing(false); setSyncMessage(`Error: ${event.message}`) }
       else if (event.status === 'cancelled') { setSyncing(false); setSyncMessage(null) }
-    }
-    // @ts-ignore
-    window.api?.terminal?.onData // just to check if preload exists
-    // Listen via custom event (IPC push comes through preload)
-    return () => {}
-  }, [groupParam, loadItems])
+    })
+    return cleanup
+  }, [groupParam, bumpVersion])
 
   // Listen for sidebar item focus event → scroll to item + highlight
   useEffect(() => {
@@ -201,8 +198,8 @@ export const CollectorApp: React.FC = () => {
 
     setToast({ message: url ? `Collecting ${TYPE_LABELS[type].toLowerCase()} · ${domain}...` : 'Collecting text...', status: 'loading' })
 
-    let title = type === 'text' ? val.split('\n')[0].slice(0, 120) : domain
-    let description = type === 'text' ? val : ''
+    let title = type === 'text' ? val : domain
+    let description = ''
     const meta: Record<string, unknown> = domain ? { domain } : {}
 
     if (url) {
@@ -476,7 +473,7 @@ export const CollectorApp: React.FC = () => {
       )}
 
       {/* Content */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-px">
         {filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-tx-faint">
             <Layers size={28} />
@@ -484,7 +481,7 @@ export const CollectorApp: React.FC = () => {
             {searchResults === null && <button onClick={() => setShowCollectPanel(true)} className="text-[12px] text-accent-main hover:underline">Collect your first item</button>}
           </div>
         ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-4 gap-2.5 pb-4">
+          <div className="grid grid-cols-4 gap-2.5 p-0.5 pb-4">
             {filteredItems.map((item) => (
               <div key={item.id} data-collector-id={item.id} className={focusedItemId === item.id ? 'ring-2 ring-accent-main rounded-md transition-all' : ''}>
                 <ItemCard item={item} onDelete={handleDelete} onOpen={handleOpen} onSendToWiki={handleSendToWiki} />

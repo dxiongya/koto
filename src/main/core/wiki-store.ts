@@ -443,3 +443,11 @@ export function deleteWikiFile(relPath: string): boolean {
   fs.unlinkSync(full)
   return true
 }
+
+/** Reset all wiki data — removes all wiki files and re-initializes */
+export function resetWikiData(): void {
+  const root = wikiRoot()
+  try { fs.rmSync(root, { recursive: true, force: true }) } catch {}
+  initWiki()
+  console.log('[Wiki] All data reset')
+}

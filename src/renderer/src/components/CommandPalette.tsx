@@ -418,7 +418,21 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
         if (appId === currentApp) continue
         commands.push({
           id: `cmd:switch-${appId}`, label: `Switch to ${meta.label}`, icon: meta.icon, category: 'Apps',
-          action: () => store.setCurrentApp(appId as AppType),
+          action: async () => {
+            store.setCurrentApp(appId as AppType)
+            if (appId === 'terminal.app') {
+              const sessions = store.terminalSessions
+              if (sessions.length > 0 && !store.activeTerminalId) {
+                store.setActiveTerminalId(sessions[0].id)
+              } else if (sessions.length === 0) {
+                const cwd = store.codeProjectPath ?? undefined
+                const res = await window.api.terminal.create(cwd)
+                if (res.ok) {
+                  store.addTerminalSession({ id: res.data, persistKey: genTerminalPersistKey(), title: 'Terminal 1', cwd })
+                }
+              }
+            }
+          },
         })
       }
       return commands
@@ -469,7 +483,22 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       if (appId === currentApp) continue
       all.push({
         id: `app:${appId}`, label: meta.label, icon: meta.icon, category: 'Apps',
-        action: () => store.setCurrentApp(appId as AppType),
+        action: async () => {
+          store.setCurrentApp(appId as AppType)
+          // Ensure terminal has an active session when switching to it
+          if (appId === 'terminal.app') {
+            const sessions = store.terminalSessions
+            if (sessions.length > 0 && !store.activeTerminalId) {
+              store.setActiveTerminalId(sessions[0].id)
+            } else if (sessions.length === 0) {
+              const cwd = store.codeProjectPath ?? undefined
+              const res = await window.api.terminal.create(cwd)
+              if (res.ok) {
+                store.addTerminalSession({ id: res.data, persistKey: genTerminalPersistKey(), title: 'Terminal 1', cwd })
+              }
+            }
+          }
+        },
       })
     }
 
