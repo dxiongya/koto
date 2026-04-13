@@ -419,37 +419,57 @@ const AppsSection: React.FC = () => {
     forceUpdate((n) => n + 1)
   }, [registry])
 
+  const [expandedApp, setExpandedApp] = useState<string | null>(null)
+
   return (
     <section className="mb-10">
       <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Apps</h2>
       <div className="space-y-1.5">
         {allApps.map(({ definition, enabled }, idx) => {
           const m = definition.manifest
+          const hasSettings = m.id === 'notes.app' // apps with per-app settings
+          const isExpanded = expandedApp === m.id
           return (
-            <div key={m.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors ${enabled ? 'border-border-subtle bg-bg-hover' : 'border-transparent opacity-50'}`}>
-              <div className="flex flex-col gap-0.5">
-                <button onClick={() => moveUp(m.id)} disabled={idx === 0} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▲</button>
-                <button onClick={() => moveDown(m.id)} disabled={idx === allApps.length - 1} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▼</button>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] text-tx-main font-medium">{m.name}</span>
-                  {m.builtin && <span className="text-[9px] text-tx-faint bg-bg-active px-1.5 py-0.5 rounded">built-in</span>}
-                  <span className="text-[10px] text-tx-faint">v{m.version}</span>
+            <div key={m.id} className={`rounded-lg border transition-colors ${enabled ? 'border-border-subtle bg-bg-hover' : 'border-transparent opacity-50'}`}>
+              <div className="flex items-center gap-3 px-3 py-2.5">
+                <div className="flex flex-col gap-0.5">
+                  <button onClick={() => moveUp(m.id)} disabled={idx === 0} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▲</button>
+                  <button onClick={() => moveDown(m.id)} disabled={idx === allApps.length - 1} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▼</button>
                 </div>
-                <div className="text-[11px] text-tx-faint truncate mt-0.5">{m.description}</div>
+                <button
+                  onClick={() => hasSettings && setExpandedApp(isExpanded ? null : m.id)}
+                  className={`flex-1 min-w-0 text-left ${hasSettings ? 'cursor-pointer' : 'cursor-default'}`}
+                >
+                  <div className="flex items-center gap-2">
+                    {hasSettings && (
+                      isExpanded
+                        ? <ChevronDown size={12} className="text-tx-faint shrink-0" />
+                        : <ChevronRight size={12} className="text-tx-faint shrink-0" />
+                    )}
+                    <span className="text-[13px] text-tx-main font-medium">{m.name}</span>
+                    {m.builtin && <span className="text-[9px] text-tx-faint bg-bg-active px-1.5 py-0.5 rounded">built-in</span>}
+                    <span className="text-[10px] text-tx-faint">v{m.version}</span>
+                  </div>
+                  <div className={`text-[11px] text-tx-faint truncate mt-0.5 ${hasSettings ? 'ml-5' : ''}`}>{m.description}</div>
+                </button>
+                <button
+                  onClick={() => toggle(m.id)}
+                  className={`shrink-0 w-9 h-5 rounded-full transition-colors relative ${enabled ? 'bg-accent-main' : 'bg-border-strong'}`}
+                >
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-bg-app shadow transition-transform ${enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                </button>
               </div>
-              <button
-                onClick={() => toggle(m.id)}
-                className={`shrink-0 w-9 h-5 rounded-full transition-colors relative ${enabled ? 'bg-accent-main' : 'bg-border-strong'}`}
-              >
-                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-bg-app shadow transition-transform ${enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
-              </button>
+              {/* Per-app settings — expandable */}
+              {isExpanded && enabled && m.id === 'notes.app' && (
+                <div className="border-t border-border-subtle px-4 py-4">
+                  <NotesAppSettings />
+                </div>
+              )}
             </div>
           )
         })}
       </div>
-      <p className="text-[10px] text-tx-faint mt-3">Enable or disable apps. Reorder with ▲▼ arrows. Disabled apps are hidden from the sidebar.</p>
+      <p className="text-[10px] text-tx-faint mt-3">Enable or disable apps. Reorder with ▲▼ arrows. Click app name to configure.</p>
     </section>
   )
 }
@@ -1749,9 +1769,9 @@ const SkillsSection: React.FC = () => {
   )
 }
 
-// ── Markdown Theme Section ──
+// ── Per-App Settings: Notes ──
 
-const MarkdownThemeSection: React.FC = () => {
+const NotesAppSettings: React.FC = () => {
   const markdownTheme = useUIStore((s) => s.markdownTheme)
   const setMarkdownTheme = useUIStore((s) => s.setMarkdownTheme)
   const liteHome = useUIStore((s) => s.liteHome)
@@ -1770,7 +1790,7 @@ const MarkdownThemeSection: React.FC = () => {
     }).catch(() => {})
   }, [liteHome, markdownTheme])
 
-  const builtinThemes = [
+  const mdThemes = [
     { id: 'default', name: 'Default', desc: 'Inherits app theme — monospace, dark' },
     { id: 'github', name: 'GitHub', desc: 'Sans-serif, larger headings' },
     { id: 'serif', name: 'Serif', desc: 'Reading-focused, relaxed spacing' },
@@ -1782,72 +1802,81 @@ const MarkdownThemeSection: React.FC = () => {
     if (!res.ok || !res.data || !liteHome) return
     const srcPath = res.data
     const fileName = srcPath.split('/').pop() || 'imported.css'
-    // Read source file
     const readRes = await window.api.fs.readFile(srcPath)
     if (!readRes.ok) return
-    // Write to themes/md/
     const destPath = `${liteHome}/themes/md/${fileName}`
     await window.api.fs.writeFile(destPath, readRes.data)
     setMarkdownTheme(fileName)
   }
 
+  const handleOpenThemesDir = () => {
+    if (liteHome) window.api.shell.revealPath(`${liteHome}/themes/md`)
+  }
+
   return (
-    <section className="mb-10">
-      <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Markdown Theme</h2>
-      <p className="text-xs text-tx-faint mb-3">
-        Controls how headings, text, code blocks, and other markdown elements look in the editor.
-        Import Typora-compatible CSS themes or create your own.
+    <div>
+      <h3 className="text-tx-muted text-[11px] font-medium uppercase tracking-wider mb-2">Markdown Theme</h3>
+      <p className="text-[11px] text-tx-faint mb-3">
+        Controls typography, spacing, and colors of markdown content. Supports Typora-compatible CSS.
       </p>
-      <div className="space-y-1 mb-3">
-        {builtinThemes.map((t) => (
+      <div className="space-y-0.5 mb-3">
+        {mdThemes.map((t) => (
           <button
             key={t.id}
             onClick={() => setMarkdownTheme(t.id)}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md text-left transition-colors ${
+            className={`w-full flex items-center justify-between px-2.5 py-2 rounded text-left transition-colors ${
               markdownTheme === t.id
                 ? 'bg-accent-main/10 text-accent-main'
-                : 'text-tx-main hover:bg-bg-hover'
+                : 'text-tx-main hover:bg-bg-active'
             }`}
           >
             <div>
-              <div className="text-sm">{t.name}</div>
-              <div className="text-xs text-tx-faint mt-0.5">{t.desc}</div>
+              <div className="text-[12px]">{t.name}</div>
+              <div className="text-[10px] text-tx-faint mt-0.5">{t.desc}</div>
             </div>
             {markdownTheme === t.id && (
-              <Check size={14} className="text-accent-main shrink-0 ml-3" />
+              <Check size={12} className="text-accent-main shrink-0 ml-2" />
             )}
           </button>
         ))}
 
-        {/* User themes */}
         {userThemes.map((fileName) => (
           <button
             key={fileName}
             onClick={() => setMarkdownTheme(fileName)}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-md text-left transition-colors ${
+            className={`w-full flex items-center justify-between px-2.5 py-2 rounded text-left transition-colors ${
               markdownTheme === fileName
                 ? 'bg-accent-main/10 text-accent-main'
-                : 'text-tx-main hover:bg-bg-hover'
+                : 'text-tx-main hover:bg-bg-active'
             }`}
           >
             <div>
-              <div className="text-sm">{fileName.replace(/\.css$/, '')}</div>
-              <div className="text-xs text-tx-faint mt-0.5">Custom theme</div>
+              <div className="text-[12px]">{fileName.replace(/\.css$/, '')}</div>
+              <div className="text-[10px] text-tx-faint mt-0.5">Custom theme</div>
             </div>
             {markdownTheme === fileName && (
-              <Check size={14} className="text-accent-main shrink-0 ml-3" />
+              <Check size={12} className="text-accent-main shrink-0 ml-2" />
             )}
           </button>
         ))}
       </div>
 
-      <button
-        onClick={handleImport}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-tx-muted border border-border-subtle rounded-md hover:text-tx-main hover:border-border-strong transition-colors"
-      >
-        Import CSS Theme
-      </button>
-    </section>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleImport}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-tx-muted border border-border-subtle rounded hover:text-tx-main hover:border-border-strong transition-colors"
+        >
+          Import CSS
+        </button>
+        <button
+          onClick={handleOpenThemesDir}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-tx-muted border border-border-subtle rounded hover:text-tx-main hover:border-border-strong transition-colors"
+        >
+          <FolderOpen size={11} />
+          Open Themes Folder
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -2218,7 +2247,6 @@ const SettingsApp: React.FC = () => {
           </div>
         </section>
 
-          <MarkdownThemeSection />
           <StorageSection />
           <AboutSection />
         </>)}
