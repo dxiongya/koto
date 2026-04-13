@@ -306,6 +306,9 @@ const api = {
     delete: (relPath: string) => ipcRenderer.invoke(IpcChannels.WIKI_DELETE, relPath),
     graph: () => ipcRenderer.invoke(IpcChannels.WIKI_GRAPH),
     reset: () => ipcRenderer.invoke(IpcChannels.WIKI_RESET),
+    search: (query: string) => ipcRenderer.invoke(IpcChannels.WIKI_SEARCH, query),
+    lint: () => ipcRenderer.invoke(IpcChannels.WIKI_LINT),
+    reindex: () => ipcRenderer.invoke(IpcChannels.WIKI_REINDEX),
   },
   task: {
     list: (appId?: string) => ipcRenderer.invoke(IpcChannels.TASK_LIST, appId),

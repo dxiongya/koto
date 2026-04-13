@@ -183,6 +183,9 @@ export const IpcChannels = {
   WIKI_DELETE: 'wiki:delete',
   WIKI_GRAPH: 'wiki:graph',
   WIKI_RESET: 'wiki:reset',
+  WIKI_SEARCH: 'wiki:search',
+  WIKI_LINT: 'wiki:lint',
+  WIKI_REINDEX: 'wiki:reindex',
 
   // Data management
   COLLECTOR_RESET: 'collector:reset',

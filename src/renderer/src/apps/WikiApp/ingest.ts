@@ -479,6 +479,9 @@ export async function runIngest(collectorItemId: string): Promise<IngestResult> 
       filesWritten: writtenPaths,
     })
 
+    // Trigger search index + embedding update for written pages (background, non-blocking)
+    window.api.wiki.reindex().catch(() => {})
+
     return { success: true, filesWritten: writtenPaths }
   } catch (e) {
     const error = e instanceof Error ? e.message : String(e)

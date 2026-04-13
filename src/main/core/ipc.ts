@@ -1075,6 +1075,38 @@ export function setupIpcHandlers(): void {
     }
   })
 
+  ipcMain.handle(IpcChannels.WIKI_SEARCH, async (_, query: string) => {
+    try {
+      const { wikiHybridSearch } = await import('./wiki-search')
+      const results = await wikiHybridSearch(query, 10)
+      return { ok: true, data: results }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_LINT, async () => {
+    try {
+      const { lintWiki } = await import('./wiki-lint')
+      const report = lintWiki()
+      return { ok: true, data: report }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_REINDEX, async () => {
+    try {
+      const { indexAllWikiPages } = await import('./wiki-store')
+      const { embedAllWikiPages } = await import('./wiki-embedding')
+      indexAllWikiPages()
+      await embedAllWikiPages()
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
   // ── Wiki.app ──
 
   ipcMain.handle(IpcChannels.WIKI_INIT, async () => {

@@ -30,18 +30,6 @@ function getWikiProvider(): { providerId: string; model: string } | null {
   return null
 }
 
-/** Simple keyword relevance — score each page by how many query words it contains. */
-function scoreRelevance(query: string, content: string): number {
-  const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 2)
-  const lower = content.toLowerCase()
-  let score = 0
-  for (const w of words) {
-    const count = (lower.match(new RegExp(w, 'g')) || []).length
-    score += Math.min(count, 5) // cap per-word contribution
-  }
-  return score
-}
-
 export const WikiChat: React.FC<{
   onNavigateToPage?: (relPath: string) => void
 }> = ({ onNavigateToPage }) => {
@@ -83,59 +71,53 @@ export const WikiChat: React.FC<{
     setLoading(true)
 
     try {
-      // 1. Load all wiki pages
-      const pagesRes = await window.api.wiki.listPages()
-      if (!pagesRes.ok || !pagesRes.data) throw new Error('Failed to load wiki pages')
+      // 1. Hybrid search (BM25 + semantic + graph)
+      const searchRes = await window.api.wiki.search(query)
+      const results = searchRes.ok && searchRes.data ? searchRes.data as Array<{
+        relPath: string; title: string; content: string; score: number;
+        confidence: number; supersededBy: string | null; source: string
+      }> : []
 
-      const SYSTEM_FILES = new Set(['SCHEMA.md', 'index.md', 'log.md', 'overview.md', 'purpose.md'])
-      const contentPages = (pagesRes.data as Array<{ relPath: string; title: string }>)
-        .filter(p => !SYSTEM_FILES.has(p.relPath))
-
-      if (contentPages.length === 0) {
+      if (results.length === 0) {
+        // Fallback: check if wiki has any pages at all
+        const pagesRes = await window.api.wiki.listPages()
+        const hasPages = pagesRes.ok && pagesRes.data && (pagesRes.data as unknown[]).length > 5
         setMessages(prev => [...prev, {
           id: String(Date.now()),
           role: 'assistant',
-          content: 'Wiki is empty. Add items to Collector first — they\'ll be ingested into wiki pages automatically.',
+          content: hasPages
+            ? 'No relevant wiki pages found for your question. Try rephrasing or ask about a different topic.'
+            : 'Wiki is empty. Add items to Collector first — they\'ll be ingested into wiki pages automatically.',
           timestamp: Date.now(),
         }])
         setLoading(false)
         return
       }
 
-      // 2. Load and score pages by relevance
-      const scored: Array<{ relPath: string; title: string; content: string; score: number }> = []
-      for (const p of contentPages) {
-        const readRes = await window.api.wiki.read(p.relPath)
-        const content = readRes.ok && readRes.data ? readRes.data : ''
-        scored.push({
-          relPath: p.relPath,
-          title: p.title,
-          content,
-          score: scoreRelevance(query, content + ' ' + p.title),
-        })
-      }
-
-      // 3. Pick top-K most relevant pages (or all if few)
-      scored.sort((a, b) => b.score - a.score)
-      const maxContext = 8000 // chars budget for wiki context
-      const selected: typeof scored = []
+      // 2. Build context with score-based budget allocation
+      const maxContext = 10000
       let budget = maxContext
-      for (const p of scored) {
+      const contextParts: string[] = []
+      const sourcePaths: string[] = []
+
+      for (const r of results) {
         if (budget <= 0) break
-        if (p.score === 0 && selected.length >= 3) break // skip irrelevant after top 3
-        selected.push(p)
-        budget -= p.content.length
+        const charLimit = r.score > 0.02 ? 2000 : 800
+        const snippet = r.content.slice(0, Math.min(charLimit, budget))
+        const staleNote = r.supersededBy ? ' [SUPERSEDED]' : r.confidence < 0.3 ? ' [LOW CONFIDENCE]' : ''
+        contextParts.push(`### ${r.title} (${r.relPath})${staleNote}\n${snippet}`)
+        sourcePaths.push(r.relPath)
+        budget -= snippet.length
       }
 
-      // 4. Build system prompt with wiki context
-      const wikiContext = selected.map(p =>
-        `### ${p.title} (${p.relPath})\n${p.content.slice(0, 2000)}`
-      ).join('\n\n---\n\n')
+      const wikiContext = contextParts.join('\n\n---\n\n')
 
       const systemPrompt = [
         'You are a helpful assistant answering questions about the user\'s personal wiki.',
         'Use ONLY the wiki content provided below to answer. If the answer is not in the wiki, say so.',
         'When referencing wiki pages, mention them by title.',
+        'Pages marked [SUPERSEDED] contain outdated information — prefer newer sources.',
+        'Pages marked [LOW CONFIDENCE] may be unreliable — note this if relevant.',
         'Be concise and direct.',
         '',
         '## Wiki Content',
@@ -143,12 +125,11 @@ export const WikiChat: React.FC<{
         wikiContext,
       ].join('\n')
 
-      // 5. Call LLM
+      // 3. Call LLM
       const result = await window.api.ai.chat(
         provider.providerId,
         [
           { role: 'system', content: systemPrompt },
-          // Include recent conversation for multi-turn
           ...messages.slice(-6).map(m => ({
             role: m.role as 'user' | 'assistant',
             content: m.content,
@@ -167,7 +148,7 @@ export const WikiChat: React.FC<{
         id: String(Date.now()),
         role: 'assistant',
         content: result.data.content,
-        sources: selected.slice(0, 5).map(p => p.relPath),
+        sources: sourcePaths.slice(0, 5),
         timestamp: Date.now(),
       }
       setMessages(prev => [...prev, assistantMsg])

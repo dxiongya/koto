@@ -20,6 +20,7 @@
  */
 import fs from 'fs'
 import path from 'path'
+import Database from 'better-sqlite3'
 import { getLiteHome } from './lite-home'
 
 export interface WikiStats {
@@ -447,7 +448,181 @@ export function deleteWikiFile(relPath: string): boolean {
 /** Reset all wiki data — removes all wiki files and re-initializes */
 export function resetWikiData(): void {
   const root = wikiRoot()
+  // Close wiki DB if open
+  if (wikiDb) { try { wikiDb.close() } catch {} wikiDb = null }
   try { fs.rmSync(root, { recursive: true, force: true }) } catch {}
   initWiki()
   console.log('[Wiki] All data reset')
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Wiki Search Index — SQLite + FTS5 for hybrid search
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+let wikiDb: Database.Database | null = null
+
+export function getWikiDb(): Database.Database {
+  if (wikiDb) return wikiDb
+
+  const root = wikiRoot()
+  fs.mkdirSync(root, { recursive: true })
+
+  wikiDb = new Database(path.join(root, 'wiki.db'))
+  wikiDb.pragma('journal_mode = WAL')
+
+  wikiDb.exec(`
+    CREATE TABLE IF NOT EXISTS wiki_pages (
+      rel_path TEXT PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      type TEXT NOT NULL DEFAULT 'page',
+      tags TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
+      confidence REAL NOT NULL DEFAULT 0.5,
+      source_count INTEGER NOT NULL DEFAULT 1,
+      superseded_by TEXT,
+      last_verified INTEGER,
+      updated_at INTEGER NOT NULL
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS wiki_fts USING fts5(
+      title, content, tags, type,
+      content=wiki_pages, content_rowid=rowid
+    );
+
+    CREATE TRIGGER IF NOT EXISTS wiki_pages_ai AFTER INSERT ON wiki_pages BEGIN
+      INSERT INTO wiki_fts(rowid, title, content, tags, type)
+        VALUES (new.rowid, new.title, new.content, new.tags, new.type);
+    END;
+    CREATE TRIGGER IF NOT EXISTS wiki_pages_ad AFTER DELETE ON wiki_pages BEGIN
+      INSERT INTO wiki_fts(wiki_fts, rowid, title, content, tags, type)
+        VALUES ('delete', old.rowid, old.title, old.content, old.tags, old.type);
+    END;
+    CREATE TRIGGER IF NOT EXISTS wiki_pages_au AFTER UPDATE ON wiki_pages BEGIN
+      INSERT INTO wiki_fts(wiki_fts, rowid, title, content, tags, type)
+        VALUES ('delete', old.rowid, old.title, old.content, old.tags, old.type);
+      INSERT INTO wiki_fts(rowid, title, content, tags, type)
+        VALUES (new.rowid, new.title, new.content, new.tags, new.type);
+    END;
+
+    CREATE TABLE IF NOT EXISTS wiki_vectors (
+      rel_path TEXT PRIMARY KEY,
+      vector BLOB NOT NULL,
+      embedded_at INTEGER NOT NULL
+    );
+  `)
+
+  return wikiDb
+}
+
+export interface WikiPageRow {
+  rel_path: string
+  title: string
+  type: string
+  tags: string
+  content: string
+  confidence: number
+  source_count: number
+  superseded_by: string | null
+  last_verified: number | null
+  updated_at: number
+}
+
+/** Index a single wiki page into the search DB (upsert) */
+export function indexWikiPage(relPath: string): void {
+  const full = path.join(wikiRoot(), relPath)
+  if (!fs.existsSync(full)) return
+
+  const raw = fs.readFileSync(full, 'utf-8')
+  const fm = parseFrontmatter(raw)
+
+  // Strip frontmatter for content indexing
+  const content = raw.replace(/^---\n[\s\S]*?\n---\n?/, '').trim()
+
+  const db = getWikiDb()
+  const existing = db.prepare('SELECT confidence, source_count FROM wiki_pages WHERE rel_path = ?')
+    .get(relPath) as { confidence: number; source_count: number } | undefined
+
+  const sourceCount = fm.sources.length || (existing?.source_count ?? 1)
+  const confidence = existing
+    ? Math.min(1.0, existing.confidence + 0.1) // boost on re-index
+    : (sourceCount > 1 ? Math.min(1.0, 0.5 + (sourceCount - 1) * 0.2) : 0.5)
+
+  db.prepare(`
+    INSERT INTO wiki_pages (rel_path, title, type, tags, content, confidence, source_count, last_verified, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(rel_path) DO UPDATE SET
+      title = excluded.title, type = excluded.type, tags = excluded.tags,
+      content = excluded.content, confidence = excluded.confidence,
+      source_count = excluded.source_count, last_verified = excluded.last_verified,
+      updated_at = excluded.updated_at
+  `).run(
+    relPath, fm.title || relPath, fm.type || 'page',
+    fm.tags.join(', '), content.slice(0, 5000),
+    confidence, sourceCount, Date.now(), Date.now()
+  )
+}
+
+/** Re-index all wiki pages */
+export function indexAllWikiPages(): void {
+  const pages = listWikiPages()
+  const SYSTEM_FILES = new Set(['SCHEMA.md', 'index.md', 'log.md', 'overview.md', 'purpose.md'])
+  let count = 0
+  for (const p of pages) {
+    if (SYSTEM_FILES.has(p.relPath)) continue
+    indexWikiPage(p.relPath)
+    count++
+  }
+  console.log(`[Wiki] Indexed ${count} pages`)
+}
+
+/** BM25 search over wiki pages */
+export function wikiFtsSearch(query: string, limit = 10): WikiPageRow[] {
+  const db = getWikiDb()
+  const terms = query.trim().split(/\s+/).filter(w => w.length > 1)
+  if (terms.length === 0) return []
+
+  // Check for CJK — FTS5 tokenizer doesn't handle it well
+  const hasCjk = /[\u3000-\u9fff\uac00-\ud7af]/.test(query)
+
+  if (hasCjk) {
+    // LIKE fallback for CJK
+    const pattern = `%${query.trim()}%`
+    return db.prepare(`
+      SELECT * FROM wiki_pages
+      WHERE title LIKE ? OR content LIKE ? OR tags LIKE ?
+      ORDER BY
+        CASE WHEN title LIKE ? THEN 1000 ELSE 0 END +
+        CASE WHEN tags LIKE ? THEN 500 ELSE 0 END +
+        CASE WHEN content LIKE ? THEN 200 ELSE 0 END DESC
+      LIMIT ?
+    `).all(pattern, pattern, pattern, pattern, pattern, pattern, limit) as WikiPageRow[]
+  }
+
+  const ftsQuery = terms.map(t => `"${t.replace(/"/g, '')}"*`).join(' OR ')
+  try {
+    return db.prepare(`
+      SELECT wiki_pages.* FROM wiki_fts
+      JOIN wiki_pages ON wiki_pages.rowid = wiki_fts.rowid
+      WHERE wiki_fts MATCH ?
+      ORDER BY bm25(wiki_fts, 10, 5, 3, 1)
+      LIMIT ?
+    `).all(ftsQuery, limit) as WikiPageRow[]
+  } catch {
+    // FTS syntax error fallback
+    const pattern = `%${terms[0]}%`
+    return db.prepare(`
+      SELECT * FROM wiki_pages WHERE title LIKE ? OR content LIKE ? LIMIT ?
+    `).all(pattern, pattern, limit) as WikiPageRow[]
+  }
+}
+
+/** Get a wiki page row by relPath */
+export function getWikiPageRow(relPath: string): WikiPageRow | null {
+  return getWikiDb().prepare('SELECT * FROM wiki_pages WHERE rel_path = ?')
+    .get(relPath) as WikiPageRow | null
+}
+
+/** Get all wiki page rows */
+export function getAllWikiPageRows(): WikiPageRow[] {
+  return getWikiDb().prepare('SELECT * FROM wiki_pages').all() as WikiPageRow[]
 }
