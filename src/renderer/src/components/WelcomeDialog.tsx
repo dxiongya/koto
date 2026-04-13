@@ -8,7 +8,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  X, Sparkles, FileText, Archive, Terminal, FileCode, Brain,
+  X, Sparkles, FileText, Archive, Terminal, FileCode, Brain, BookOpen,
   Keyboard, Command, ArrowRight, ArrowLeft, Settings,
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
@@ -40,12 +40,13 @@ const IntroCard = (): React.ReactElement => (
 const APPS = [
   { id: 'notes.app', icon: FileText, name: 'Notes', desc: 'Rich-text markdown with inline AI writing.' },
   { id: 'collector.app', icon: Archive, name: 'Collector', desc: 'Save links, images, tweets — search with AI.' },
+  { id: 'wiki.app', icon: BookOpen, name: 'Wiki', desc: 'Auto-built knowledge base from your collected items.' },
   { id: 'terminal.app', icon: Terminal, name: 'Terminal', desc: 'Split panes, persistent buffers, themed.' },
   { id: 'code.app', icon: FileCode, name: 'Code', desc: 'Open any folder. Edit with AI completion.' },
   { id: 'memory.app', icon: Brain, name: 'Memory', desc: 'Where AI quietly remembers what matters.' },
 ] as const
 
-const DEFAULT_ENABLED_APPS = new Set<string>(['notes.app', 'collector.app'])
+const DEFAULT_ENABLED_APPS = new Set<string>(['notes.app', 'collector.app', 'wiki.app'])
 
 const AppsCard = ({
   selected,
@@ -204,14 +205,20 @@ export function WelcomeDialog(): React.ReactElement | null {
 
   // Persist app selection + toggle registry + remember welcome seen.
   const persistAndClose = useCallback(() => {
-    const enabled = Array.from(selectedApps)
     try {
       const registry = getAppRegistry()
+      // Update registry for the apps shown in the welcome dialog
       for (const app of APPS) {
         registry.setEnabled(app.id, selectedApps.has(app.id))
       }
-    } catch { /* registry not ready, config alone is sufficient */ }
-    window.api.state.update({ enabledApps: enabled }).catch(() => {})
+      // Persist ALL enabled apps from the registry (not just the APPS constant)
+      // so apps not listed in the welcome dialog keep their enabled state.
+      const allEnabled = registry.getEnabled().map((a) => a.definition.manifest.id)
+      window.api.state.update({ enabledApps: allEnabled }).catch(() => {})
+    } catch {
+      // Registry not ready — save just the selected set as fallback
+      window.api.state.update({ enabledApps: Array.from(selectedApps) }).catch(() => {})
+    }
     // Bump the apps version so Sidebar re-reads the registry and shows the
     // newly-enabled apps immediately (no manual refresh needed).
     useUIStore.getState().bumpAppsVersion()

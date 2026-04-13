@@ -229,7 +229,7 @@ function persistState(patch: Record<string, unknown>): void {
   }, 300)
 }
 
-const ALL_APPS: AppType[] = ['notes.app', 'code.app', 'browser.app', 'terminal.app', 'collector.app', 'settings.app']
+const ALL_APPS: AppType[] = ['notes.app', 'code.app', 'browser.app', 'terminal.app', 'collector.app', 'wiki.app', 'settings.app']
 
 function defaultAppStates(): Record<AppType, PerAppState> {
   const states = {} as Record<AppType, PerAppState>
