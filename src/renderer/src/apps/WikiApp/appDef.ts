@@ -53,7 +53,6 @@ export const wikiAppDefinition: AppDefinition = {
     // ── Subscribe to collector events ────────────────────────────────
 
     bus.on('collector:item-ready', async (rawEvent: unknown) => {
-      console.log('[Wiki] received collector:item-ready', rawEvent)
       await ensureInit()
       const event = rawEvent as {
         itemId: string
@@ -63,7 +62,6 @@ export const wikiAppDefinition: AppDefinition = {
         hasDescription: boolean
       }
       if (!event?.itemId) return
-      console.log(`[Wiki] enqueuing ingest for ${event.itemId} (${event.itemType}), auto=${getAutoIngest()}`)
       // Enqueue for ingest. If auto-ingest is on, runIngest fires in background.
       enqueueIngest({
         itemId: event.itemId,

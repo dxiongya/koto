@@ -12,6 +12,8 @@ export interface QueuedIngest {
   enqueuedAt: number
   status: 'pending' | 'running' | 'done' | 'error'
   error?: string
+  /** Brief progress label shown during 'running' status. */
+  step?: string
   /** Wiki pages written from this ingest (populated when status='done'). */
   filesWritten?: string[]
 }

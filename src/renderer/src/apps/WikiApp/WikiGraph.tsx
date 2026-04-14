@@ -69,7 +69,10 @@ export const WikiGraph: React.FC<WikiGraphProps> = ({ onSelectPage }) => {
   useEffect(() => {
     let cancelled = false
 
+    let layoutTimeoutId: ReturnType<typeof setTimeout> | null = null
+
     const cleanup = () => {
+      if (layoutTimeoutId) { clearTimeout(layoutTimeoutId); layoutTimeoutId = null }
       if (layoutRef.current) { layoutRef.current.kill(); layoutRef.current = null }
       if (sigmaRef.current) { sigmaRef.current.kill(); sigmaRef.current = null }
       // Remove leftover canvas elements (HMR / strict mode residue)
@@ -148,16 +151,19 @@ export const WikiGraph: React.FC<WikiGraphProps> = ({ onSelectPage }) => {
         if (cancelled) { sigma.kill(); return }
         sigmaRef.current = sigma
 
-        sigma.on('clickNode', ({ node }) => {
+        const handleClickNode = ({ node }: { node: string }): void => {
           const attrs = graph.getNodeAttributes(node)
           if (attrs.relPath) onSelectPageRef.current(attrs.relPath as string)
-        })
-        sigma.on('enterNode', () => {
+        }
+        const handleEnterNode = (): void => {
           if (containerRef.current) containerRef.current.style.cursor = 'pointer'
-        })
-        sigma.on('leaveNode', () => {
+        }
+        const handleLeaveNode = (): void => {
           if (containerRef.current) containerRef.current.style.cursor = 'default'
-        })
+        }
+        sigma.on('clickNode', handleClickNode)
+        sigma.on('enterNode', handleEnterNode)
+        sigma.on('leaveNode', handleLeaveNode)
 
         // ForceAtlas2 layout
         const layout = new FA2Layout(graph, {
@@ -174,7 +180,7 @@ export const WikiGraph: React.FC<WikiGraphProps> = ({ onSelectPage }) => {
         layoutRef.current = layout
         layout.start()
 
-        setTimeout(() => { if (layoutRef.current === layout) layout.stop() }, 4000)
+        layoutTimeoutId = setTimeout(() => { if (layoutRef.current === layout && !cancelled) layout.stop() }, 4000)
       } finally {
         if (!cancelled) setLoading(false)
       }

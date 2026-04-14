@@ -135,14 +135,20 @@
 .markdown-body li {
   margin-bottom: var(--md-list-item-margin) !important;
 }
-.markdown-body ul::marker,
-.markdown-body ol::marker,
-.markdown-body ul > li::marker,
-.markdown-body ol > li::marker {
+.markdown-body li::marker {
   color: var(--md-list-marker-color) !important;
 }
 
 /* ── Table ────────────────────────────────────────────────── */
+.markdown-body .editor-table {
+  border-collapse: collapse !important;
+  width: 100% !important;
+  margin: 0.5rem 0 1rem !important;
+  font-size: var(--md-table-font-size) !important;
+}
+.markdown-body .editor-table-row {
+  border-bottom: 1px solid var(--md-table-border-color) !important;
+}
 .markdown-body .editor-table-cell,
 .markdown-body .editor-table-cell-header {
   border-color: var(--md-table-border-color) !important;

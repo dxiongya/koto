@@ -385,6 +385,7 @@ export async function runIngest(collectorItemId: string): Promise<IngestResult> 
       : src.content
 
     // 3. Step 1 — Analysis (resource-type aware)
+    store.updateStatus(collectorItemId, { step: 'Analyzing...' })
     const analysisSystem = buildAnalysisPrompt(purpose, index, src.resourceType)
     const analysisUser = [
       `Source title: **${src.title}**`,
@@ -399,6 +400,7 @@ export async function runIngest(collectorItemId: string): Promise<IngestResult> 
     const analysis = await callLLM(analysisSystem, analysisUser)
 
     // 4. Step 2 — Generation (resource-type aware)
+    store.updateStatus(collectorItemId, { step: 'Generating pages...' })
     const generationSystem = buildGenerationPrompt(
       schema,
       purpose,
@@ -422,6 +424,7 @@ export async function runIngest(collectorItemId: string): Promise<IngestResult> 
     const generation = await callLLM(generationSystem, generationUser)
 
     // 5. Parse and write files
+    store.updateStatus(collectorItemId, { step: 'Writing files...' })
     const blocks = parseFileBlocks(generation)
     const writtenPaths: string[] = []
 

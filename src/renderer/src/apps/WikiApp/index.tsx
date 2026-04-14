@@ -263,7 +263,9 @@ export const WikiApp: React.FC = () => {
                       </span>
                     )}
                     <span className="flex-1 font-mono truncate text-tx-muted">
-                      {q.itemType} · {q.itemId.slice(0, 8)}
+                      {q.status === 'running' && q.step
+                        ? q.step
+                        : `${q.itemType} · ${q.itemId.slice(0, 8)}`}
                     </span>
                     {q.status === 'pending' && (
                       <button

@@ -1844,16 +1844,27 @@ const NotesAppSettings: React.FC = () => {
     return userThemeCssCache[markdownTheme] || ''
   }, [markdownTheme, userThemeCssCache])
 
+  const [importStatus, setImportStatus] = useState<string | null>(null)
+
   const handleImport = async () => {
-    const res = await window.api.dialog.selectFile([{ name: 'CSS Files', extensions: ['css'] }])
-    if (!res.ok || !res.data || !liteHome) return
-    const srcPath = res.data
-    const fileName = srcPath.split('/').pop() || 'imported.css'
-    const readRes = await window.api.fs.readFile(srcPath)
-    if (!readRes.ok) return
-    const destPath = `${liteHome}/themes/md/${fileName}`
-    await window.api.fs.writeFile(destPath, readRes.data)
-    setMarkdownTheme(fileName)
+    try {
+      const res = await window.api.dialog.selectFile([{ name: 'CSS Files', extensions: ['css'] }])
+      if (!res.ok || !res.data) return
+      if (!liteHome) { setImportStatus('Error: data location not configured'); return }
+      const srcPath = res.data
+      const fileName = srcPath.split('/').pop() || 'imported.css'
+      if (!fileName.endsWith('.css')) { setImportStatus('Error: not a CSS file'); return }
+      const readRes = await window.api.fs.readFile(srcPath)
+      if (!readRes.ok) { setImportStatus('Error: could not read file'); return }
+      const destPath = `${liteHome}/themes/md/${fileName}`
+      await window.api.fs.writeFile(destPath, readRes.data)
+      setMarkdownTheme(fileName)
+      setImportStatus(`Imported: ${fileName.replace(/\.css$/, '')}`)
+      setTimeout(() => setImportStatus(null), 3000)
+    } catch {
+      setImportStatus('Import failed')
+      setTimeout(() => setImportStatus(null), 3000)
+    }
   }
 
   const handleOpenThemesDir = () => {
@@ -1923,6 +1934,11 @@ const NotesAppSettings: React.FC = () => {
           <FolderOpen size={11} />
           Open Themes Folder
         </button>
+        {importStatus && (
+          <span className={`text-[11px] ${importStatus.startsWith('Error') ? 'text-status-error' : 'text-status-success'}`}>
+            {importStatus}
+          </span>
+        )}
       </div>
     </div>
   )

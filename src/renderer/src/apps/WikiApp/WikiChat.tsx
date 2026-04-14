@@ -153,10 +153,14 @@ export const WikiChat: React.FC<{
       }
       setMessages(prev => [...prev, assistantMsg])
     } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e)
+      const msg = raw.includes('AI call failed') || raw.includes('provider')
+        ? 'AI provider error — check Settings → AI to configure a provider.'
+        : `Error: ${raw}`
       setMessages(prev => [...prev, {
         id: String(Date.now()),
         role: 'assistant',
-        content: `Error: ${e instanceof Error ? e.message : String(e)}`,
+        content: msg,
         timestamp: Date.now(),
       }])
     } finally {
