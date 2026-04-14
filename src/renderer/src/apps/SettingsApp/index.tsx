@@ -1783,25 +1783,19 @@ const MD_PREVIEW_HTML = `<h1>Heading One</h1>
 }</code></pre>`
 
 const MdThemePreview: React.FC<{ themeCss: string }> = ({ themeCss }) => {
-  const previewRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!previewRef.current) return
-    let styleEl = previewRef.current.querySelector('style[data-preview]') as HTMLStyleElement | null
-    if (!styleEl) {
-      styleEl = document.createElement('style')
-      styleEl.setAttribute('data-preview', 'true')
-      previewRef.current.prepend(styleEl)
-    }
-    styleEl.textContent = themeCss
-  }, [themeCss])
+  // Scope theme CSS to preview only: replace .markdown-body → #md-preview
+  const scopedCss = useMemo(() =>
+    themeCss.replace(/\.markdown-body/g, '#md-preview'),
+  [themeCss])
 
   return (
     <div
-      ref={previewRef}
+      id="md-preview"
       className="markdown-body rounded-lg border border-border-subtle bg-bg-app p-4 overflow-hidden max-h-[280px] overflow-y-auto scroll-thin"
-      dangerouslySetInnerHTML={{ __html: MD_PREVIEW_HTML }}
-    />
+    >
+      <style>{scopedCss}</style>
+      <div dangerouslySetInnerHTML={{ __html: MD_PREVIEW_HTML }} />
+    </div>
   )
 }
 
