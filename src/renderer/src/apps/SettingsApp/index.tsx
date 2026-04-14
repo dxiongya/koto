@@ -1810,7 +1810,6 @@ const NotesAppSettings: React.FC = () => {
   const setMarkdownTheme = useUIStore((s) => s.setMarkdownTheme)
   const liteHome = useUIStore((s) => s.liteHome)
   const [userThemes, setUserThemes] = useState<string[]>([])
-  const [previewThemeId, setPreviewThemeId] = useState<string | null>(null)
   const [userThemeCssCache, setUserThemeCssCache] = useState<Record<string, string>>({})
 
   // Scan user themes directory
@@ -1826,6 +1825,17 @@ const NotesAppSettings: React.FC = () => {
     }).catch(() => {})
   }, [liteHome, markdownTheme])
 
+  // Load user theme CSS when selected
+  useEffect(() => {
+    if (!liteHome || !markdownTheme) return
+    // Skip built-ins
+    if (builtinMdThemes.some((t) => t.id === markdownTheme)) return
+    if (userThemeCssCache[markdownTheme]) return
+    window.api.fs.readFile(`${liteHome}/themes/md/${markdownTheme}`).then((res) => {
+      if (res.ok) setUserThemeCssCache((prev) => ({ ...prev, [markdownTheme]: res.data }))
+    }).catch(() => {})
+  }, [liteHome, markdownTheme, userThemeCssCache])
+
   const mdThemes = [
     { id: 'default', name: 'Default', desc: 'Inherits app theme — monospace, dark' },
     { id: 'github', name: 'GitHub', desc: 'Sans-serif, larger headings' },
@@ -1833,24 +1843,12 @@ const NotesAppSettings: React.FC = () => {
     { id: 'compact', name: 'Compact', desc: 'Tight spacing, smaller text' },
   ]
 
-  // Resolve CSS for preview
+  // Preview always shows the currently selected theme
   const previewCss = useMemo(() => {
-    const tid = previewThemeId ?? markdownTheme
-    // Built-in?
-    const builtin = builtinMdThemes.find((t) => t.id === tid)
+    const builtin = builtinMdThemes.find((t) => t.id === markdownTheme)
     if (builtin) return builtin.css
-    // User theme from cache
-    return userThemeCssCache[tid] || ''
-  }, [previewThemeId, markdownTheme, userThemeCssCache])
-
-  // Load user theme CSS on hover
-  const handleHoverUserTheme = useCallback((fileName: string) => {
-    setPreviewThemeId(fileName)
-    if (userThemeCssCache[fileName] || !liteHome) return
-    window.api.fs.readFile(`${liteHome}/themes/md/${fileName}`).then((res) => {
-      if (res.ok) setUserThemeCssCache((prev) => ({ ...prev, [fileName]: res.data }))
-    }).catch(() => {})
-  }, [liteHome, userThemeCssCache])
+    return userThemeCssCache[markdownTheme] || ''
+  }, [markdownTheme, userThemeCssCache])
 
   const handleImport = async () => {
     const res = await window.api.dialog.selectFile([{ name: 'CSS Files', extensions: ['css'] }])
@@ -1880,8 +1878,6 @@ const NotesAppSettings: React.FC = () => {
           <button
             key={t.id}
             onClick={() => setMarkdownTheme(t.id)}
-            onMouseEnter={() => setPreviewThemeId(t.id)}
-            onMouseLeave={() => setPreviewThemeId(null)}
             className={`w-full flex items-center justify-between px-2.5 py-2 rounded text-left transition-colors ${
               markdownTheme === t.id
                 ? 'bg-accent-main/10 text-accent-main'
@@ -1902,8 +1898,6 @@ const NotesAppSettings: React.FC = () => {
           <button
             key={fileName}
             onClick={() => setMarkdownTheme(fileName)}
-            onMouseEnter={() => handleHoverUserTheme(fileName)}
-            onMouseLeave={() => setPreviewThemeId(null)}
             className={`w-full flex items-center justify-between px-2.5 py-2 rounded text-left transition-colors ${
               markdownTheme === fileName
                 ? 'bg-accent-main/10 text-accent-main'
