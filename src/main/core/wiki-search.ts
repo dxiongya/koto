@@ -49,8 +49,8 @@ export async function wikiHybridSearch(query: string, topK = 10): Promise<WikiSe
       const neighbors = new Map<string, number>() // relPath → hop count from hits
 
       for (const edge of graph.edges) {
-        const sourceRel = edge.source + '.md'
-        const targetRel = edge.target + '.md'
+        const sourceRel = edge.source.endsWith('.md') ? edge.source : edge.source + '.md'
+        const targetRel = edge.target.endsWith('.md') ? edge.target : edge.target + '.md'
 
         if (hitPaths.has(sourceRel) && !hitPaths.has(targetRel)) {
           neighbors.set(targetRel, (neighbors.get(targetRel) || 0) + 1)

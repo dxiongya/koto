@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import { getAppRegistry } from '../core/AppContext'
+import { DEFAULT_ENABLED } from '../core/builtinApps'
 
 type Step = {
   id: string
@@ -46,7 +47,7 @@ const APPS = [
   { id: 'memory.app', icon: Brain, name: 'Memory', desc: 'Where AI quietly remembers what matters.' },
 ] as const
 
-const DEFAULT_ENABLED_APPS = new Set<string>(['notes.app', 'collector.app', 'wiki.app'])
+const DEFAULT_ENABLED_APPS = new Set<string>(DEFAULT_ENABLED)
 
 const AppsCard = ({
   selected,
@@ -197,8 +198,13 @@ export function WelcomeDialog(): React.ReactElement | null {
   const toggleApp = useCallback((appId: string) => {
     setSelectedApps((prev) => {
       const next = new Set(prev)
-      if (next.has(appId)) next.delete(appId)
-      else next.add(appId)
+      if (next.has(appId)) {
+        // Prevent disabling all apps — at least one must remain
+        if (next.size <= 1) return prev
+        next.delete(appId)
+      } else {
+        next.add(appId)
+      }
       return next
     })
   }, [])

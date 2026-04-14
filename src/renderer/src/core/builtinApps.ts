@@ -15,7 +15,7 @@ const BUILTIN_APPS: Record<string, () => Promise<{ definition: AppDefinition }>>
   'memory.app': () => import('../apps/MemoryApp/appDef').then(m => ({ definition: m.memoryAppDefinition })),
 }
 
-const DEFAULT_ENABLED = ['notes.app', 'collector.app', 'wiki.app']
+export const DEFAULT_ENABLED = ['notes.app', 'collector.app', 'wiki.app']
 
 export async function registerBuiltinApps(registry: AppRegistry): Promise<void> {
   // Load persisted enabled/order state

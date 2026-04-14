@@ -1151,8 +1151,17 @@ export function setupIpcHandlers(): void {
     }
   })
 
+  // Validate wiki relPath to prevent path traversal
+  function assertSafeWikiPath(relPath: string): void {
+    const normalized = path.normalize(relPath)
+    if (normalized.startsWith('..') || path.isAbsolute(normalized)) {
+      throw new Error('Invalid wiki path')
+    }
+  }
+
   ipcMain.handle(IpcChannels.WIKI_READ, async (_, relPath: string) => {
     try {
+      assertSafeWikiPath(relPath)
       const { readWikiFile } = await import('./wiki-store')
       return { ok: true, data: readWikiFile(relPath) }
     } catch (e) {
@@ -1162,6 +1171,7 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.WIKI_WRITE, async (_, relPath: string, content: string) => {
     try {
+      assertSafeWikiPath(relPath)
       const { writeWikiFile } = await import('./wiki-store')
       writeWikiFile(relPath, content)
       return { ok: true, data: undefined }
@@ -1182,6 +1192,7 @@ export function setupIpcHandlers(): void {
 
   ipcMain.handle(IpcChannels.WIKI_DELETE, async (_, relPath: string) => {
     try {
+      assertSafeWikiPath(relPath)
       const { deleteWikiFile } = await import('./wiki-store')
       const ok = deleteWikiFile(relPath)
       return ok ? { ok: true, data: undefined } : { ok: false, error: 'Protected or not found' }

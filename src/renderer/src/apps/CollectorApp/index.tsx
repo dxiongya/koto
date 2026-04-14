@@ -161,13 +161,14 @@ export const CollectorApp: React.FC = () => {
     // Emit a synthetic item-ready event so wiki picks it up immediately
     const item = items.find(i => i.id === itemId)
     if (!item) return
+    const meta = (item.meta as Record<string, unknown>) || {}
     const bus = getAppBus()
     bus.emit('collector:item-ready', {
       type: 'collector:item-ready',
       itemId: item.id,
       itemType: item.type,
-      hasMarkdown: false,
-      hasOcr: !!(item.meta as Record<string, unknown>)?.ocrText,
+      hasMarkdown: !!(meta.hasMarkdown || meta.markdownFetched),
+      hasOcr: !!meta.ocrText,
       hasDescription: !!item.note,
     })
     setToast({ message: `Sent to Wiki · ${item.title.slice(0, 30)}`, status: 'success' })

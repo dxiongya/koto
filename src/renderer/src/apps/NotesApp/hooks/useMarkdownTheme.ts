@@ -3,6 +3,7 @@
  *
  * Built-in themes are bundled via ?raw imports.
  * User themes are loaded from {liteHome}/themes/md/{filename}.
+ * Falls back to 'default' if a user theme file is missing.
  */
 import { useEffect, useRef } from 'react'
 import { useUIStore } from '../../../store/useUIStore'
@@ -33,16 +34,21 @@ export function useMarkdownTheme(containerRef: React.RefObject<HTMLElement | nul
       return
     }
 
-    // User theme — read from disk
+    // User theme — read from disk, fallback to default if missing
     if (liteHome && themeId) {
       const themePath = `${liteHome}/themes/md/${themeId}`
       window.api.fs.readFile(themePath).then((res) => {
         if (res.ok && styleEl) {
           styleEl.textContent = res.data
+        } else {
+          // File missing or unreadable — revert to default
+          console.warn(`[MdTheme] User theme "${themeId}" not found, reverting to default`)
+          styleEl.textContent = ''
+          useUIStore.getState().setMarkdownTheme('default')
         }
       }).catch(() => {
-        // Fallback to empty (uses variable defaults)
         styleEl.textContent = ''
+        useUIStore.getState().setMarkdownTheme('default')
       })
     } else {
       styleEl.textContent = ''
