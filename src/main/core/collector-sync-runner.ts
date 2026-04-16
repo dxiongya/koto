@@ -11,9 +11,10 @@ import os from 'os'
 import { BrowserWindow } from 'electron'
 import { IpcChannels } from '../../shared/types'
 import { getLiteHome } from './lite-home'
-import { addCollectedItem, findDuplicateByUrl } from './collector-store'
+import { addCollectedItem, findDuplicateByUrl, fetchAndSaveMarkdown, getItemsByIds } from './collector-store'
 import { getSyncConfig, getScriptSource, updateSyncResult } from './collector-sync-store'
-import type { CollectorAddInput } from '../../shared/types'
+import { emitAppEvent, emitItemReadyIfReady } from './event-bus'
+import type { CollectorAddInput, CollectedItem } from '../../shared/types'
 
 export interface SyncRunEvent {
   groupName: string
@@ -51,10 +52,12 @@ function isPathAllowed(filePath: string, allowedPaths: string[]): boolean {
 function buildSyncContext(groupName: string, adapterConfig: Record<string, unknown>): {
   ctx: Record<string, unknown>
   getStats: () => { added: number }
+  getAddedItems: () => CollectedItem[]
   abort: AbortController
 } {
   const abort = new AbortController()
   let itemsAdded = 0
+  const addedItems: CollectedItem[] = []
   const allowedPaths = (adapterConfig.allowedPaths as string[]) || []
 
   const ctx = {
@@ -71,6 +74,15 @@ function buildSyncContext(groupName: string, adapterConfig: Record<string, unkno
           source: 'sync',
         } as CollectorAddInput)
         itemsAdded++
+        addedItems.push(item)
+        // Emit event so wiki + UI know about the new item
+        emitAppEvent({
+          type: 'collector:item-added',
+          itemId: item.id,
+          itemType: item.type,
+          title: item.title,
+          group: groupName,
+        })
         return { id: item.id, added: true }
       } catch (e: any) {
         if (e.message?.includes('UNIQUE constraint') || e.message?.includes('duplicate')) {
@@ -131,7 +143,7 @@ function buildSyncContext(groupName: string, adapterConfig: Record<string, unkno
     error: (msg: string) => console.error(`[Sync:${groupName}]`, msg),
   }
 
-  return { ctx, getStats: () => ({ added: itemsAdded }), abort }
+  return { ctx, getStats: () => ({ added: itemsAdded }), getAddedItems: () => addedItems, abort }
 }
 
 /** Run a sync for a group */
@@ -167,7 +179,7 @@ export async function runSync(groupName: string): Promise<{ success: boolean; it
     }
   }
 
-  const { ctx, getStats, abort } = buildSyncContext(groupName, config.adapterConfig)
+  const { ctx, getStats, getAddedItems, abort } = buildSyncContext(groupName, config.adapterConfig)
   activeAborts.set(groupName, abort)
 
   emitEvent({ groupName, status: 'started', timestamp: Date.now(), message: 'Starting sync...' })
@@ -203,6 +215,13 @@ export async function runSync(groupName: string): Promise<{ success: boolean; it
     const stats = getStats()
     updateSyncResult(groupName, { status: 'success', itemsAdded: stats.added })
     emitEvent({ groupName, status: 'completed', timestamp: Date.now(), message: `Sync complete. ${stats.added} items added.`, itemsAdded: stats.added })
+
+    // Post-sync: trigger enrichment for newly added items (background, non-blocking)
+    const added = getAddedItems()
+    if (added.length > 0) {
+      postSyncEnrich(added).catch(e => console.warn('[Sync] post-enrich error:', e))
+    }
+
     return { success: true, itemsAdded: stats.added }
   } catch (e: any) {
     const error = e.message || String(e)
@@ -228,4 +247,34 @@ export function cancelSync(groupName: string): boolean {
 /** Check if a sync is currently running */
 export function isSyncRunning(groupName: string): boolean {
   return activeAborts.has(groupName)
+}
+
+/**
+ * Post-sync enrichment: fetch markdown for link/tweet items, then emit readiness.
+ * Runs sequentially to avoid overwhelming the network. Capped to first 50 items.
+ */
+async function postSyncEnrich(items: CollectedItem[]): Promise<void> {
+  const linkItems = items.filter(i => i.type === 'link' || i.type === 'tweet')
+  const textItems = items.filter(i => i.type === 'text' || i.type === 'video')
+
+  // Text/video items are immediately ready
+  for (const item of textItems) {
+    emitItemReadyIfReady(item)
+  }
+
+  // Link/tweet items need markdown fetch first (cap at 50 to avoid overload)
+  const toFetch = linkItems.slice(0, 50)
+  console.log(`[Sync] Post-enrich: ${toFetch.length} items to fetch markdown, ${textItems.length} text items ready`)
+
+  for (const item of toFetch) {
+    if (!item.url) continue
+    try {
+      await fetchAndSaveMarkdown(item.id, item.url)
+    } catch (e) {
+      console.warn(`[Sync] markdown fetch failed for ${item.id}:`, e)
+    }
+    // Reload item from DB (meta updated by fetchAndSaveMarkdown) and check readiness
+    const [fresh] = getItemsByIds([item.id])
+    if (fresh) emitItemReadyIfReady(fresh)
+  }
 }

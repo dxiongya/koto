@@ -9,12 +9,13 @@ import { getAppBus } from './AppContext'
 const BUILTIN_APPS: Record<string, () => Promise<{ definition: AppDefinition }>> = {
   'notes.app': () => import('../apps/NotesApp/appDef').then(m => ({ definition: m.notesAppDefinition })),
   'collector.app': () => import('../apps/CollectorApp/appDef').then(m => ({ definition: m.collectorAppDefinition })),
+  'wiki.app': () => import('../apps/WikiApp/appDef').then(m => ({ definition: m.wikiAppDefinition })),
   'code.app': () => import('../apps/CodeApp/appDef').then(m => ({ definition: m.codeAppDefinition })),
   'terminal.app': () => import('../apps/TerminalApp/appDef').then(m => ({ definition: m.terminalAppDefinition })),
   'memory.app': () => import('../apps/MemoryApp/appDef').then(m => ({ definition: m.memoryAppDefinition })),
 }
 
-const DEFAULT_ENABLED = ['notes.app', 'collector.app']
+export const DEFAULT_ENABLED = ['notes.app', 'collector.app', 'wiki.app']
 
 export async function registerBuiltinApps(registry: AppRegistry): Promise<void> {
   // Load persisted enabled/order state

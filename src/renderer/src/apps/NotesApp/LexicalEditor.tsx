@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useMemo } from 'react'
+import React, { useCallback, useRef, useMemo, useEffect } from 'react'
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -82,6 +82,7 @@ import {
 import { TableAIPlugin } from './plugins/TableAIPlugin'
 import { AutomationPlugin } from './plugins/AutomationPlugin'
 import { TableOfContentsPlugin } from './plugins/TableOfContentsPlugin'
+import { useMarkdownTheme } from './hooks/useMarkdownTheme'
 
 const HASHTAG_TRANSFORMER: TextMatchTransformer = {
   dependencies: [HashtagNode],
@@ -294,6 +295,8 @@ interface LexicalEditorProps {
 
 export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, onSave }) => {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mdContainerRef = useRef<HTMLDivElement>(null)
+  useMarkdownTheme(mdContainerRef)
 
   const initialConfig = useMemo(
     () => ({
@@ -385,13 +388,13 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
     <LexicalComposer initialConfig={initialConfig}>
       <div className="flex-1 flex h-full overflow-hidden relative">
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <div className="flex-1 overflow-y-auto relative">
+          <div ref={mdContainerRef} id="write" className="markdown-body flex-1 overflow-y-auto relative">
             <RichTextPlugin
               contentEditable={
-                <ContentEditable className="outline-none px-8 py-2 md:px-12 md:py-4 min-h-full text-[16px] leading-[1.8]" />
+                <ContentEditable className="outline-none px-8 py-2 md:px-12 md:py-4 min-h-full" />
               }
               placeholder={
-                <div className="absolute top-2 left-8 md:top-4 md:left-12 text-tx-faint text-[16px] pointer-events-none select-none">
+                <div className="absolute top-2 left-8 md:top-4 md:left-12 text-tx-faint pointer-events-none select-none" style={{ fontSize: 'var(--md-font-size, 16px)' }}>
                   Type / for commands...
                 </div>
               }

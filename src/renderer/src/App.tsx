@@ -69,6 +69,7 @@ export default function App() {
         }
         if (c.mcpServers) useUIStore.setState({ mcpServers: c.mcpServers })
         if (c.hasSeenWelcome !== undefined) useUIStore.setState({ hasSeenWelcome: c.hasSeenWelcome })
+        if (c.markdownTheme) useUIStore.setState({ markdownTheme: c.markdownTheme })
 
         // terminal.app — recreate PTY sessions with saved cwd + buffer
         if (c.terminalSessions?.length > 0) {

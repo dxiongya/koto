@@ -10,6 +10,9 @@ import { ItemListRow } from './ItemListRow'
 import { FeedItem } from './FeedItem'
 import { CollectToast } from './CollectToast'
 import { DetailPanel } from './DetailPanel'
+import { EnrichmentIndicator } from './EnrichmentIndicator'
+import { trackEnrichment } from './enrichment-store'
+import { getAppBus } from '../../core/AppContext'
 
 const PAGE_SIZE = 50
 
@@ -108,21 +111,18 @@ export const CollectorApp: React.FC = () => {
     })
   }, [groupParam])
 
-  // Listen for sync progress events
+  // Listen for sync progress events from main process
   useEffect(() => {
-    const handler = (_: unknown, event: any) => {
+    const cleanup = window.api.collector.sync.onEvent((event: any) => {
       if (event.groupName !== groupParam) return
       if (event.status === 'started') { setSyncing(true); setSyncMessage('Syncing...') }
       else if (event.status === 'progress') setSyncMessage(event.message || 'Syncing...')
-      else if (event.status === 'completed') { setSyncing(false); setSyncMessage(null); loadItems() }
+      else if (event.status === 'completed') { setSyncing(false); setSyncMessage(null); bumpVersion() }
       else if (event.status === 'error') { setSyncing(false); setSyncMessage(`Error: ${event.message}`) }
       else if (event.status === 'cancelled') { setSyncing(false); setSyncMessage(null) }
-    }
-    // @ts-ignore
-    window.api?.terminal?.onData // just to check if preload exists
-    // Listen via custom event (IPC push comes through preload)
-    return () => {}
-  }, [groupParam, loadItems])
+    })
+    return cleanup
+  }, [groupParam, bumpVersion])
 
   // Listen for sidebar item focus event → scroll to item + highlight
   useEffect(() => {
@@ -157,6 +157,23 @@ export const CollectorApp: React.FC = () => {
     else if (item.assetPath) setPreviewImage(`lite-asset://collected/${item.assetPath}`)
   }, [])
 
+  const handleSendToWiki = useCallback((itemId: string) => {
+    // Emit a synthetic item-ready event so wiki picks it up immediately
+    const item = items.find(i => i.id === itemId)
+    if (!item) return
+    const meta = (item.meta as Record<string, unknown>) || {}
+    const bus = getAppBus()
+    bus.emit('collector:item-ready', {
+      type: 'collector:item-ready',
+      itemId: item.id,
+      itemType: item.type,
+      hasMarkdown: !!(meta.hasMarkdown || meta.markdownFetched),
+      hasOcr: !!meta.ocrText,
+      hasDescription: !!item.note,
+    })
+    setToast({ message: `Sent to Wiki · ${item.title.slice(0, 30)}`, status: 'success' })
+  }, [items])
+
   // ── Quick collect (paste/drop) ──
 
   const quickCollect = useCallback(async (input: string) => {
@@ -182,8 +199,8 @@ export const CollectorApp: React.FC = () => {
 
     setToast({ message: url ? `Collecting ${TYPE_LABELS[type].toLowerCase()} · ${domain}...` : 'Collecting text...', status: 'loading' })
 
-    let title = type === 'text' ? val.split('\n')[0].slice(0, 120) : domain
-    let description = type === 'text' ? val : ''
+    let title = type === 'text' ? val : domain
+    let description = ''
     const meta: Record<string, unknown> = domain ? { domain } : {}
 
     if (url) {
@@ -212,16 +229,17 @@ export const CollectorApp: React.FC = () => {
     } else if (addRes.ok) {
       setToast({ message: `Collected · ${title.slice(0, 40)}${title.length > 40 ? '...' : ''}`, status: 'success' })
       const itemId = addRes.data.id
-      // Background enrichment (markdown fetch + embedding). We don't block
-      // the success toast on these — they're best-effort — but log failures
-      // so devs can see them in the console (not silent).
+      // Background enrichment with status tracking — visible in the
+      // bottom-right indicator so users know processing is happening.
       if (url && (type === 'link' || type === 'tweet')) {
-        window.api.collector.fetchMarkdown(itemId, url)
-          .then(() => window.api.collector.embedItem(itemId))
-          .catch((e) => console.warn('[Collector] background enrich failed:', e))
+        trackEnrichment(itemId, title, 'markdown', async () => {
+          await window.api.collector.fetchMarkdown(itemId, url!)
+          await window.api.collector.embedItem(itemId)
+        }).catch((e) => console.warn('[Collector] background enrich failed:', e))
       } else {
-        window.api.collector.embedItem(itemId)
-          .catch((e) => console.warn('[Collector] embed failed:', e))
+        trackEnrichment(itemId, title, 'embedding', () =>
+          window.api.collector.embedItem(itemId),
+        ).catch((e) => console.warn('[Collector] embed failed:', e))
       }
     } else {
       setToast({ message: 'Failed to collect', status: 'error' })
@@ -253,8 +271,9 @@ export const CollectorApp: React.FC = () => {
       if (addRes.ok && dupMeta.duplicateOf) setToast({ message: `Collected (duplicate) · ${title.slice(0, 35)}`, status: 'success' })
       else if (addRes.ok) {
         setToast({ message: `Collected · ${title.slice(0, 40)}`, status: 'success' })
-        window.api.collector.embedItem(addRes.data.id)
-          .catch((e) => console.warn('[Collector] embed failed:', e))
+        trackEnrichment(addRes.data.id, title, 'ocr', () =>
+          window.api.collector.embedItem(addRes.data.id),
+        ).catch((e) => console.warn('[Collector] embed failed:', e))
       }
       else setToast({ message: 'Failed to collect file', status: 'error' })
     } catch {
@@ -323,6 +342,9 @@ export const CollectorApp: React.FC = () => {
   return (
     <div className={`flex-1 flex flex-col p-8 pt-6 gap-5 overflow-hidden relative ${blurClass}`}
       onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}>
+
+      {/* Enrichment status indicator (bottom-right floating pill) */}
+      <EnrichmentIndicator />
 
       {isDragOver && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-bg-app/80 border-2 border-dashed border-accent-main/40 rounded-lg pointer-events-none">
@@ -452,7 +474,7 @@ export const CollectorApp: React.FC = () => {
       )}
 
       {/* Content */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-px">
         {filteredItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-tx-faint">
             <Layers size={28} />
@@ -460,10 +482,10 @@ export const CollectorApp: React.FC = () => {
             {searchResults === null && <button onClick={() => setShowCollectPanel(true)} className="text-[12px] text-accent-main hover:underline">Collect your first item</button>}
           </div>
         ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-4 gap-2.5 pb-4">
+          <div className="grid grid-cols-4 gap-2.5 p-0.5 pb-4">
             {filteredItems.map((item) => (
               <div key={item.id} data-collector-id={item.id} className={focusedItemId === item.id ? 'ring-2 ring-accent-main rounded-md transition-all' : ''}>
-                <ItemCard item={item} onDelete={handleDelete} onOpen={handleOpen} />
+                <ItemCard item={item} onDelete={handleDelete} onOpen={handleOpen} onSendToWiki={handleSendToWiki} />
               </div>
             ))}
           </div>

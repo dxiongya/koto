@@ -127,5 +127,35 @@ export const notesAppDefinition: AppDefinition = {
         return files.map((f: any) => ({ name: f.name, path: f.path, isDirectory: f.isDirectory }))
       },
     })
+
+    api.bus.provideTool({
+      name: 'notes.setMarkdownTheme',
+      appId: 'notes.app',
+      description: 'Set the markdown rendering theme for the notes editor. Can apply a built-in theme or create a custom theme from CSS. Built-in themes: default, github, serif, compact. CSS should override .markdown-body { --md-* } variables.',
+      parameters: {
+        themeId: { type: 'string', description: 'Built-in theme id (default/github/serif/compact) or existing custom theme filename' },
+        css: { type: 'string', description: 'Raw CSS content for a new custom theme. Saves to themes/md/ and applies. Must override --md-* variables inside .markdown-body {}' },
+        name: { type: 'string', description: 'Name for the custom theme (used as filename). Required when css is provided.' },
+      },
+      handler: async (params) => {
+        const { useUIStore } = await import('../../store/useUIStore')
+        const css = params.css as string | undefined
+        const name = params.name as string | undefined
+        const themeId = params.themeId as string | undefined
+
+        if (css && name) {
+          const fileName = name.endsWith('.css') ? name : `${name}.css`
+          const themePath = `${getLiteHome()}/themes/md/${fileName}`
+          await api.fs.writeFile(themePath, css)
+          useUIStore.getState().setMarkdownTheme(fileName)
+          return { success: true, themeId: fileName, path: themePath }
+        }
+        if (themeId) {
+          useUIStore.getState().setMarkdownTheme(themeId)
+          return { success: true, themeId }
+        }
+        return { success: false, error: 'Provide themeId or css+name' }
+      },
+    })
   },
 }

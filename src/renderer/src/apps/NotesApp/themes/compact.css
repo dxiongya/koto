@@ -1,0 +1,35 @@
+/**
+ * Compact — tight spacing, smaller text, more content per screen.
+ * Good for reference docs and technical notes.
+ */
+.markdown-body {
+  --md-font-size: 13px;
+  --md-line-height: 1.6;
+
+  --md-h1-size: 1.4em;
+  --md-h1-weight: 700;
+  --md-h1-mt: 1em;
+  --md-h1-mb: 0.4em;
+
+  --md-h2-size: 1.2em;
+  --md-h2-weight: 600;
+  --md-h2-mt: 0.8em;
+  --md-h2-mb: 0.3em;
+
+  --md-h3-size: 1.05em;
+  --md-h3-weight: 600;
+  --md-h3-mt: 0.6em;
+  --md-h3-mb: 0.2em;
+
+  --md-p-margin: 0.3em;
+
+  --md-code-padding: 0.75rem;
+  --md-code-font-size: 12px;
+
+  --md-list-indent: 1.2em;
+  --md-list-item-margin: 0.1em;
+
+  --md-table-cell-padding: 0.25rem 0.5rem;
+
+  --md-hr-margin: 1em 0;
+}

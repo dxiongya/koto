@@ -9,6 +9,7 @@ import { GoogleGenAI } from '@google/genai'
 import { getLiteHome } from './lite-home'
 import { loadConfig } from './lite-home'
 import { readItemMarkdown, saveVector, getAllVectors, getEmbeddedItemIds, updateCollectedItem } from './collector-store'
+import { emitItemReadyIfReady } from './event-bus'
 import type { CollectedItem } from '../../shared/types'
 
 const EMBEDDING_MODEL = 'gemini-embedding-2-preview'
@@ -88,7 +89,10 @@ export async function ocrAndDescribeItem(item: CollectedItem): Promise<boolean> 
   if (item.type !== 'image' && item.type !== 'screenshot') return false
 
   const client = getClient()
-  if (!client) return false
+  if (!client) {
+    console.warn(`[OCR] No Gemini API key configured — skipping OCR for ${item.id}`)
+    return false
+  }
 
   const fullPath = path.join(getLiteHome(), 'collected', item.assetPath)
   if (!fs.existsSync(fullPath)) return false
@@ -116,7 +120,12 @@ export async function ocrAndDescribeItem(item: CollectedItem): Promise<boolean> 
   const title = genericTitles.includes(item.title.toLowerCase())
     ? result.description.slice(0, 60) || item.title
     : item.title
-  updateCollectedItem(item.id, { title, note, meta })
+  const updated = updateCollectedItem(item.id, { title, note, meta })
+
+  // Notify subscribers (wiki, search, etc.) that this image's content is
+  // now usable. This is the point where the collector's own readiness rule
+  // flips to true for image/screenshot items.
+  if (updated) emitItemReadyIfReady(updated)
 
   return true
 }

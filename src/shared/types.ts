@@ -101,6 +101,7 @@ export const IpcChannels = {
   DIALOG_SELECT_IMAGES: 'dialog:selectImages',
   DIALOG_SELECT_VIDEOS: 'dialog:selectVideos',
   DIALOG_SELECT_FOLDER: 'dialog:selectFolder',
+  DIALOG_SELECT_FILE: 'dialog:selectFile',
 
   // URL Metadata
   URL_FETCH_META: 'url:fetchMeta',
@@ -170,6 +171,26 @@ export const IpcChannels = {
   SHELL_OPEN_PATH: 'shell:openPath',
   SHELL_REVEAL_PATH: 'shell:revealPath',
 
+  // App events (main → renderer push) — cross-app notifications
+  APP_EVENT: 'app:event',
+
+  // Wiki.app
+  WIKI_INIT: 'wiki:init',
+  WIKI_STATS: 'wiki:stats',
+  WIKI_LIST_PAGES: 'wiki:listPages',
+  WIKI_READ: 'wiki:read',
+  WIKI_WRITE: 'wiki:write',
+  WIKI_APPEND_LOG: 'wiki:appendLog',
+  WIKI_DELETE: 'wiki:delete',
+  WIKI_GRAPH: 'wiki:graph',
+  WIKI_RESET: 'wiki:reset',
+  WIKI_SEARCH: 'wiki:search',
+  WIKI_LINT: 'wiki:lint',
+  WIKI_REINDEX: 'wiki:reindex',
+
+  // Data management
+  COLLECTOR_RESET: 'collector:reset',
+
   // Task Scheduler
   TASK_LIST: 'task:list',
   TASK_CREATE: 'task:create',
@@ -203,7 +224,7 @@ export interface FsWatchEvent {
 
 // ── App Types ──
 
-export type AppType = 'notes.app' | 'code.app' | 'browser.app' | 'terminal.app' | 'collector.app' | 'settings.app'
+export type AppType = 'notes.app' | 'code.app' | 'browser.app' | 'terminal.app' | 'collector.app' | 'settings.app' | 'memory.app' | 'wiki.app'
 
 // ── Per-App State ──
 
@@ -236,7 +257,7 @@ export function getProviderModel(provider: AIProviderConfig, override?: string):
   return provider.model
 }
 
-export type AIFeature = 'completion' | 'chat'
+export type AIFeature = 'completion' | 'chat' | 'wiki'
 
 /** A specific (provider, model) pair that a feature is routed to. */
 export interface AIFeatureRoute {
@@ -248,6 +269,9 @@ export interface AIFeatureRoute {
 export interface AIFeatureRouting {
   completion: AIFeatureRoute | null
   chat: AIFeatureRoute | null
+  /** Used by wiki.app for ingest / lint / graph analysis — tends to burn
+   *  tokens, so route this to a cheap model (GLM, DeepSeek, local Ollama). */
+  wiki: AIFeatureRoute | null
 }
 
 /**
@@ -298,7 +322,7 @@ export interface AISettings {
 export const DEFAULT_AI_SETTINGS: AISettings = {
   providers: [],
   activeProviderId: null,
-  featureRouting: { completion: null, chat: null },
+  featureRouting: { completion: null, chat: null, wiki: null },
   usage: { ...DEFAULT_AI_USAGE_STATS },
 }
 
@@ -492,6 +516,8 @@ export interface LiteConfig {
   disabledBusTools?: string[]
   // First-run welcome dialog shown
   hasSeenWelcome: boolean
+  // Wiki.app auto-ingest preference
+  wikiAutoIngest?: boolean
 }
 
 // ── Default Per-App State ──
@@ -514,6 +540,8 @@ export const DEFAULT_LITE_CONFIG: LiteConfig = {
     'terminal.app': { ...DEFAULT_PER_APP_STATE },
     'collector.app': { ...DEFAULT_PER_APP_STATE },
     'settings.app': { ...DEFAULT_PER_APP_STATE },
+    'memory.app': { ...DEFAULT_PER_APP_STATE },
+    'wiki.app': { ...DEFAULT_PER_APP_STATE },
   },
   notesExpandedGroups: [],
   notesSortBy: 'modified',

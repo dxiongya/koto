@@ -5,7 +5,7 @@
  * Image: full preview + OCR text + AI description
  */
 import { useEffect, useState, useCallback } from 'react'
-import { X, Copy, ExternalLink, Check, Link, Image, Video, Twitter, Monitor, Type, Clock, Folder, Tag } from 'lucide-react'
+import { X, Copy, ExternalLink, Check, Link, Type, Clock, Folder, Tag } from 'lucide-react'
 import type { CollectedItem } from '../../../../shared/types'
 import { getDomain, TYPE_ICONS, TYPE_LABELS } from './shared'
 
@@ -72,11 +72,6 @@ export const DetailPanel: React.FC<{
     return `${days}d ago`
   })()
 
-  // Content to display / copy
-  const displayContent = item.type === 'text'
-    ? item.title
-    : markdown || item.note || description || ocrText || ''
-
   return (
     <div className="fixed inset-0 z-[9999] flex" onClick={onClose}>
       {/* Backdrop */}
@@ -92,7 +87,7 @@ export const DetailPanel: React.FC<{
         <div className="shrink-0 flex items-center gap-3 px-5 py-4 border-b border-border-subtle">
           <Icon size={16} className="text-accent-main shrink-0" />
           <div className="flex-1 min-w-0">
-            <h2 className="text-[14px] text-tx-main font-medium truncate">{item.title}</h2>
+            <h2 className="text-[14px] text-tx-main font-medium truncate">{item.type === 'text' ? item.title.split('\n')[0].slice(0, 120) : item.title}</h2>
             <div className="flex items-center gap-2 text-[11px] text-tx-faint mt-0.5">
               <span>{TYPE_LABELS[item.type]}</span>
               {domain && <><span>·</span><span>{domain}</span></>}

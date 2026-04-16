@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from 'react'
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react'
 import { useUIStore } from '../../store/useUIStore'
 import { builtinThemes, getThemeGroups, fontList } from '../../themes'
 import type { FontId, ThemeDefinition } from '../../themes'
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { ScheduledTasksSection } from '../../components/ScheduledTasksSection'
 import { getAppRegistry } from '../../core/AppContext'
+import { builtinMdThemes } from '../NotesApp/themes'
 
 /** Mini app preview using a theme's colors */
 const ThemePreview: React.FC<{ t: ThemeDefinition }> = ({ t }) => (
@@ -366,9 +367,10 @@ const AIProviderForm: React.FC<{
 const FEATURE_LABELS: Record<AIFeature, { name: string; desc: string }> = {
   completion: { name: 'Tab Completion', desc: 'Ghost text while typing — use a fast model' },
   chat: { name: 'AI Chat', desc: 'Chat panel and inline actions — use a capable model' },
+  wiki: { name: 'Wiki Ingest', desc: 'Auto-build knowledge wiki — use a cheap model (burns tokens)' },
 }
 
-const FEATURES: AIFeature[] = ['completion', 'chat']
+const FEATURES: AIFeature[] = ['completion', 'chat', 'wiki']
 
 // ── Embedding Section ──
 
@@ -418,37 +420,55 @@ const AppsSection: React.FC = () => {
     forceUpdate((n) => n + 1)
   }, [registry])
 
+  const [expandedApp, setExpandedApp] = useState<string | null>(null)
+
   return (
     <section className="mb-10">
       <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Apps</h2>
       <div className="space-y-1.5">
         {allApps.map(({ definition, enabled }, idx) => {
           const m = definition.manifest
+          const hasSettings = m.id === 'notes.app'
+          const isExpanded = expandedApp === m.id
           return (
-            <div key={m.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors ${enabled ? 'border-border-subtle bg-bg-hover' : 'border-transparent opacity-50'}`}>
-              <div className="flex flex-col gap-0.5">
-                <button onClick={() => moveUp(m.id)} disabled={idx === 0} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▲</button>
-                <button onClick={() => moveDown(m.id)} disabled={idx === allApps.length - 1} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▼</button>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[13px] text-tx-main font-medium">{m.name}</span>
-                  {m.builtin && <span className="text-[9px] text-tx-faint bg-bg-active px-1.5 py-0.5 rounded">built-in</span>}
-                  <span className="text-[10px] text-tx-faint">v{m.version}</span>
+            <div key={m.id} className={`rounded-lg border transition-colors ${enabled ? 'border-border-subtle' : 'border-transparent opacity-50'}`}>
+              <div className="flex items-center gap-3 px-3 py-2.5">
+                <div className="flex flex-col gap-0.5 shrink-0">
+                  <button onClick={() => moveUp(m.id)} disabled={idx === 0} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▲</button>
+                  <button onClick={() => moveDown(m.id)} disabled={idx === allApps.length - 1} className="text-tx-faint hover:text-tx-main disabled:opacity-20 text-[10px] leading-none">▼</button>
                 </div>
-                <div className="text-[11px] text-tx-faint truncate mt-0.5">{m.description}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[13px] text-tx-main font-medium">{m.name}</span>
+                    {m.builtin !== false && <span className="text-[9px] text-tx-faint bg-bg-active px-1.5 py-0.5 rounded">built-in</span>}
+                  </div>
+                  <div className="text-[11px] text-tx-faint truncate mt-0.5">{m.description}</div>
+                </div>
+                {hasSettings && enabled && (
+                  <button
+                    onClick={() => setExpandedApp(isExpanded ? null : m.id)}
+                    className="shrink-0 text-[11px] text-tx-faint hover:text-accent-main transition-colors flex items-center gap-1"
+                  >
+                    {isExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                    Configure
+                  </button>
+                )}
+                <button
+                  onClick={() => toggle(m.id)}
+                  className={`shrink-0 w-9 h-5 rounded-full transition-colors relative ${enabled ? 'bg-accent-main' : 'bg-border-strong'}`}
+                >
+                  <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-bg-app shadow transition-transform ${enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+                </button>
               </div>
-              <button
-                onClick={() => toggle(m.id)}
-                className={`shrink-0 w-9 h-5 rounded-full transition-colors relative ${enabled ? 'bg-accent-main' : 'bg-border-strong'}`}
-              >
-                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-bg-app shadow transition-transform ${enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
-              </button>
+              {isExpanded && enabled && m.id === 'notes.app' && (
+                <div className="border-t border-border-subtle px-4 py-4">
+                  <NotesAppSettings />
+                </div>
+              )}
             </div>
           )
         })}
       </div>
-      <p className="text-[10px] text-tx-faint mt-3">Enable or disable apps. Reorder with ▲▼ arrows. Disabled apps are hidden from the sidebar.</p>
     </section>
   )
 }
@@ -1745,6 +1765,182 @@ const SkillsSection: React.FC = () => {
         </div>
       ))}
     </section>
+  )
+}
+
+// ── Per-App Settings: Notes ──
+
+// ── Markdown Theme Preview ──
+
+const MD_PREVIEW_HTML = `<h1>Heading One</h1>
+<h2>Second Heading</h2>
+<p>A paragraph with <strong>bold text</strong>, <em>italic text</em>, and <code class="editor-text-code">inline code</code>. Here's a <a href="#">link example</a> and <del>strikethrough</del>.</p>
+<blockquote><p>Blockquotes stand out from the main text with a distinctive border.</p></blockquote>
+<h3>Lists &amp; Code</h3>
+<ul><li>First item with <strong>emphasis</strong></li><li>Second item</li></ul>
+<pre style="padding:0.75rem;border-radius:0.375rem;overflow:hidden"><code>function greet(name) {
+  return \`Hello, \${name}!\`;
+}</code></pre>`
+
+const MdThemePreview: React.FC<{ themeCss: string }> = ({ themeCss }) => {
+  // Scope theme CSS to preview only: replace .markdown-body → #md-preview
+  const scopedCss = useMemo(() =>
+    themeCss.replace(/\.markdown-body/g, '#md-preview'),
+  [themeCss])
+
+  return (
+    <div
+      id="md-preview"
+      className="markdown-body rounded-lg border border-border-subtle bg-bg-app p-4 overflow-hidden max-h-[280px] overflow-y-auto scroll-thin"
+    >
+      <style>{scopedCss}</style>
+      <div dangerouslySetInnerHTML={{ __html: MD_PREVIEW_HTML }} />
+    </div>
+  )
+}
+
+const NotesAppSettings: React.FC = () => {
+  const markdownTheme = useUIStore((s) => s.markdownTheme)
+  const setMarkdownTheme = useUIStore((s) => s.setMarkdownTheme)
+  const liteHome = useUIStore((s) => s.liteHome)
+  const [userThemes, setUserThemes] = useState<string[]>([])
+  const [userThemeCssCache, setUserThemeCssCache] = useState<Record<string, string>>({})
+
+  // Scan user themes directory
+  useEffect(() => {
+    if (!liteHome) return
+    window.api.fs.readDir(`${liteHome}/themes/md`).then((res) => {
+      if (res.ok && res.data) {
+        const cssFiles = (res.data as Array<{ name: string; isDirectory: boolean }>)
+          .filter((f) => !f.isDirectory && f.name.endsWith('.css'))
+          .map((f) => f.name)
+        setUserThemes(cssFiles)
+      }
+    }).catch(() => {})
+  }, [liteHome, markdownTheme])
+
+  // Load user theme CSS when selected
+  useEffect(() => {
+    if (!liteHome || !markdownTheme) return
+    // Skip built-ins
+    if (builtinMdThemes.some((t) => t.id === markdownTheme)) return
+    if (userThemeCssCache[markdownTheme]) return
+    window.api.fs.readFile(`${liteHome}/themes/md/${markdownTheme}`).then((res) => {
+      if (res.ok) setUserThemeCssCache((prev) => ({ ...prev, [markdownTheme]: res.data }))
+    }).catch(() => {})
+  }, [liteHome, markdownTheme, userThemeCssCache])
+
+  const mdThemes = [
+    { id: 'default', name: 'Default', desc: 'Inherits app theme — monospace, dark' },
+    { id: 'github', name: 'GitHub', desc: 'Sans-serif, larger headings' },
+    { id: 'serif', name: 'Serif', desc: 'Reading-focused, relaxed spacing' },
+    { id: 'compact', name: 'Compact', desc: 'Tight spacing, smaller text' },
+  ]
+
+  // Preview always shows the currently selected theme
+  const previewCss = useMemo(() => {
+    const builtin = builtinMdThemes.find((t) => t.id === markdownTheme)
+    if (builtin) return builtin.css
+    return userThemeCssCache[markdownTheme] || ''
+  }, [markdownTheme, userThemeCssCache])
+
+  const [importStatus, setImportStatus] = useState<string | null>(null)
+
+  const handleImport = async () => {
+    try {
+      const res = await window.api.dialog.selectFile([{ name: 'CSS Files', extensions: ['css'] }])
+      if (!res.ok || !res.data) return
+      if (!liteHome) { setImportStatus('Error: data location not configured'); return }
+      const srcPath = res.data
+      const fileName = srcPath.split('/').pop() || 'imported.css'
+      if (!fileName.endsWith('.css')) { setImportStatus('Error: not a CSS file'); return }
+      const readRes = await window.api.fs.readFile(srcPath)
+      if (!readRes.ok) { setImportStatus('Error: could not read file'); return }
+      const destPath = `${liteHome}/themes/md/${fileName}`
+      await window.api.fs.writeFile(destPath, readRes.data)
+      setMarkdownTheme(fileName)
+      setImportStatus(`Imported: ${fileName.replace(/\.css$/, '')}`)
+      setTimeout(() => setImportStatus(null), 3000)
+    } catch {
+      setImportStatus('Import failed')
+      setTimeout(() => setImportStatus(null), 3000)
+    }
+  }
+
+  const handleOpenThemesDir = () => {
+    if (liteHome) window.api.shell.revealPath(`${liteHome}/themes/md`)
+  }
+
+  return (
+    <div>
+      <h3 className="text-tx-muted text-[11px] font-medium uppercase tracking-wider mb-2">Markdown Theme</h3>
+
+      {/* Live Preview */}
+      <MdThemePreview themeCss={previewCss} />
+
+      <div className="space-y-0.5 mt-3 mb-3">
+        {mdThemes.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setMarkdownTheme(t.id)}
+            className={`w-full flex items-center justify-between px-2.5 py-2 rounded text-left transition-colors ${
+              markdownTheme === t.id
+                ? 'bg-accent-main/10 text-accent-main'
+                : 'text-tx-main hover:bg-bg-active'
+            }`}
+          >
+            <div>
+              <div className="text-[12px]">{t.name}</div>
+              <div className="text-[10px] text-tx-faint mt-0.5">{t.desc}</div>
+            </div>
+            {markdownTheme === t.id && (
+              <Check size={12} className="text-accent-main shrink-0 ml-2" />
+            )}
+          </button>
+        ))}
+
+        {userThemes.map((fileName) => (
+          <button
+            key={fileName}
+            onClick={() => setMarkdownTheme(fileName)}
+            className={`w-full flex items-center justify-between px-2.5 py-2 rounded text-left transition-colors ${
+              markdownTheme === fileName
+                ? 'bg-accent-main/10 text-accent-main'
+                : 'text-tx-main hover:bg-bg-active'
+            }`}
+          >
+            <div>
+              <div className="text-[12px]">{fileName.replace(/\.css$/, '')}</div>
+              <div className="text-[10px] text-tx-faint mt-0.5">Custom theme</div>
+            </div>
+            {markdownTheme === fileName && (
+              <Check size={12} className="text-accent-main shrink-0 ml-2" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleImport}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-tx-muted border border-border-subtle rounded hover:text-tx-main hover:border-border-strong transition-colors"
+        >
+          Import CSS
+        </button>
+        <button
+          onClick={handleOpenThemesDir}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-tx-muted border border-border-subtle rounded hover:text-tx-main hover:border-border-strong transition-colors"
+        >
+          <FolderOpen size={11} />
+          Open Themes Folder
+        </button>
+        {importStatus && (
+          <span className={`text-[11px] ${importStatus.startsWith('Error') ? 'text-status-error' : 'text-status-success'}`}>
+            {importStatus}
+          </span>
+        )}
+      </div>
+    </div>
   )
 }
 

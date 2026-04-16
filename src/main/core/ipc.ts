@@ -23,6 +23,7 @@ import { listCollectedItems, countCollectedItems, findDuplicateByUrl, findDuplic
 import { listTasks, createTask, updateTask, deleteTask, type TaskCreateInput, type ScheduledTask } from './task-store'
 import { taskScheduler } from './task-scheduler'
 import { embedAllPending, embedAndSave } from './collector-embedding'
+import { emitAppEvent, emitItemReadyIfReady } from './event-bus'
 import type { AIProviderConfig, AIChatMessage, ChangelogEntry, Automation, CollectorAddInput, CollectedItem } from '../../shared/types'
 
 /** Decode common HTML entities */
@@ -612,6 +613,21 @@ export function setupIpcHandlers(): void {
     return { ok: true, data: result.filePaths[0] }
   })
 
+  ipcMain.handle(IpcChannels.DIALOG_SELECT_FILE, async (_, filters?: Array<{ name: string; extensions: string[] }>) => {
+    const win = BrowserWindow.getFocusedWindow()
+    if (!win) return { ok: false, error: 'No focused window' }
+
+    const result = await dialog.showOpenDialog(win, {
+      properties: ['openFile'],
+      filters: filters || [{ name: 'All Files', extensions: ['*'] }],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { ok: false, error: 'cancelled' }
+    }
+    return { ok: true, data: result.filePaths[0] }
+  })
+
   // ── AI ──
 
   ipcMain.handle(
@@ -876,6 +892,19 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_ADD, (_, input: CollectorAddInput) => {
     try {
       const item = addCollectedItem(input)
+      // 'added' = UI reactivity signal (list refresh, toast).
+      emitAppEvent({
+        type: 'collector:item-added',
+        itemId: item.id,
+        itemType: item.type,
+        title: item.title,
+        group: item.group,
+      })
+      // 'ready' = content-is-usable signal. Emitted here ONLY if the item
+      // already satisfies its readiness rule on add (plain text, videos,
+      // items pasted with pre-filled OCR, etc.). Otherwise the enrichment
+      // pipeline (fetchMarkdown, ocrAndDescribeItem) emits it later.
+      emitItemReadyIfReady(item)
       return { ok: true, data: item }
     } catch (e) {
       return { ok: false, error: String(e) }
@@ -885,6 +914,13 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_UPDATE, (_, id: string, patch: Partial<CollectedItem>) => {
     try {
       const item = updateCollectedItem(id, patch)
+      if (item) {
+        emitAppEvent({
+          type: 'collector:item-updated',
+          itemId: item.id,
+          fields: Object.keys(patch),
+        })
+      }
       return item ? { ok: true, data: item } : { ok: false, error: 'Item not found' }
     } catch (e) {
       return { ok: false, error: String(e) }
@@ -894,6 +930,7 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_DELETE, (_, id: string) => {
     try {
       const ok = deleteCollectedItem(id)
+      if (ok) emitAppEvent({ type: 'collector:item-deleted', itemId: id })
       return ok ? { ok: true, data: undefined } : { ok: false, error: 'Item not found' }
     } catch (e) {
       return { ok: false, error: String(e) }
@@ -983,6 +1020,16 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_FETCH_MARKDOWN, async (_, itemId: string, url: string) => {
     try {
       const filePath = await fetchAndSaveMarkdown(itemId, url)
+      if (filePath) {
+        // Mark the item as having markdown so the readiness rule passes,
+        // then emit ready. This keeps the rule centralized in event-bus.
+        const item = listCollectedItems().find((i) => i.id === itemId)
+        if (item) {
+          const meta = { ...(item.meta || {}), hasMarkdown: true, markdownFetched: true }
+          const updated = updateCollectedItem(itemId, { meta })
+          if (updated) emitItemReadyIfReady(updated)
+        }
+      }
       return filePath ? { ok: true, data: filePath } : { ok: false, error: 'Failed to fetch markdown' }
     } catch (e) {
       return { ok: false, error: String(e) }
@@ -1016,6 +1063,148 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.COLLECTOR_DELETE_GROUP, (_, name: string) => {
     try {
       return { ok: true, data: deleteCollectorGroup(name) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // ── Data Reset ──
+
+  ipcMain.handle(IpcChannels.COLLECTOR_RESET, async () => {
+    try {
+      const { resetCollectorData } = await import('./collector-store')
+      resetCollectorData()
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_RESET, async () => {
+    try {
+      const { resetWikiData } = await import('./wiki-store')
+      resetWikiData()
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_SEARCH, async (_, query: string) => {
+    try {
+      const { wikiHybridSearch } = await import('./wiki-search')
+      const results = await wikiHybridSearch(query, 10)
+      return { ok: true, data: results }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_LINT, async () => {
+    try {
+      const { lintWiki } = await import('./wiki-lint')
+      const report = lintWiki()
+      return { ok: true, data: report }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_REINDEX, async () => {
+    try {
+      const { indexAllWikiPages } = await import('./wiki-store')
+      const { embedAllWikiPages } = await import('./wiki-embedding')
+      indexAllWikiPages()
+      await embedAllWikiPages()
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // ── Wiki.app ──
+
+  ipcMain.handle(IpcChannels.WIKI_INIT, async () => {
+    try {
+      const { initWiki } = await import('./wiki-store')
+      return { ok: true, data: initWiki() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_STATS, async () => {
+    try {
+      const { getWikiStats } = await import('./wiki-store')
+      return { ok: true, data: getWikiStats() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_LIST_PAGES, async () => {
+    try {
+      const { listWikiPages } = await import('./wiki-store')
+      return { ok: true, data: listWikiPages() }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  // Validate wiki relPath to prevent path traversal
+  function assertSafeWikiPath(relPath: string): void {
+    const normalized = path.normalize(relPath)
+    if (normalized.startsWith('..') || path.isAbsolute(normalized)) {
+      throw new Error('Invalid wiki path')
+    }
+  }
+
+  ipcMain.handle(IpcChannels.WIKI_READ, async (_, relPath: string) => {
+    try {
+      assertSafeWikiPath(relPath)
+      const { readWikiFile } = await import('./wiki-store')
+      return { ok: true, data: readWikiFile(relPath) }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_WRITE, async (_, relPath: string, content: string) => {
+    try {
+      assertSafeWikiPath(relPath)
+      const { writeWikiFile } = await import('./wiki-store')
+      writeWikiFile(relPath, content)
+      return { ok: true, data: undefined }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_APPEND_LOG, async (_, entry: string) => {
+    try {
+      const { appendLog } = await import('./wiki-store')
+      appendLog(entry)
+      return { ok: true, data: undefined }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_DELETE, async (_, relPath: string) => {
+    try {
+      assertSafeWikiPath(relPath)
+      const { deleteWikiFile } = await import('./wiki-store')
+      const ok = deleteWikiFile(relPath)
+      return ok ? { ok: true, data: undefined } : { ok: false, error: 'Protected or not found' }
+    } catch (e) {
+      return { ok: false, error: String(e) }
+    }
+  })
+
+  ipcMain.handle(IpcChannels.WIKI_GRAPH, async () => {
+    try {
+      const { getWikiGraph } = await import('./wiki-store')
+      return { ok: true, data: getWikiGraph() }
     } catch (e) {
       return { ok: false, error: String(e) }
     }

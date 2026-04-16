@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { Plus, Globe, X, ChevronDown, Layers, Folder } from 'lucide-react'
 import type { CollectedItemType } from '../../../../shared/types'
 import { TYPE_ICONS, TYPE_LABELS } from './shared'
+import { trackEnrichment } from './enrichment-store'
 
 export const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => void; groups: string[] }> = ({ onClose, onCollected, groups }) => {
   const [inputValue, setInputValue] = useState('')
@@ -29,7 +30,7 @@ export const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => vo
       }
       setDetected({ type: 'link', title: domain, url: val, domain })
     } catch {
-      setDetected({ type: 'text', title: val.split('\n')[0].slice(0, 120), url: undefined, domain: undefined })
+      setDetected({ type: 'text', title: val, url: undefined, domain: undefined })
     }
   }, [inputValue])
 
@@ -46,7 +47,8 @@ export const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => vo
     if (!detected || submitting) return
     setSubmitting(true)
     try {
-      let title = detected.title
+      // For text type, always use the raw input (detected.title may lag behind inputValue)
+      let title = detected.type === 'text' ? inputValue.trim() : detected.title
       let description = ''
       const meta: Record<string, unknown> = detected.domain ? { domain: detected.domain } : {}
 
@@ -71,17 +73,22 @@ export const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => vo
 
       if (addRes.ok) {
         const itemId = addRes.data.id
+        const itemTitle = detected.title || 'Untitled'
         if (detected.url && (detected.type === 'link' || detected.type === 'tweet')) {
-          window.api.collector.fetchMarkdown(itemId, detected.url)
-            .then(() => window.api.collector.embedItem(itemId)).catch(() => {})
+          trackEnrichment(itemId, itemTitle, 'markdown', async () => {
+            await window.api.collector.fetchMarkdown(itemId, detected!.url!)
+            await window.api.collector.embedItem(itemId)
+          }).catch(() => {})
         } else {
-          window.api.collector.embedItem(itemId).catch(() => {})
+          trackEnrichment(itemId, itemTitle, 'embedding', () =>
+            window.api.collector.embedItem(itemId),
+          ).catch(() => {})
         }
       }
     } finally {
       setSubmitting(false)
     }
-  }, [detected, selectedGroup, submitting, onCollected, onClose])
+  }, [detected, inputValue, selectedGroup, submitting, onCollected, onClose])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') onClose()
@@ -89,8 +96,8 @@ export const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => vo
   }, [onClose, detected, handleSubmit])
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh] bg-bg-app/60" onClick={onClose}>
-      <div className="w-[400px] bg-bg-popover border border-border-strong rounded-xl shadow-2xl p-4 flex flex-col gap-3.5"
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center pt-[10vh] pb-[5vh] bg-bg-app/60 overflow-y-auto" onClick={onClose}>
+      <div className="w-[400px] bg-bg-popover border border-border-strong rounded-xl shadow-2xl p-4 flex flex-col gap-3.5 my-auto max-h-[85vh]"
         onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
         <div className="flex items-center justify-between">
           <span className="text-[14px] text-tx-main font-medium">Collect</span>
@@ -99,8 +106,8 @@ export const CollectPanel: React.FC<{ onClose: () => void; onCollected: () => vo
 
         <div className={`rounded-md border ${detected ? 'border-accent-main' : 'border-border-subtle'} bg-bg-hover p-3 transition-colors`}>
           <textarea ref={inputRef} value={inputValue} onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Paste or type a URL, text, or drop an image here..." rows={3}
-            className="w-full bg-transparent text-[12px] text-tx-main placeholder-tx-faint outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 resize-none" />
+            placeholder="Paste or type a URL, text, or drop an image here..." rows={detected?.type === 'text' ? 8 : 3}
+            className={`w-full bg-transparent text-[12px] text-tx-main placeholder-tx-faint outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 scroll-thin ${detected?.type === 'text' ? 'resize-y min-h-[80px] max-h-[50vh]' : 'resize-none'}`} />
           {detected && (
             <div className="flex items-center gap-1.5 mt-1.5">
               {(() => { const Icon = TYPE_ICONS[detected.type]; return <Icon size={10} className="text-accent-main" /> })()}
