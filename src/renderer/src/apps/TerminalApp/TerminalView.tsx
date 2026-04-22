@@ -1,10 +1,18 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
+import { useCallback, useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SerializeAddon } from '@xterm/addon-serialize'
 import '@xterm/xterm/css/xterm.css'
 import { buildXtermTheme } from './xterm-theme'
+import { getResourcePayload, hasResourceType } from '../../layouts/resourceDrag'
+
+/** POSIX single-quote escape: `wrap in '…'` and replace any `'` with `'\''`. */
+function shellEscape(s: string): string {
+  if (!s) return "''"
+  if (/^[A-Za-z0-9_\-./:@+=]+$/.test(s)) return s
+  return "'" + s.replace(/'/g, "'\\''") + "'"
+}
 
 interface TerminalViewProps {
   terminalId: string
@@ -169,7 +177,75 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
       }
     }, [terminalId])
 
-    return <div ref={containerRef} className="w-full h-full" />
+    const [isDragOver, setIsDragOver] = useState(false)
+
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+      if (!hasResourceType(e.dataTransfer.types)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+      setIsDragOver(true)
+    }, [])
+
+    const handleDragLeave = useCallback((e: React.DragEvent) => {
+      const related = e.relatedTarget as Node | null
+      if (!containerRef.current?.contains(related)) setIsDragOver(false)
+    }, [])
+
+    const handleDrop = useCallback(
+      (e: React.DragEvent) => {
+        const r = getResourcePayload(e.dataTransfer)
+        // Plain-text fallback (e.g., text files from OS)
+        if (!r) {
+          const path =
+            e.dataTransfer.getData('text/uri-list') ||
+            e.dataTransfer.getData('text/plain')
+          if (path) {
+            e.preventDefault()
+            setIsDragOver(false)
+            window.api.terminal.write(terminalId, shellEscape(path.trim()) + ' ')
+            termRef.current?.focus()
+          }
+          return
+        }
+        e.preventDefault()
+        setIsDragOver(false)
+
+        let text = ''
+        if (r.kind === 'file') {
+          text = shellEscape(r.path) + ' '
+        } else if (r.kind === 'terminal') {
+          // Inserting a terminal ref into a terminal = just its title as a comment hint.
+          text = `# ${r.title || 'terminal'} (${r.sessionId})`
+        } else if (r.kind === 'collector-item') {
+          if (r.url) {
+            text = shellEscape(r.url) + ' '
+          } else if (r.assetPath) {
+            text = shellEscape(`collected/${r.assetPath}`) + ' '
+          } else if (r.note) {
+            text = shellEscape(r.note) + ' '
+          } else {
+            text = shellEscape(r.title || r.itemId) + ' '
+          }
+        }
+        if (text) {
+          window.api.terminal.write(terminalId, text)
+          termRef.current?.focus()
+        }
+      },
+      [terminalId],
+    )
+
+    return (
+      <div
+        ref={containerRef}
+        className={`w-full h-full relative ${
+          isDragOver ? 'ring-1 ring-inset ring-accent-main/40' : ''
+        }`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      />
+    )
   },
 )
 

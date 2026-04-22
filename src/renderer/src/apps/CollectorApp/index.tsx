@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Plus, X, Layers, Loader2, Sparkles, LayoutGrid, List, BookOpen, Search, RefreshCw, Settings2 } from 'lucide-react'
 import { useUIStore } from '../../store/useUIStore'
+import { usePaneId, usePaneItemId } from '../../layouts/PaneContext'
 import type { CollectedItem, CollectedItemType } from '../../../../shared/types'
 import { TYPE_ICONS, TYPE_LABELS, type ToastState } from './shared'
 import { CollectPanel } from './CollectPanel'
@@ -18,7 +19,15 @@ const PAGE_SIZE = 50
 
 export const CollectorApp: React.FC = () => {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
-  const activeFilter = useUIStore((s) => s.appStates['collector.app'].activeFilePath) || 'all'
+  // Per-tab filter: the filter value lives in the tab item's resource string.
+  const paneId = usePaneId()
+  const itemId = usePaneItemId()
+  const activeFilter = useUIStore((s) => {
+    if (!paneId || !itemId) return 'all'
+    const pane = s.panes[paneId]
+    const tab = pane?.tabs.find((t) => t.id === itemId)
+    return tab?.resource || 'all'
+  })
   const collectorVersion = useUIStore((s) => s.collectorVersion)
   const bumpVersion = useUIStore((s) => s.bumpCollectorVersion)
   const [items, setItems] = useState<CollectedItem[]>([])
@@ -305,9 +314,23 @@ export const CollectorApp: React.FC = () => {
     return () => window.removeEventListener('paste', handlePaste)
   }, [])
 
+  // Cross-app drags (terminal/notes/pane-tab moves, lite resources from the
+  // sidebar) are routed by PaneHost — either split/dock or open-as-tab. If
+  // Collector intercepts them with preventDefault here, PaneHost sees
+  // defaultPrevented=true and bails, which is what was breaking tab-drops
+  // onto a collector-hosted pane. Only react to OS-native drops (files from
+  // Finder, text/urls from external browsers).
+  const isInAppDrag = (types: readonly string[]): boolean =>
+    types.includes('application/x-collector-item') ||
+    types.includes('application/x-lite-pane') ||
+    types.includes('application/x-lite-resource') ||
+    types.includes('application/x-lite-file')
+
   const handleDrop = useCallback((e: React.DragEvent) => {
+    if (isInAppDrag(e.dataTransfer.types)) { setIsDragOver(false); return }
     e.preventDefault(); setIsDragOver(false)
-    if (e.dataTransfer.types.includes('application/x-collector-item')) return
+
+    // Native File drops (from OS) — images / video as before.
     if (e.dataTransfer.files.length > 0) {
       for (const file of Array.from(e.dataTransfer.files)) { if (file.type.startsWith('image/') || file.type.startsWith('video/')) quickCollectFileRef.current(file) }
       return
@@ -317,7 +340,7 @@ export const CollectorApp: React.FC = () => {
   }, [])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/x-collector-item')) return
+    if (isInAppDrag(e.dataTransfer.types)) return
     e.preventDefault(); setIsDragOver(true)
   }, [])
 
@@ -482,7 +505,10 @@ export const CollectorApp: React.FC = () => {
             {searchResults === null && <button onClick={() => setShowCollectPanel(true)} className="text-[12px] text-accent-main hover:underline">Collect your first item</button>}
           </div>
         ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-4 gap-2.5 p-0.5 pb-4">
+          <div
+            className="grid gap-2.5 p-0.5 pb-4"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}
+          >
             {filteredItems.map((item) => (
               <div key={item.id} data-collector-id={item.id} className={focusedItemId === item.id ? 'ring-2 ring-accent-main rounded-md transition-all' : ''}>
                 <ItemCard item={item} onDelete={handleDelete} onOpen={handleOpen} onSendToWiki={handleSendToWiki} />

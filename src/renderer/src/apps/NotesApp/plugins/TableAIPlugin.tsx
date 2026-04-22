@@ -404,7 +404,7 @@ function TableAIPanel({
       }
       const { provider, model } = routed
 
-      const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath || ''
+      const activeFilePath = useUIStore.getState().getActiveFilePath() || ''
       const systemPrompt = `## Context
 - Active file: ${activeFilePath}
 - Mode: TABLE (your output modifies or analyzes the selected table)
@@ -799,7 +799,7 @@ function TableAutomationPanel({
   const [done, setDone] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath
+  const activeFilePath = useUIStore.getState().getActiveFilePath()
 
   useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 50)

@@ -6,7 +6,8 @@ import {
   Pencil, Trash2, FilePlus, FolderInput, Settings, Zap, Archive, Layers, Folder,
   Link, Image, Video, Twitter, Monitor, Type, Brain, BookOpen
 } from 'lucide-react'
-import { useUIStore, collectTerminalIds, removeFromTree, genTerminalPersistKey } from '../store/useUIStore'
+import { useUIStore, genTerminalPersistKey } from '../store/useUIStore'
+import { setResourcePayload } from './resourceDrag'
 import { useContextMenu, type ContextMenuItem } from '../components/ContextMenu'
 import { getAppRegistry } from '../core/AppContext'
 import type { AppType, FileNode, CollectedItem } from '../../../shared/types'
@@ -88,7 +89,13 @@ const FileTreeNode: React.FC<{
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData('text/plain', node.path)
-          e.dataTransfer.setData('application/x-lite-file', node.path)
+          const ext = node.name.split('.').pop()?.toLowerCase()
+          setResourcePayload(e.dataTransfer, {
+            kind: 'file',
+            path: node.path,
+            title: node.name,
+            ext: ext && ext !== node.name.toLowerCase() ? ext : undefined,
+          })
           e.dataTransfer.effectAllowed = 'copy'
         }}
         style={{ paddingLeft: pl }}
@@ -409,8 +416,17 @@ const NotesAppSection: React.FC<{
 
   const handleDragStart = useCallback((e: React.DragEvent, notePath: string) => {
     e.dataTransfer.setData('text/plain', notePath)
-    e.dataTransfer.setData('application/x-lite-file', notePath)
-    e.dataTransfer.effectAllowed = 'move'
+    const name = notePath.split('/').pop() || notePath
+    const ext = name.split('.').pop()?.toLowerCase()
+    setResourcePayload(e.dataTransfer, {
+      kind: 'file',
+      path: notePath,
+      title: name,
+      ext: ext && ext !== name.toLowerCase() ? ext : undefined,
+    })
+    // 'copyMove' so downstream handlers that pick dropEffect='copy' resolve
+    // to a live drop (with just 'move' the browser cancels the drop).
+    e.dataTransfer.effectAllowed = 'copyMove'
     setDragNotePath(notePath)
   }, [])
 
@@ -799,28 +815,25 @@ const TerminalAppSection: React.FC<{
   renameTrigger: number
   onFocusSidebar?: () => void
 }> = ({ currentApp, expanded, onHeaderClick, renameTrigger, onFocusSidebar }) => {
-  // Data selectors — these trigger re-renders when values change
+  // Data
   const sessions = useUIStore((s) => s.terminalSessions)
   const activeTerminalId = useUIStore((s) => s.activeTerminalId)
   const terminalWorkspaces = useUIStore((s) => s.terminalWorkspaces)
   const activeWorkspaceId = useUIStore((s) => s.activeWorkspaceId)
-  // Action selectors — Zustand returns stable function refs, no extra re-renders
+  // Actions
   const addSession = useUIStore((s) => s.addTerminalSession)
   const removeSession = useUIStore((s) => s.removeTerminalSession)
-  const setActiveId = useUIStore((s) => s.setActiveTerminalId)
   const setCurrentApp = useUIStore((s) => s.setCurrentApp)
   const addTerminalWorkspace = useUIStore((s) => s.addTerminalWorkspace)
   const removeTerminalWorkspace = useUIStore((s) => s.removeTerminalWorkspace)
   const setActiveWorkspace = useUIStore((s) => s.setActiveWorkspace)
   const createTerminalInWorkspace = useUIStore((s) => s.createTerminalInWorkspace)
-  const splitTerminalInWorkspace = useUIStore((s) => s.splitTerminalInWorkspace)
+  const openTabInPane = useUIStore((s) => s.openTabInPane)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
-  const [dragOverId, setDragOverId] = useState<string | null>(null)
   const [collapsedWs, setCollapsedWs] = useState<Set<string>>(new Set())
 
-  // Enter key rename trigger
   useEffect(() => {
     if (renameTrigger === 0 || currentApp !== 'terminal.app' || !activeTerminalId || renamingId) return
     const session = sessions.find((s) => s.id === activeTerminalId)
@@ -855,11 +868,13 @@ const TerminalAppSection: React.FC<{
   const handleCreateInWorkspace = useCallback(async (workspaceId: string, cwd: string) => {
     const res = await window.api.terminal.create(cwd)
     if (res.ok) {
-      addSession({ id: res.data, persistKey: genTerminalPersistKey(), title: `Terminal ${sessions.length + 1}`, cwd })
+      const count = useUIStore.getState().terminalSessions.length
+      addSession({ id: res.data, persistKey: genTerminalPersistKey(), title: `Terminal ${count + 1}`, cwd })
+      // createTerminalInWorkspace also opens the session as a tab in focused pane.
       createTerminalInWorkspace(workspaceId, res.data)
       setCurrentApp('terminal.app')
     }
-  }, [sessions.length, addSession, createTerminalInWorkspace, setCurrentApp])
+  }, [addSession, createTerminalInWorkspace, setCurrentApp])
 
   const handleHeaderCreate = useCallback(async () => {
     const activeWs = terminalWorkspaces.find((ws) => ws.id === activeWorkspaceId)
@@ -877,93 +892,39 @@ const TerminalAppSection: React.FC<{
   }, [removeSession])
 
   const handleSelect = useCallback((id: string, workspaceId: string) => {
-    setActiveId(id)
+    // Open session as a tab in the focused pane (via store logic).
     setActiveWorkspace(workspaceId)
-    // Find the group containing this terminal and set it as active in the workspace
-    const ws = useUIStore.getState().terminalWorkspaces.find((w) => w.id === workspaceId)
-    if (ws) {
-      const group = ws.groups.find((g) => collectTerminalIds(g.layout).includes(id))
-      if (group) {
-        const nextWorkspaces = useUIStore.getState().terminalWorkspaces.map((w) =>
-          w.id === workspaceId ? { ...w, activeGroupId: group.id } : w,
-        )
-        useUIStore.setState({ terminalWorkspaces: nextWorkspaces })
-      }
-    }
+    const focusId = useUIStore.getState().focusedPaneId
+    if (focusId) openTabInPane(focusId, 'terminal.app', id)
     setCurrentApp('terminal.app')
     onFocusSidebar?.()
-  }, [setActiveId, setActiveWorkspace, setCurrentApp, onFocusSidebar])
+  }, [setActiveWorkspace, openTabInPane, setCurrentApp, onFocusSidebar])
 
-  const handleDragStart = useCallback((e: React.DragEvent, terminalId: string, workspaceId: string) => {
-    e.dataTransfer.setData('application/x-terminal-drag', JSON.stringify({ termId: terminalId, workspaceId }))
-    e.dataTransfer.effectAllowed = 'move'
+  const handleDragStart = useCallback((e: React.DragEvent, terminalId: string) => {
+    const session = useUIStore.getState().terminalSessions.find((t) => t.id === terminalId)
+    setResourcePayload(e.dataTransfer, {
+      kind: 'terminal',
+      sessionId: terminalId,
+      title: session?.title,
+      cwd: session?.cwd,
+    })
+    e.dataTransfer.effectAllowed = 'copy'
   }, [])
-
-  const handleDragOver = useCallback((e: React.DragEvent, terminalId: string) => {
-    if (e.dataTransfer.types.includes('application/x-terminal-drag')) {
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
-      setDragOverId(terminalId)
-    }
-  }, [])
-
-  const handleDragLeave = useCallback(() => {
-    setDragOverId(null)
-  }, [])
-
-  const handleDrop = useCallback((e: React.DragEvent, targetTerminalId: string, targetWorkspaceId: string) => {
-    e.preventDefault()
-    setDragOverId(null)
-    const raw = e.dataTransfer.getData('application/x-terminal-drag')
-    if (!raw) return
-    const { termId: draggedId, workspaceId: srcWorkspaceId } = JSON.parse(raw) as { termId: string; workspaceId: string }
-    if (!draggedId || draggedId === targetTerminalId) return
-    if (srcWorkspaceId === targetWorkspaceId) {
-      // Same workspace → merge into split group
-      splitTerminalInWorkspace(targetWorkspaceId, targetTerminalId, draggedId)
-    } else {
-      // Different workspace → move terminal to target workspace as new group
-      // Remove from source workspace groups
-      const state = useUIStore.getState()
-      const nextWorkspaces = state.terminalWorkspaces.map((ws) => {
-        if (ws.id === srcWorkspaceId) {
-          const groups = ws.groups
-            .map((g) => {
-              const cleaned = removeFromTree(g.layout, draggedId)
-              return cleaned ? { ...g, layout: cleaned } : null
-            })
-            .filter(Boolean) as typeof ws.groups
-          const activeGroupStillExists = groups.some((g) => g.id === ws.activeGroupId)
-          return { ...ws, groups, activeGroupId: activeGroupStillExists ? ws.activeGroupId : (groups[0]?.id ?? null) }
-        }
-        if (ws.id === targetWorkspaceId) {
-          const newGroupId = `group-${draggedId}-${Date.now()}`
-          return { ...ws, groups: [...ws.groups, { id: newGroupId, layout: { type: 'terminal' as const, terminalId: draggedId } }], activeGroupId: newGroupId }
-        }
-        return ws
-      })
-      useUIStore.setState({ terminalWorkspaces: nextWorkspaces, activeWorkspaceId: targetWorkspaceId, activeTerminalId: draggedId })
-    }
-  }, [splitTerminalInWorkspace])
 
   const handleCloseWorkspace = useCallback((e: React.MouseEvent, wsId: string) => {
     e.stopPropagation()
-    // Close all PTYs in this workspace
     const ws = useUIStore.getState().terminalWorkspaces.find((w) => w.id === wsId)
     if (ws) {
-      for (const g of ws.groups) {
-        for (const tid of collectTerminalIds(g.layout)) {
-          window.api.terminal.close(tid)
-        }
+      for (const tid of ws.sessionIds) {
+        window.api.terminal.close(tid)
       }
     }
     removeTerminalWorkspace(wsId)
   }, [removeTerminalWorkspace])
 
-  const renderTerminalRow = (session: typeof sessions[0], workspaceId: string, prefix?: string) => {
+  const renderTerminalRow = (session: typeof sessions[0], workspaceId: string) => {
     const isActive = session.id === activeTerminalId && currentApp === 'terminal.app'
     const isRenaming = renamingId === session.id
-    const isDragOver = dragOverId === session.id
     return (
       <div
         key={session.id}
@@ -973,19 +934,13 @@ const TerminalAppSection: React.FC<{
         draggable={!isRenaming}
         onClick={() => handleSelect(session.id, workspaceId)}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelect(session.id, workspaceId) } }}
-        onDragStart={(e) => handleDragStart(e, session.id, workspaceId)}
-        onDragOver={(e) => handleDragOver(e, session.id)}
-        onDragLeave={handleDragLeave}
-        onDrop={(e) => { e.stopPropagation(); handleDrop(e, session.id, workspaceId) }}
-        className={`${prefix ? 'pl-[8px]' : 'pl-[36px]'} py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
+        onDragStart={(e) => handleDragStart(e, session.id)}
+        className={`pl-[36px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
-          ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}
-          ${isDragOver ? 'bg-accent-main/15 outline outline-2 outline-accent-main/50 outline-offset-[-2px]' : ''}`}
+          ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
       >
         {isActive && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-border-strong" />}
-        {prefix && <span className="text-tx-faint/50 text-[12px] font-mono select-none shrink-0 leading-none">{prefix}</span>}
-        {isDragOver && <span className="text-[9px] text-accent-main font-medium shrink-0">⫼ split</span>}
-        <Terminal size={13} className={`${isActive ? 'text-tx-active' : isDragOver ? 'text-accent-main' : 'text-tx-muted'} shrink-0`} />
+        <Terminal size={13} className={`${isActive ? 'text-tx-active' : 'text-tx-muted'} shrink-0`} />
         {isRenaming ? (
           <input
             ref={renameInputRef}
@@ -1016,22 +971,6 @@ const TerminalAppSection: React.FC<{
     )
   }
 
-  // Drop on workspace area (not on a specific terminal) → unsplit from group
-  const handleWorkspaceDragOver = useCallback((e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes('application/x-terminal-drag')) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  }, [])
-
-  const handleWorkspaceDrop = useCallback((e: React.DragEvent, wsId: string) => {
-    e.preventDefault()
-    const raw = e.dataTransfer.getData('application/x-terminal-drag')
-    if (!raw) return
-    const { termId } = JSON.parse(raw) as { termId: string; workspaceId: string }
-    // Unsplit: remove from current split group → create standalone group
-    useUIStore.getState().unsplitTerminal(termId)
-  }, [])
-
   const toggleWsCollapse = useCallback((wsId: string) => {
     setCollapsedWs((prev) => {
       const next = new Set(prev)
@@ -1045,11 +984,7 @@ const TerminalAppSection: React.FC<{
     const isActiveWs = ws.id === activeWorkspaceId
     const isCollapsed = collapsedWs.has(ws.id)
     return (
-      <div
-        key={ws.id}
-        onDragOver={handleWorkspaceDragOver}
-        onDrop={(e) => handleWorkspaceDrop(e, ws.id)}
-      >
+      <div key={ws.id}>
         {/* Workspace header */}
         <div
           className={`pl-[12px] py-[4px] pr-4 flex items-center gap-1 cursor-pointer text-[13px] tracking-wide relative group
@@ -1072,35 +1007,21 @@ const TerminalAppSection: React.FC<{
             <X size={12} />
           </button>
         </div>
-        {/* Terminals in this workspace (collapsible) */}
-        {!isCollapsed && ws.groups.map((group) => {
-          const tids = collectTerminalIds(group.layout)
-          if (tids.length === 1) {
-            const s = sessions.find((ss) => ss.id === tids[0])
-            if (!s) return null
-            return renderTerminalRow(s, ws.id)
-          }
-          // Multi-terminal group: show with tree prefixes and visual grouping
-          return (
-            <div key={group.id} className="my-0.5 ml-[28px] border-l border-border-subtle/50 pl-1">
-              {tids.map((tid, idx) => {
-                const s = sessions.find((ss) => ss.id === tid)
-                if (!s) return null
-                const total = tids.length
-                const prefix = idx === 0 ? '┌' : idx === total - 1 ? '└' : '├'
-                return renderTerminalRow(s, ws.id, prefix)
-              })}
-            </div>
-          )
+        {/* Sessions: flat list under workspace (no internal split) */}
+        {!isCollapsed && ws.sessionIds.map((sid) => {
+          const s = sessions.find((ss) => ss.id === sid)
+          if (!s) return null
+          return renderTerminalRow(s, ws.id)
         })}
-        {/* Add terminal to this workspace */}
-        {!isCollapsed && <button
-          type="button"
-          onClick={() => handleCreateInWorkspace(ws.id, ws.path)}
-          className="w-full text-left pl-[36px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset"
-        >
-          + new terminal
-        </button>}
+        {!isCollapsed && (
+          <button
+            type="button"
+            onClick={() => handleCreateInWorkspace(ws.id, ws.path)}
+            className="w-full text-left pl-[36px] py-1 text-[13px] text-tx-faint hover:text-tx-muted cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset"
+          >
+            + new terminal
+          </button>
+        )}
       </div>
     )
   }
@@ -1308,7 +1229,7 @@ const CollectorAppSection: React.FC<{
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData('application/x-collector-item', item.id)
-          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.effectAllowed = 'copyMove'
         }}
         onClick={(e) => {
           e.stopPropagation()

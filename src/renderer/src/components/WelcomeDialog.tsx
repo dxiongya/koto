@@ -43,7 +43,6 @@ const APPS = [
   { id: 'collector.app', icon: Archive, name: 'Collector', desc: 'Save links, images, tweets — search with AI.' },
   { id: 'wiki.app', icon: BookOpen, name: 'Wiki', desc: 'Auto-built knowledge base from your collected items.' },
   { id: 'terminal.app', icon: Terminal, name: 'Terminal', desc: 'Split panes, persistent buffers, themed.' },
-  { id: 'code.app', icon: FileCode, name: 'Code', desc: 'Open any folder. Edit with AI completion.' },
   { id: 'memory.app', icon: Brain, name: 'Memory', desc: 'Where AI quietly remembers what matters.' },
 ] as const
 

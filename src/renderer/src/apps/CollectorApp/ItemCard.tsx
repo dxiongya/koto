@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import { Globe, Twitter, Play, Monitor, Image, X, BookOpen } from 'lucide-react'
 import type { CollectedItem } from '../../../../shared/types'
 import { getDomain, TYPE_ICONS, TYPE_LABELS } from './shared'
+import { setResourcePayload } from '../../layouts/resourceDrag'
 
 export const ItemCard: React.FC<{
   item: CollectedItem
@@ -43,7 +44,23 @@ export const ItemCard: React.FC<{
   return (
     <div
       draggable
-      onDragStart={(e) => { wasDragged.current = true; e.dataTransfer.setData('application/x-collector-item', item.id); e.dataTransfer.effectAllowed = 'move' }}
+      onDragStart={(e) => {
+        wasDragged.current = true
+        e.dataTransfer.setData('application/x-collector-item', item.id)
+        setResourcePayload(e.dataTransfer, {
+          kind: 'collector-item',
+          itemId: item.id,
+          itemType: item.type,
+          title: item.title,
+          url: item.url,
+          assetPath: item.assetPath,
+          note: item.note,
+        })
+        // 'copyMove' (not just 'move') so target handlers that set
+        // dropEffect='copy' are compatible — otherwise the browser resolves
+        // the drop to 'none' and silently drops the event.
+        e.dataTransfer.effectAllowed = 'copyMove'
+      }}
       onDragEnd={() => { setTimeout(() => { wasDragged.current = false }, 100) }}
       onClick={() => { if (!wasDragged.current) onOpen(item) }}
       className="group flex flex-col bg-bg-hover rounded-md border border-border-subtle overflow-hidden hover:border-border-strong transition-colors cursor-pointer"

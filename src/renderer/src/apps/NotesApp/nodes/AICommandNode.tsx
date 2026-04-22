@@ -270,7 +270,7 @@ function AICommandComponent({
 
       const { prompt: resolvedPrompt } = await resolveReferences(prompt, attachedRefs)
 
-      const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath || ''
+      const activeFilePath = useUIStore.getState().getActiveFilePath() || ''
 
       const hasContext = !!selectedText.trim()
       const systemPrompt = `You are Koto — an AI content writer embedded in a markdown notes editor.

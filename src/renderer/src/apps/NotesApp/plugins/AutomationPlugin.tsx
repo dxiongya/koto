@@ -138,7 +138,7 @@ export function AutomationPlugin(): JSX.Element | null {
 
   // ── Load automations and refresh badges ──
   useEffect(() => {
-    const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath
+    const activeFilePath = useUIStore.getState().getActiveFilePath()
     if (!activeFilePath) { setBadges([]); return }
 
     let cancelled = false
@@ -550,7 +550,7 @@ function QuickAutomationDialog({
   const [creating, setCreating] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
-  const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath
+  const activeFilePath = useUIStore.getState().getActiveFilePath()
 
   const handleCreate = async (): Promise<void> => {
     if (!name.trim() || !prompt.trim() || !activeFilePath) return

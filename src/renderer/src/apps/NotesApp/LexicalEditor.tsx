@@ -71,6 +71,7 @@ import {
   $replaceCollapsiblePlaceholders
 } from './plugins/CollapsiblePlugin'
 import { PastePlugin } from './plugins/PastePlugin'
+import { ResourceDropPlugin } from './plugins/ResourceDropPlugin'
 import { CopyMetadataPlugin } from './plugins/CopyMetadataPlugin'
 import { LinkPreviewPlugin } from './plugins/LinkPreviewPlugin'
 import { GhostTextPlugin, _hasGhostText } from './plugins/GhostTextPlugin'
@@ -439,6 +440,9 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
       {/* Paste (images, markdown, tables) */}
       <PastePlugin />
       <CopyMetadataPlugin />
+
+      {/* Cross-app resource drops (collector items, files, terminals) */}
+      <ResourceDropPlugin />
 
       {/* Editing experience */}
       <FloatingToolbarPlugin />

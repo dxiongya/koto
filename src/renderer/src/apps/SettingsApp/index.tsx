@@ -8,7 +8,7 @@ import {
   Check, Sun, Moon, Plus, Trash2, Pencil, Zap, Eye, EyeOff,
   Radio, Loader2, BarChart3, RotateCcw, Server, BookOpen,
   Power, PowerOff, RefreshCw, ChevronDown, ChevronRight, Wrench,
-  FolderOpen, Keyboard, Info, Copy, X,
+  FolderOpen, Keyboard, Info, Copy, X, Columns2, Square,
 } from 'lucide-react'
 import { ScheduledTasksSection } from '../../components/ScheduledTasksSection'
 import { getAppRegistry } from '../../core/AppContext'
@@ -1944,6 +1944,64 @@ const NotesAppSettings: React.FC = () => {
   )
 }
 
+// ── Layout Section ──
+// Two-mode content area: VSCode-style tabs+splits OR classic single-app.
+// Pane state is preserved across toggles so switching back is lossless.
+
+const LayoutSection: React.FC = () => {
+  const mode = useUIStore((s) => s.contentLayoutMode)
+  const setMode = useUIStore((s) => s.setContentLayoutMode)
+  type Mode = 'tabs' | 'single'
+  const options: { id: Mode; label: string; desc: string; Icon: typeof Columns2 }[] = [
+    {
+      id: 'tabs',
+      label: 'Tabs & Splits',
+      desc: 'VSCode-style — each pane has tabs, any pane can split.',
+      Icon: Columns2,
+    },
+    {
+      id: 'single',
+      label: 'Single App',
+      desc: 'One app fills the content area. No tabs, no splits.',
+      Icon: Square,
+    },
+  ]
+  return (
+    <section className="mb-10">
+      <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider mb-4">Layout</h2>
+      <div className="grid grid-cols-2 gap-3">
+        {options.map(({ id, label, desc, Icon }) => {
+          const isActive = mode === id
+          return (
+            <button
+              key={id}
+              onClick={() => setMode(id)}
+              className={`text-left rounded-lg border p-4 transition-colors ${
+                isActive
+                  ? 'border-accent-main bg-accent-main/5'
+                  : 'border-border-subtle hover:border-border-strong'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <Icon
+                  size={16}
+                  strokeWidth={1.5}
+                  className={isActive ? 'text-accent-main' : 'text-tx-muted'}
+                />
+                {isActive && <Check size={14} className="text-accent-main" />}
+              </div>
+              <div className={`text-sm font-medium ${isActive ? 'text-tx-active' : 'text-tx-main'}`}>
+                {label}
+              </div>
+              <div className="text-[11px] text-tx-faint mt-1 leading-relaxed">{desc}</div>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 // ── Storage Section ──
 
 const StorageSection: React.FC = () => {
@@ -2311,6 +2369,7 @@ const SettingsApp: React.FC = () => {
           </div>
         </section>
 
+          <LayoutSection />
           <StorageSection />
           <AboutSection />
         </>)}

@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useUIStore } from '../../store/useUIStore'
+import { usePaneActiveFile } from '../../layouts/PaneContext'
 import { LexicalEditor } from './LexicalEditor'
 import { FileText } from 'lucide-react'
 
 export const NotesApp: React.FC = () => {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
-  const activeFilePath = useUIStore((s) => s.appStates['notes.app'].activeFilePath)
+  // Read from the pane's own state — each notes pane shows an independent file.
+  const [activeFilePath, setPaneActiveFile] = usePaneActiveFile()
   const liteHome = useUIStore((s) => s.liteHome)
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -90,9 +92,9 @@ export const NotesApp: React.FC = () => {
     const filePath = `${notesDir}/${name}.md`
     await window.api.fs.createFile(filePath)
     await window.api.fs.writeFile(filePath, `# ${name}\n\n`)
-    // Set active file for notes.app
-    useUIStore.getState().setActiveFilePath(filePath)
-  }, [liteHome])
+    // Open in this pane
+    setPaneActiveFile(filePath)
+  }, [liteHome, setPaneActiveFile])
 
   const blurClass = showCommandPalette
     ? 'opacity-50 transition-opacity duration-200'

@@ -1,7 +1,15 @@
-import { useEffect, useState, memo } from 'react'
-import { useUIStore, genTerminalPersistKey } from './store/useUIStore'
-import type { SplitNode } from './store/useUIStore'
+import { useEffect, useState } from 'react'
+import {
+  useUIStore,
+  genTerminalPersistKey,
+  collectPaneIds,
+  makeItem,
+  getActiveItem,
+} from './store/useUIStore'
+import type { SplitNode, Pane, Item } from './store/useUIStore'
 import { MainLayout } from './layouts/MainLayout'
+import { PaneTree } from './layouts/PaneTree'
+import { ClassicAppHost } from './layouts/ClassicAppHost'
 import { SettingsApp } from './apps/SettingsApp'
 import { ContextMenuProvider } from './components/ContextMenu'
 import { FileSwitcher } from './components/FileSwitcher'
@@ -10,12 +18,23 @@ import { WelcomeDialog } from './components/WelcomeDialog'
 import { builtinThemes, applyTheme, applyFont } from './themes'
 import type { FontId } from './themes'
 import { getAppRegistry, getAppBus } from './core/AppContext'
-import { AppAPIProvider } from './core/AppContext'
 import { registerBuiltinApps } from './core/builtinApps'
-import { TerminalApp } from './apps/TerminalApp'
+
+/**
+ * Walk a saved rootLayout and verify every referenced paneId exists in the panes map.
+ * Used to guard against corrupted persisted state across schema changes.
+ */
+function isValidLayout(node: unknown, panes: Record<string, unknown>): boolean {
+  if (!node || typeof node !== 'object') return false
+  const n = node as { type?: string; paneId?: string; children?: unknown[] }
+  if (n.type === 'pane') return !!(n.paneId && panes[n.paneId])
+  if (n.type === 'split') return Array.isArray(n.children) && n.children.every((c) => isValidLayout(c, panes))
+  return false
+}
 
 export default function App() {
   const currentApp = useUIStore((s) => s.currentApp)
+  const contentLayoutMode = useUIStore((s) => s.contentLayoutMode)
   const [restored, setRestored] = useState(false)
 
   // Restore full persisted state on launch
@@ -70,12 +89,74 @@ export default function App() {
         if (c.mcpServers) useUIStore.setState({ mcpServers: c.mcpServers })
         if (c.hasSeenWelcome !== undefined) useUIStore.setState({ hasSeenWelcome: c.hasSeenWelcome })
         if (c.markdownTheme) useUIStore.setState({ markdownTheme: c.markdownTheme })
+        const savedMode = (c as Record<string, unknown>).contentLayoutMode
+        if (savedMode === 'tabs' || savedMode === 'single') {
+          useUIStore.setState({ contentLayoutMode: savedMode })
+        }
 
-        // terminal.app — recreate PTY sessions with saved cwd + buffer
+        // Restore multi-pane layout (if present). Validate tree/panes consistency;
+        // if saved state is corrupted we fall through and initializePanesIfEmpty
+        // will regenerate a fresh single-pane from currentApp.
+        // Legacy shape: pre-Phase 1 panes carried { appId, activeFilePath } mirror
+        // fields that have since been replaced by tabs[]. Accept either.
+        type LegacyPane = Partial<Pane> & {
+          id: string
+          appId?: string
+          activeFilePath?: string | null
+        }
+        const savedPanes = (c as Record<string, unknown>).panes as
+          | Record<string, LegacyPane>
+          | undefined
+        const savedRootLayout = (c as Record<string, unknown>).rootLayout as unknown
+        const savedFocusedPaneId = (c as Record<string, unknown>).focusedPaneId as string | undefined
+        if (savedPanes && savedRootLayout && isValidLayout(savedRootLayout, savedPanes)) {
+          const migrated: Record<string, Pane> = {}
+          for (const id in savedPanes) {
+            const p = savedPanes[id]
+            const hasTabs = Array.isArray(p.tabs) && p.tabs.length > 0
+            if (hasTabs) {
+              migrated[id] = {
+                id: p.id,
+                tabs: p.tabs as Item[],
+                activeTabId: p.activeTabId ?? (p.tabs as Item[])[0]?.id ?? null,
+              }
+            } else if (p.appId) {
+              const firstTab = makeItem(p.appId as never, p.activeFilePath ?? null)
+              migrated[id] = {
+                id: p.id,
+                tabs: [firstTab],
+                activeTabId: firstTab.id,
+              }
+            }
+          }
+          const validFocus = savedFocusedPaneId && migrated[savedFocusedPaneId]
+            ? savedFocusedPaneId
+            : Object.keys(migrated)[0] ?? null
+          useUIStore.setState({
+            panes: migrated,
+            rootLayout: savedRootLayout as never,
+            focusedPaneId: validFocus,
+          })
+        }
+
+        // terminal.app — recreate PTY sessions with saved cwd + buffer.
+        // Legacy schema: workspace.groups[].layout: SplitNode (PTY ids embedded).
+        // New schema:    workspace.sessionIds[] (flat).
         if (c.terminalSessions?.length > 0) {
           const defaultCwd = c.codeProjectPath || undefined
-          type SavedSession = { persistKey?: string; title: string; cwd?: string }
-          const savedWorkspaces = c.terminalWorkspaces as { id: string; path: string; name: string; groups: { id: string; layout: SplitNode }[]; activeGroupId: string | null }[] | undefined
+          // `id` is persisted alongside persistKey for same-session restart
+          // (see saveConfig in App.tsx) — we use it to rebuild oldIdToKey so
+          // that pane tabs' `resource: <oldSessionId>` keeps pointing at a
+          // live PTY after relaunch, instead of dropping into the "No terminal
+          // session" placeholder.
+          type SavedSession = { id?: string; persistKey?: string; title: string; cwd?: string }
+          type LegacyWs = {
+            id: string; path: string; name: string
+            groups?: { id: string; layout: SplitNode }[]
+            sessionIds?: string[]
+            activeGroupId?: string | null
+          }
+          const savedWorkspaces = c.terminalWorkspaces as LegacyWs[] | undefined
 
           Promise.all(
             (c.terminalSessions as SavedSession[]).map(async (saved) => {
@@ -83,7 +164,6 @@ export default function App() {
               const persistKey = saved.persistKey || genTerminalPersistKey()
               const res = await window.api.terminal.create(cwd)
               if (!res.ok) return null
-              // Load raw replay buffer (saved as raw PTY output, not xterm serialization)
               let replayBuffer: string | undefined
               const bufferRes = await window.api.terminal.loadBuffer(persistKey)
               if (bufferRes.ok && bufferRes.data) replayBuffer = bufferRes.data
@@ -95,48 +175,66 @@ export default function App() {
             }[]
             if (sessions.length === 0) return
 
-            // Build persistKey → new PTY id map for remapping layout trees
             const keyToId = new Map<string, string>()
             sessions.forEach((s) => keyToId.set(s.persistKey, s.id))
-
-            // Remap terminal IDs in a SplitNode tree (old PTY id → new PTY id)
-            // The layout stores PTY ids which change on restart. We match via persistKey.
-            function remapLayout(node: SplitNode, oldIdToKey: Map<string, string>): SplitNode {
-              if (node.type === 'terminal') {
-                const key = oldIdToKey.get(node.terminalId)
-                const newId = key ? keyToId.get(key) : undefined
-                return newId ? { type: 'terminal', terminalId: newId } : node
+            const savedSessions = c.terminalSessions as SavedSession[]
+            const oldIdToKey = new Map<string, string>()
+            // New-format: we save each session's PTY id alongside its
+            // persistKey. After relaunch the PTY id changes, but we can still
+            // look up the persistKey from the old id.
+            savedSessions.forEach((s) => {
+              if (s.id && s.persistKey) oldIdToKey.set(s.id, s.persistKey)
+            })
+            // Legacy layout trees (workspace.groups[].layout) only contained
+            // terminal IDs; map them by position into the saved session list
+            // so their persistKey can still be recovered.
+            const legacyOldIds: string[] = []
+            function collectFromLegacy(node: SplitNode) {
+              if (node.type === 'terminal') legacyOldIds.push(node.terminalId)
+              else node.children.forEach(collectFromLegacy)
+            }
+            savedWorkspaces?.forEach((ws) => ws.groups?.forEach((g) => collectFromLegacy(g.layout)))
+            legacyOldIds.forEach((oldId, i) => {
+              const key = savedSessions[i]?.persistKey
+              if (key && !oldIdToKey.has(oldId)) oldIdToKey.set(oldId, key)
+            })
+            const remapOldId = (oldId: string): string | undefined => {
+              // Accept both bare ids and `terminal://<id>` forms, since some
+              // callers store resources with the scheme prefix.
+              const bare = oldId.startsWith('terminal://') ? oldId.slice('terminal://'.length) : oldId
+              const key = oldIdToKey.get(bare)
+              return key ? keyToId.get(key) : undefined
+            }
+            function flattenLegacyGroups(groups: { layout: SplitNode }[]): string[] {
+              const ids: string[] = []
+              const walk = (n: SplitNode) => {
+                if (n.type === 'terminal') {
+                  const newId = remapOldId(n.terminalId)
+                  if (newId) ids.push(newId)
+                } else n.children.forEach(walk)
               }
-              return { ...node, children: node.children.map((ch) => remapLayout(ch, oldIdToKey)) }
+              groups.forEach((g) => walk(g.layout))
+              return ids
             }
 
-            let workspaces: typeof savedWorkspaces
+            let workspaces: { id: string; path: string; name: string; sessionIds: string[] }[]
             if (savedWorkspaces?.length) {
-              // Build old-id → persistKey map from saved sessions (order-preserved)
-              const savedSessions = c.terminalSessions as SavedSession[]
-              const oldIdToKey = new Map<string, string>()
-
-              // Collect old terminal IDs from saved layout trees
-              const oldIds: string[] = []
-              function collectIds(node: SplitNode) {
-                if (node.type === 'terminal') oldIds.push(node.terminalId)
-                else node.children.forEach(collectIds)
-              }
-              savedWorkspaces.forEach((ws) => ws.groups.forEach((g) => collectIds(g.layout)))
-
-              // Map old IDs to persistKeys by position (sessions and layout share same order)
-              oldIds.forEach((oldId, i) => {
-                const key = savedSessions[i]?.persistKey
-                if (key) oldIdToKey.set(oldId, key)
+              workspaces = savedWorkspaces.map((ws) => {
+                if (Array.isArray(ws.sessionIds)) {
+                  // New-schema save — IDs are PTY ids from previous session;
+                  // remap via persistKey only if they match old ids.
+                  const mapped = ws.sessionIds
+                    .map((id) => remapOldId(id) ?? (sessions.some((s) => s.id === id) ? id : null))
+                    .filter(Boolean) as string[]
+                  return { id: ws.id, path: ws.path, name: ws.name, sessionIds: mapped }
+                }
+                return {
+                  id: ws.id,
+                  path: ws.path,
+                  name: ws.name,
+                  sessionIds: flattenLegacyGroups(ws.groups ?? []),
+                }
               })
-
-              workspaces = savedWorkspaces.map((ws) => ({
-                ...ws,
-                groups: ws.groups.map((g) => ({
-                  ...g,
-                  layout: remapLayout(g.layout, oldIdToKey),
-                })),
-              }))
             } else {
               // No saved workspaces — group by cwd
               const wsMap = new Map<string, typeof sessions>()
@@ -149,21 +247,36 @@ export default function App() {
               workspaces = Array.from(wsMap.entries()).map(([wsPath, wsSessions]) => {
                 const name = wsPath.split('/').filter(Boolean).pop() || wsPath
                 const wsId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-                const groups = wsSessions.map((s) => ({
-                  id: `group-${s.id}-${Date.now()}`,
-                  layout: { type: 'terminal' as const, terminalId: s.id },
-                }))
-                return { id: wsId, path: wsPath, name, groups, activeGroupId: groups[groups.length - 1].id }
+                return { id: wsId, path: wsPath, name, sessionIds: wsSessions.map((s) => s.id) }
               })
             }
 
             const savedActiveWsId = c.activeWorkspaceId as string | undefined
+
+            // Remap stale terminal session ids in pane tabs so restored tabs
+            // reconnect to their freshly-created PTY instead of showing a UUID.
+            const currentPanes = useUIStore.getState().panes
+            let tabsChanged = false
+            const remappedPanes: typeof currentPanes = {}
+            for (const pid in currentPanes) {
+              const p = currentPanes[pid]
+              const nextTabs = p.tabs.map((t) => {
+                if (t.appId !== 'terminal.app' || !t.resource) return t
+                const newId = remapOldId(t.resource)
+                if (!newId || newId === t.resource) return t
+                tabsChanged = true
+                const sess = sessions.find((s) => s.id === newId)
+                return { ...t, resource: newId, label: sess?.title ?? t.label }
+              })
+              remappedPanes[pid] = tabsChanged ? { ...p, tabs: nextTabs } : p
+            }
 
             useUIStore.setState({
               terminalSessions: sessions,
               activeTerminalId: sessions[sessions.length - 1].id,
               terminalWorkspaces: workspaces,
               activeWorkspaceId: savedActiveWsId && workspaces.some((ws) => ws.id === savedActiveWsId) ? savedActiveWsId : workspaces[workspaces.length - 1]?.id ?? null,
+              ...(tabsChanged ? { panes: remappedPanes } : {}),
             })
           })
         }
@@ -171,6 +284,58 @@ export default function App() {
 
       // Register built-in apps
       return registerBuiltinApps(getAppRegistry())
+    }).then(() => {
+      const registry = getAppRegistry()
+      const store = useUIStore.getState()
+      const firstEnabled = registry.getEnabled()[0]?.definition.manifest.id
+      const isKnown = (id: string): boolean => id === 'settings.app' || !!registry.get(id)
+
+      // If currentApp is no longer registered (e.g., app removed), fall back.
+      if (!isKnown(store.currentApp) && firstEnabled) {
+        store.setCurrentApp(firstEnabled as never)
+      }
+
+      // Detect corrupted layout: bad pane (unregistered / settings) → full reset.
+      // Multiple terminal panes → migrate extras to notes.app (terminal lacks
+      // per-pane state, so duplicates show identical content).
+      if (Object.keys(store.panes).length > 0) {
+        const paneApp = (p: Pane): string =>
+          (p.tabs.find((t) => t.id === p.activeTabId) ?? p.tabs[0])?.appId ?? 'notes.app'
+        const hasBadPane = Object.values(store.panes).some(
+          (p) => !isKnown(paneApp(p)) || paneApp(p) === 'settings.app',
+        )
+        if (hasBadPane) {
+          useUIStore.setState({ panes: {}, rootLayout: null, focusedPaneId: null })
+          window.api.state.update({ panes: {}, rootLayout: null, focusedPaneId: null })
+        } else {
+          // Keep the first terminal pane, convert extras to notes.app.
+          let terminalSeen = false
+          let changed = false
+          const migrated: typeof store.panes = {}
+          for (const id in store.panes) {
+            const p = store.panes[id]
+            if (paneApp(p) === 'terminal.app') {
+              if (terminalSeen) {
+                const freshTab = makeItem('notes.app' as never, null)
+                migrated[id] = { ...p, tabs: [freshTab], activeTabId: freshTab.id }
+                changed = true
+              } else {
+                terminalSeen = true
+                migrated[id] = p
+              }
+            } else {
+              migrated[id] = p
+            }
+          }
+          if (changed) {
+            useUIStore.setState({ panes: migrated })
+            window.api.state.update({ panes: migrated })
+          }
+        }
+      }
+
+      // Initialize single-pane layout from currentApp (after apps registered)
+      useUIStore.getState().initializePanesIfEmpty()
     }).then(() => {
       // Set up Bus-to-main bridge — allows main process to call Bus tools
       const bus = getAppBus()
@@ -193,7 +358,10 @@ export default function App() {
     }).catch((err) => {
       console.error('Failed to restore state:', err)
       applyTheme(builtinThemes.dark)
-      registerBuiltinApps(getAppRegistry()).then(() => setRestored(true))
+      registerBuiltinApps(getAppRegistry()).then(() => {
+        useUIStore.getState().initializePanesIfEmpty()
+        setRestored(true)
+      })
     })
   }, [])
 
@@ -206,14 +374,7 @@ export default function App() {
 
       // Only poll CWD for terminals in the active workspace (performance)
       const activeWs = terminalWorkspaces.find((ws) => ws.id === activeWorkspaceId)
-      const visibleIds = new Set<string>()
-      if (activeWs) {
-        const collectIds = (node: SplitNode) => {
-          if (node.type === 'terminal') visibleIds.add(node.terminalId)
-          else node.children.forEach(collectIds)
-        }
-        activeWs.groups.forEach((g) => collectIds(g.layout))
-      }
+      const visibleIds = new Set<string>(activeWs?.sessionIds ?? [])
 
       let changed = false
       const updated = await Promise.all(
@@ -259,7 +420,7 @@ export default function App() {
         lastApp: currentApp,
         terminalSessions: terminalSessions.map((t) => ({ id: t.id, persistKey: t.persistKey, title: t.title, cwd: t.cwd })),
         terminalWorkspaces: terminalWorkspaces.map((ws) => ({
-          id: ws.id, path: ws.path, name: ws.name, groups: ws.groups, activeGroupId: ws.activeGroupId,
+          id: ws.id, path: ws.path, name: ws.name, sessionIds: ws.sessionIds,
         })),
         activeWorkspaceId,
         activeTerminalId,
@@ -317,10 +478,67 @@ export default function App() {
         return
       }
 
-      // Cmd+\ — Toggle sidebar
-      if (e.metaKey && e.key === '\\') {
+      // Cmd+B — Toggle sidebar (VS Code convention)
+      if (e.metaKey && e.key === 'b' && !e.shiftKey) {
         e.preventDefault()
         store.toggleSidebar()
+        return
+      }
+
+      // Cmd+\ — Split focused pane right
+      // Cmd+Shift+\ — Split focused pane down
+      if (e.metaKey && e.key === '\\') {
+        e.preventDefault()
+        const focusId = store.focusedPaneId
+        if (!focusId) return
+        const focused = store.panes[focusId]
+        if (!focused) return
+        const activeItem = getActiveItem(focused)
+        if (!activeItem) return
+        const direction = e.shiftKey ? 'vertical' : 'horizontal'
+        store.splitPane(focusId, activeItem.appId, direction, 'after', activeItem.resource)
+        return
+      }
+
+      // Cmd+W — Close the active tab of the focused pane.
+      // closeTab handles the cascade: last tab + multi-pane → remove pane.
+      if (e.metaKey && e.key === 'w' && !e.shiftKey) {
+        const focusId = store.focusedPaneId
+        if (!focusId) return
+        const pane = store.panes[focusId]
+        if (!pane) return
+        // Don't swallow ⌘W on the last tab of the only pane — let the OS close the window.
+        const paneCount = Object.keys(store.panes).length
+        if (paneCount <= 1 && pane.tabs.length <= 1) return
+        const activeTabId = pane.activeTabId
+        if (!activeTabId) return
+        e.preventDefault()
+        store.closeTab(focusId, activeTabId)
+        return
+      }
+
+      // Cmd+1..9 — Focus nth pane (by layout-tree traversal order)
+      if (e.metaKey && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) {
+        if (!store.rootLayout) return
+const ids = collectPaneIds(store.rootLayout)
+        const idx = parseInt(e.key, 10) - 1
+        if (idx >= ids.length) return
+        e.preventDefault()
+        store.setFocusedPane(ids[idx])
+        return
+      }
+
+      // Cmd+Alt+Left/Right — Cycle focused pane (prev / next in traversal order)
+      if (e.metaKey && e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        if (!store.rootLayout) return
+const ids = collectPaneIds(store.rootLayout)
+        if (ids.length < 2) return
+        const curIdx = ids.indexOf(store.focusedPaneId ?? '')
+        const nextIdx = e.key === 'ArrowLeft'
+          ? (curIdx <= 0 ? ids.length - 1 : curIdx - 1)
+          : (curIdx >= ids.length - 1 ? 0 : curIdx + 1)
+        e.preventDefault()
+        store.setFocusedPane(ids[nextIdx])
         return
       }
 
@@ -383,63 +601,19 @@ export default function App() {
     return <div className="w-screen h-screen bg-bg-app" />
   }
 
-  const registry = getAppRegistry()
-  const registeredApp = registry.get(currentApp)
-  const ActiveApp = currentApp === 'settings.app' ? SettingsApp : registeredApp?.definition.component
-  const isTerminalActive = currentApp === 'terminal.app'
-
-  // Resolve the non-terminal app component
-  const OtherApp = !isTerminalActive ? ActiveApp : null
-
   return (
     <>
       <MainLayout>
-        {/* Terminal always mounted (hidden when inactive) to preserve xterm scrollback.
-            Same pattern as VS Code — terminal instances survive app switches. */}
-        <PersistentTerminal visible={isTerminalActive} />
-
-        {/* Other apps mount/unmount normally */}
-        {OtherApp ? (
-          <AppAPIProvider appId={currentApp}>
-            <OtherApp api={undefined as any} />
-          </AppAPIProvider>
-        ) : !isTerminalActive ? (
-          <PlaceholderApp name={currentApp} />
-        ) : null}
+        {currentApp === 'settings.app'
+          ? <SettingsApp />
+          : contentLayoutMode === 'single'
+            ? <ClassicAppHost />
+            : <PaneTree />}
       </MainLayout>
       <ContextMenuProvider />
       <FileSwitcher />
       <ContextPanel />
       <WelcomeDialog />
     </>
-  )
-}
-
-/** Terminal persists across app switches — xterm instances stay alive.
- *  Uses display:none instead of unmounting to preserve scrollback + PTY state. */
-const PersistentTerminal = memo(function PersistentTerminal({ visible }: { visible: boolean }) {
-  const hasTerminals = useUIStore((s) => s.terminalSessions.length > 0)
-  // Don't mount at all until first terminal is created
-  const [everMounted, setEverMounted] = useState(false)
-  useEffect(() => {
-    if (hasTerminals) setEverMounted(true)
-  }, [hasTerminals])
-
-  if (!everMounted) return null
-
-  return (
-    <div style={{ display: visible ? 'contents' : 'none' }}>
-      <AppAPIProvider appId="terminal.app">
-        <TerminalApp />
-      </AppAPIProvider>
-    </div>
-  )
-})
-
-function PlaceholderApp({ name }: { name: string }) {
-  return (
-    <div className="flex-1 flex items-center justify-center text-tx-faint text-sm">
-      {name} — coming soon
-    </div>
   )
 }

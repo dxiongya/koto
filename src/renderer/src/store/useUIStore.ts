@@ -74,17 +74,107 @@ export function insertIntoTree(
   return { ...node, children: node.children.map((c) => insertIntoTree(c, targetTermId, newTermId, direction, position)) }
 }
 
-export interface TerminalWorkspace {
-  id: string
-  path: string        // absolute folder path
-  name: string        // display name (folder basename)
-  groups: { id: string; layout: SplitNode }[]
-  activeGroupId: string | null
+// ── Global pane layout (multi-app split panes) ──
+// Parallel to terminal's SplitNode but at the top-level content area.
+// Terminal.app's internal SplitNode stays nested inside a single pane.
+
+export type PaneNode =
+  | { type: 'pane'; paneId: string }
+  | { type: 'split'; direction: 'horizontal' | 'vertical'; children: PaneNode[]; sizes?: number[] }
+
+/** A single tab inside a pane — the VSCode-style "item" unit of display. */
+export interface Item {
+  id: string              // stable React key across renders
+  appId: AppType          // which app renders this tab
+  resource: string | null // file path / filter / null (empty)
+  label: string           // display text (basename of file, or app name for empty)
 }
 
-/** Compat helper: extract flat terminalIds from a group's layout tree */
-function groupTerminalIds(group: { layout: SplitNode }): string[] {
-  return collectTerminalIds(group.layout)
+export interface Pane {
+  id: string
+  /** Ordered list of tabs in this pane. */
+  tabs: Item[]
+  /** Currently visible tab. null only during transient empty states. */
+  activeTabId: string | null
+}
+
+export function genPaneId(): string {
+  return `pane-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+}
+
+export function genItemId(): string {
+  return `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+}
+
+/** Derive a human label for a tab from its resource. */
+export function itemLabel(appId: AppType, resource: string | null): string {
+  if (!resource) return appId.replace('.app', '')
+  return resource.split('/').filter(Boolean).pop() ?? resource
+}
+
+export function makeItem(appId: AppType, resource: string | null): Item {
+  return { id: genItemId(), appId, resource, label: itemLabel(appId, resource) }
+}
+
+/** Get the active tab Item of a pane, or undefined when the pane has no tabs. */
+export function getActiveItem(pane: Pane): Item | undefined {
+  return pane.tabs.find((t) => t.id === pane.activeTabId) ?? pane.tabs[0]
+}
+
+/** Derive a pane's effective appId — the active tab's app, or a fallback. */
+export function getPaneAppId(pane: Pane, fallback: AppType = 'notes.app'): AppType {
+  return getActiveItem(pane)?.appId ?? fallback
+}
+
+/** Derive a pane's effective resource (file path / filter id / null). */
+export function getPaneResource(pane: Pane): string | null {
+  return getActiveItem(pane)?.resource ?? null
+}
+
+export function collectPaneIds(node: PaneNode): string[] {
+  if (node.type === 'pane') return [node.paneId]
+  return node.children.flatMap(collectPaneIds)
+}
+
+export function removePaneFromTree(node: PaneNode, paneId: string): PaneNode | null {
+  if (node.type === 'pane') return node.paneId === paneId ? null : node
+  const children = node.children.map((c) => removePaneFromTree(c, paneId)).filter(Boolean) as PaneNode[]
+  if (children.length === 0) return null
+  if (children.length === 1) return children[0]
+  if (children.length === node.children.length && children.every((c, i) => c === node.children[i])) return node
+  return { ...node, children }
+}
+
+export function insertPaneIntoTree(
+  node: PaneNode,
+  targetPaneId: string,
+  newPaneId: string,
+  direction: 'horizontal' | 'vertical',
+  position: 'before' | 'after',
+): PaneNode {
+  if (node.type === 'pane') {
+    if (node.paneId !== targetPaneId) return node
+    const newNode: PaneNode = { type: 'pane', paneId: newPaneId }
+    const children = position === 'before' ? [newNode, node] : [node, newNode]
+    return { type: 'split', direction, children }
+  }
+  if (node.direction === direction) {
+    const idx = node.children.findIndex((c) => c.type === 'pane' && c.paneId === targetPaneId)
+    if (idx !== -1) {
+      const newChildren = [...node.children]
+      const insertIdx = position === 'before' ? idx : idx + 1
+      newChildren.splice(insertIdx, 0, { type: 'pane', paneId: newPaneId })
+      return { ...node, children: newChildren }
+    }
+  }
+  return { ...node, children: node.children.map((c) => insertPaneIntoTree(c, targetPaneId, newPaneId, direction, position)) }
+}
+
+export interface TerminalWorkspace {
+  id: string
+  path: string            // absolute folder path
+  name: string            // display name (folder basename)
+  sessionIds: string[]    // flat list; internal splits retired in favor of outer pane splits
 }
 
 interface UIState {
@@ -99,6 +189,13 @@ interface UIState {
   currentApp: AppType
   showCommandPalette: boolean
   showContextPanel: boolean
+
+  // Content area layout mode:
+  //   'tabs'   — VSCode-style: recursive split panes + tabs per pane
+  //   'single' — classic: currentApp fills the content area, no tabs/splits
+  // Pane state (rootLayout, panes) is preserved across toggles so switching
+  // back to 'tabs' restores the previous layout.
+  contentLayoutMode: 'tabs' | 'single'
 
   // Sidebar
   sidebarOpen: boolean
@@ -119,6 +216,11 @@ interface UIState {
   activeTerminalId: string | null
   terminalWorkspaces: TerminalWorkspace[]
   activeWorkspaceId: string | null
+
+  // Global multi-app split panes
+  panes: Record<string, Pane>
+  rootLayout: PaneNode | null
+  focusedPaneId: string | null
 
   // recent files
   recentFiles: RecentFileEntry[]
@@ -167,6 +269,7 @@ interface UIState {
   toggleTheme: () => void
   setFontFamily: (fontId: FontId) => void
   toggleSidebar: () => void
+  setContentLayoutMode: (mode: 'tabs' | 'single') => void
 
   // Per-app state: operates on currentApp
   getActiveFilePath: () => string | null
@@ -186,6 +289,50 @@ interface UIState {
   setCodeProjectPath: (path: string | null) => void
   addRecentProject: (path: string) => void
 
+  // ── Global multi-app split panes ──
+  /** Initialize single-pane layout from currentApp if rootLayout is null. Called after restore. */
+  initializePanesIfEmpty: () => void
+  /** Create a new pane. Returns its paneId. Does NOT insert into tree — use splitPane for that. */
+  createPane: (appId: AppType, activeFilePath?: string | null) => string
+  /** Split an existing pane by creating a new pane next to it. Returns the new paneId. */
+  splitPane: (targetPaneId: string, newAppId: AppType, direction: 'horizontal' | 'vertical', position: 'before' | 'after', initialFilePath?: string | null) => string
+  /** Remove a pane from the tree + panes map. If last pane, rootLayout becomes null. */
+  removePane: (paneId: string) => void
+  /** Move an existing pane to a new position relative to another pane. */
+  movePane: (sourcePaneId: string, targetPaneId: string, direction: 'horizontal' | 'vertical', position: 'before' | 'after') => void
+  /** Set which pane has keyboard focus (drives sidebar, command palette, etc). */
+  setFocusedPane: (paneId: string) => void
+  /** Update a specific pane's open file (Phase 2+ will use this when editors open files). */
+  setPaneActiveFile: (paneId: string, filePath: string | null) => void
+  /** Find a pane already showing a file. Returns its paneId if found. */
+  findPaneByFile: (filePath: string) => string | null
+  /** Tabs: add/activate an item in a pane; dedupes by appId+resource. */
+  openTabInPane: (paneId: string, appId: AppType, resource: string | null) => void
+  /** Tabs: activate an existing tab in a pane. */
+  setActiveTab: (paneId: string, tabId: string) => void
+  /** Tabs: close a tab; if it was the last tab and there are other panes, also remove the pane. */
+  closeTab: (paneId: string, tabId: string) => void
+  /** Tabs: reorder a tab within its pane. */
+  moveTabWithinPane: (paneId: string, tabId: string, targetIndex: number) => void
+  /** Tabs: move a tab from one pane to another. insertIndex omitted → append. */
+  moveTabToPane: (sourcePaneId: string, tabId: string, targetPaneId: string, insertIndex?: number) => void
+  /** Tabs: split target pane, move tab into the newly-created neighbor pane. */
+  splitPaneWithTab: (
+    sourcePaneId: string,
+    tabId: string,
+    targetPaneId: string,
+    direction: 'horizontal' | 'vertical',
+    position: 'before' | 'after',
+  ) => void
+  /** Open a file in the layout: dedupe existing, else create a new pane split off target. */
+  openFileInPane: (args: {
+    filePath: string
+    appId: AppType
+    targetPaneId: string
+    direction: 'horizontal' | 'vertical'
+    position: 'before' | 'after'
+  }) => void
+
   // terminal.app
   addTerminalSession: (session: TerminalSession) => void
   removeTerminalSession: (id: string) => void
@@ -193,9 +340,10 @@ interface UIState {
   addTerminalWorkspace: (path: string) => void
   removeTerminalWorkspace: (id: string) => void
   setActiveWorkspace: (id: string) => void
+  /** Attach a session id to a workspace. Also opens it as a tab in the focused pane. */
   createTerminalInWorkspace: (workspaceId: string, sessionId: string) => void
-  splitTerminalInWorkspace: (workspaceId: string, existingTermId: string, newTermId: string, direction?: 'horizontal' | 'vertical') => void
-  unsplitTerminal: (terminalId: string) => void
+  /** Remove a session id from its workspace's sessionIds (cleanup helper). */
+  detachTerminalFromWorkspaces: (sessionId: string) => void
 
   // recent files / terminals (unified MRU)
   trackRecentFile: (filePath: string, app: AppType) => void
@@ -250,6 +398,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   currentApp: 'notes.app',
   showCommandPalette: false,
   showContextPanel: false,
+  contentLayoutMode: 'tabs',
   sidebarOpen: true,
   appStates: defaultAppStates(),
   notesExpandedGroups: [],
@@ -260,6 +409,9 @@ export const useUIStore = create<UIState>((set, get) => ({
   activeTerminalId: null,
   terminalWorkspaces: [],
   activeWorkspaceId: null,
+  panes: {},
+  rootLayout: null,
+  focusedPaneId: null,
   recentFiles: [],
   ai: { ...DEFAULT_AI_SETTINGS },
   mcpServers: [],
@@ -285,7 +437,37 @@ export const useUIStore = create<UIState>((set, get) => ({
   setLiteHome: (path) => set({ liteHome: path }),
 
   setCurrentApp: (app) => {
-    set({ currentApp: app })
+    const state = get()
+    // Settings is an overlay, never a pane. Switching to settings keeps the
+    // pane layout intact; switching away from settings restores it as-is.
+    if (app === 'settings.app') {
+      set({ currentApp: app })
+    } else {
+      // Content app: find/create a tab for this app in the focused pane.
+      const focusId = state.focusedPaneId
+      const focusedPane = focusId ? state.panes[focusId] : null
+      if (focusId && focusedPane) {
+        if (getPaneAppId(focusedPane, state.currentApp) === app) {
+          set({ currentApp: app })
+        } else {
+          const existingTab = focusedPane.tabs.find((t) => t.appId === app)
+          if (existingTab) {
+            const nextPane = ({ ...focusedPane, activeTabId: existingTab.id })
+            set({ currentApp: app, panes: { ...state.panes, [focusId]: nextPane } })
+          } else {
+            const newTab = makeItem(app, null)
+            const nextPane = ({
+              ...focusedPane,
+              tabs: [...focusedPane.tabs, newTab],
+              activeTabId: newTab.id,
+            })
+            set({ currentApp: app, panes: { ...state.panes, [focusId]: nextPane } })
+          }
+        }
+      } else {
+        set({ currentApp: app })
+      }
+    }
     // Write immediately (no debounce) — app can close at any time
     window.api.state.update({ lastApp: app })
     // Refresh MRU for whatever is active in the target app.
@@ -330,16 +512,80 @@ export const useUIStore = create<UIState>((set, get) => ({
     })
   },
 
+  setContentLayoutMode: (mode) => {
+    set({ contentLayoutMode: mode })
+    persistState({ contentLayoutMode: mode })
+    // When re-entering tabs mode, make sure a pane layout exists so the user
+    // doesn't land on a blank PaneTree.
+    if (mode === 'tabs') {
+      get().initializePanesIfEmpty()
+    }
+  },
+
   // ── Per-app state ──
 
   getActiveFilePath: () => {
-    const { currentApp, appStates } = get()
-    return appStates[currentApp]?.activeFilePath ?? null
+    const state = get()
+    const focusId = state.focusedPaneId
+    if (focusId && state.panes[focusId]) {
+      return getPaneResource(state.panes[focusId])
+    }
+    return state.appStates[state.currentApp]?.activeFilePath ?? null
   },
 
   setActiveFilePath: (path) => {
-    const { currentApp, appStates, navBackStack } = get()
-    // Push current location to back stack before navigating
+    const state = get()
+    const focusId = state.focusedPaneId
+    if (focusId && state.panes[focusId]) {
+      const pane = state.panes[focusId]
+      const paneApp = getPaneAppId(pane, state.currentApp)
+      const prevFile = getPaneResource(pane)
+      if (path !== prevFile) {
+        const entry: NavEntry = { app: paneApp, filePath: prevFile }
+        const newBack = [...state.navBackStack, entry].slice(-50)
+        set({ navBackStack: newBack, navForwardStack: [] })
+      }
+      // path=null: reset active tab to empty (rare). Else open-or-activate a tab.
+      if (path === null) {
+        if (pane.activeTabId) {
+          const nextTabs = pane.tabs.map((t) =>
+            t.id === pane.activeTabId ? { ...t, resource: null, label: itemLabel(t.appId, null) } : t,
+          )
+          const nextPane: Pane = { ...pane, tabs: nextTabs }
+          const nextPanes = { ...state.panes, [focusId]: nextPane }
+          const updatedAppStates = {
+            ...state.appStates,
+            [paneApp]: { ...state.appStates[paneApp], activeFilePath: null },
+          }
+          set({ panes: nextPanes, appStates: updatedAppStates })
+          persistState({ panes: nextPanes, appStates: updatedAppStates })
+        }
+        return
+      }
+      const existing = pane.tabs.find((t) => t.appId === paneApp && t.resource === path)
+      let nextTabs: Item[]
+      let nextActiveTabId: string
+      if (existing) {
+        nextTabs = pane.tabs
+        nextActiveTabId = existing.id
+      } else {
+        const fresh = makeItem(paneApp, path)
+        nextTabs = [...pane.tabs, fresh]
+        nextActiveTabId = fresh.id
+      }
+      const nextPane: Pane = { ...pane, tabs: nextTabs, activeTabId: nextActiveTabId }
+      const nextPanes = { ...state.panes, [focusId]: nextPane }
+      const updatedAppStates = {
+        ...state.appStates,
+        [paneApp]: { ...state.appStates[paneApp], activeFilePath: path },
+      }
+      set({ panes: nextPanes, appStates: updatedAppStates })
+      persistState({ panes: nextPanes, appStates: updatedAppStates })
+      if (path) get().trackRecentFile(path, paneApp)
+      return
+    }
+    // Fallback (no pane): legacy path.
+    const { currentApp, appStates, navBackStack } = state
     const prevFile = appStates[currentApp]?.activeFilePath ?? null
     if (path !== prevFile) {
       const entry: NavEntry = { app: currentApp, filePath: prevFile }
@@ -449,27 +695,22 @@ export const useUIStore = create<UIState>((set, get) => ({
   removeTerminalSession: (id) => {
     const prev = get()
     const nextSessions = prev.terminalSessions.filter((t) => t.id !== id)
-    // Clean up from workspace groups
+    // Detach from all workspaces' flat sessionId lists.
     const nextWorkspaces = prev.terminalWorkspaces.map((ws) => {
-      const nextGroups = ws.groups
-        .map((g) => {
-          const newLayout = removeFromTree(g.layout, id)
-          if (!newLayout) return null
-          // Preserve reference if layout unchanged
-          return newLayout === g.layout ? g : { ...g, layout: newLayout }
-        })
-        .filter(Boolean) as typeof ws.groups
-      // Update activeGroupId if the active group was removed
-      const activeGroupStillExists = nextGroups.some((g) => g.id === ws.activeGroupId)
-      return {
-        ...ws,
-        groups: nextGroups,
-        activeGroupId: activeGroupStillExists
-          ? ws.activeGroupId
-          : (nextGroups.length > 0 ? nextGroups[nextGroups.length - 1].id : null),
-      }
+      if (!ws.sessionIds.includes(id)) return ws
+      return { ...ws, sessionIds: ws.sessionIds.filter((s) => s !== id) }
     })
-    // Determine new active terminal
+    // Also close any panes whose active tab was this session (and its tabs).
+    const nextPanes = { ...prev.panes }
+    let panesChanged = false
+    for (const paneId in nextPanes) {
+      const pane = nextPanes[paneId]
+      const filtered = pane.tabs.filter((t) => !(t.appId === 'terminal.app' && t.resource === id))
+      if (filtered.length !== pane.tabs.length) {
+        panesChanged = true
+        nextPanes[paneId] = { ...pane, tabs: filtered, activeTabId: filtered[0]?.id ?? null }
+      }
+    }
     const newActiveId = prev.activeTerminalId === id
       ? (nextSessions.length > 0 ? nextSessions[nextSessions.length - 1].id : null)
       : prev.activeTerminalId
@@ -477,8 +718,12 @@ export const useUIStore = create<UIState>((set, get) => ({
       terminalSessions: nextSessions,
       activeTerminalId: newActiveId,
       terminalWorkspaces: nextWorkspaces,
+      ...(panesChanged ? { panes: nextPanes } : {}),
     })
-    persistState({ terminalSessions: nextSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })) })
+    persistState({
+      terminalSessions: nextSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })),
+      ...(panesChanged ? { panes: nextPanes } : {}),
+    })
   },
 
   setActiveTerminalId: (id) => {
@@ -499,18 +744,17 @@ export const useUIStore = create<UIState>((set, get) => ({
     }
     const name = path.split('/').filter(Boolean).pop() || path
     const id = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const newWs: TerminalWorkspace = { id, path, name, groups: [] as TerminalWorkspace['groups'], activeGroupId: null }
+    const newWs: TerminalWorkspace = { id, path, name, sessionIds: [] }
     const nextWorkspaces = [...prev.terminalWorkspaces, newWs]
     set({ terminalWorkspaces: nextWorkspaces, activeWorkspaceId: id })
-    persistState({ terminalWorkspaces: nextWorkspaces.map((ws) => ({ id: ws.id, path: ws.path, name: ws.name, groups: ws.groups, activeGroupId: ws.activeGroupId })) })
+    persistState({ terminalWorkspaces: nextWorkspaces })
   },
 
   removeTerminalWorkspace: (id) => {
     const prev = get()
     const ws = prev.terminalWorkspaces.find((w) => w.id === id)
     if (!ws) return
-    // Close all terminals in this workspace
-    const termIdsToRemove = new Set(ws.groups.flatMap((g) => groupTerminalIds(g)))
+    const termIdsToRemove = new Set(ws.sessionIds)
     const nextSessions = prev.terminalSessions.filter((t) => !termIdsToRemove.has(t.id))
     const nextWorkspaces = prev.terminalWorkspaces.filter((w) => w.id !== id)
     const newActiveWsId = prev.activeWorkspaceId === id
@@ -519,96 +763,480 @@ export const useUIStore = create<UIState>((set, get) => ({
     const newActiveTermId = termIdsToRemove.has(prev.activeTerminalId ?? '')
       ? (nextSessions.length > 0 ? nextSessions[nextSessions.length - 1].id : null)
       : prev.activeTerminalId
+    // Drop any pane tabs pointing to removed sessions.
+    const nextPanes = { ...prev.panes }
+    let panesChanged = false
+    for (const paneId in nextPanes) {
+      const pane = nextPanes[paneId]
+      const filtered = pane.tabs.filter(
+        (t) => !(t.appId === 'terminal.app' && t.resource && termIdsToRemove.has(t.resource)),
+      )
+      if (filtered.length !== pane.tabs.length) {
+        panesChanged = true
+        nextPanes[paneId] = { ...pane, tabs: filtered, activeTabId: filtered[0]?.id ?? null }
+      }
+    }
     set({
       terminalWorkspaces: nextWorkspaces,
       activeWorkspaceId: newActiveWsId,
       terminalSessions: nextSessions,
       activeTerminalId: newActiveTermId,
+      ...(panesChanged ? { panes: nextPanes } : {}),
     })
     persistState({
-      terminalWorkspaces: nextWorkspaces.map((ws) => ({ id: ws.id, path: ws.path, name: ws.name, groups: ws.groups, activeGroupId: ws.activeGroupId })),
+      terminalWorkspaces: nextWorkspaces,
       terminalSessions: nextSessions.map((t) => ({ title: t.title, cwd: t.cwd })),
+      ...(panesChanged ? { panes: nextPanes } : {}),
     })
   },
 
   setActiveWorkspace: (id) => set({ activeWorkspaceId: id }),
 
   createTerminalInWorkspace: (workspaceId, sessionId) => {
-    const prev = get()
-    const newGroupId = `group-${sessionId}-${Date.now()}`
-    const nextWorkspaces = prev.terminalWorkspaces.map((ws) => {
+    const state = get()
+    // Attach session to the workspace (dedupe).
+    const nextWorkspaces = state.terminalWorkspaces.map((ws) => {
       if (ws.id !== workspaceId) return ws
-      const newGroup = { id: newGroupId, layout: { type: 'terminal' as const, terminalId: sessionId } }
-      return { ...ws, groups: [...ws.groups, newGroup], activeGroupId: newGroupId }
+      if (ws.sessionIds.includes(sessionId)) return ws
+      return { ...ws, sessionIds: [...ws.sessionIds, sessionId] }
     })
     set({ terminalWorkspaces: nextWorkspaces, activeWorkspaceId: workspaceId })
+    persistState({ terminalWorkspaces: nextWorkspaces })
+    // Open the session as a tab in the focused pane so the user sees it.
+    if (state.focusedPaneId) {
+      get().openTabInPane(state.focusedPaneId, 'terminal.app', sessionId)
+    }
   },
 
-  splitTerminalInWorkspace: (workspaceId, existingTermId, newTermId, direction) => {
-    const prev = get()
-    const dir = direction ?? 'horizontal'
-    const nextWorkspaces = prev.terminalWorkspaces.map((ws) => {
-      if (ws.id !== workspaceId) return ws
-      // Remove newTermId from any previous group in this workspace
-      let groups = ws.groups.map((g) => {
-        const cleaned = removeFromTree(g.layout, newTermId)
-        return cleaned ? { ...g, layout: cleaned } : null
-      }).filter(Boolean) as typeof ws.groups
-      // Find the group containing existingTermId and insert newTermId
-      groups = groups.map((g) => {
-        if (!collectTerminalIds(g.layout).includes(existingTermId)) return g
-        const newLayout = insertIntoTree(g.layout, existingTermId, newTermId, dir, 'after')
-        return { ...g, layout: newLayout }
-      })
-      return { ...ws, groups }
+  detachTerminalFromWorkspaces: (sessionId) => {
+    const state = get()
+    let changed = false
+    const nextWorkspaces = state.terminalWorkspaces.map((ws) => {
+      if (!ws.sessionIds.includes(sessionId)) return ws
+      changed = true
+      return { ...ws, sessionIds: ws.sessionIds.filter((s) => s !== sessionId) }
     })
-    // Also remove newTermId from groups in other workspaces
-    const finalWorkspaces = nextWorkspaces.map((ws) => {
-      if (ws.id === workspaceId) return ws
-      const groups = ws.groups.map((g) => {
-        const cleaned = removeFromTree(g.layout, newTermId)
-        return cleaned ? { ...g, layout: cleaned } : null
-      }).filter(Boolean) as typeof ws.groups
-      const activeGroupStillExists = groups.some((g) => g.id === ws.activeGroupId)
-      return {
-        ...ws,
-        groups,
-        activeGroupId: activeGroupStillExists ? ws.activeGroupId : (groups[0]?.id ?? null),
+    if (!changed) return
+    set({ terminalWorkspaces: nextWorkspaces })
+    persistState({ terminalWorkspaces: nextWorkspaces })
+  },
+
+  // ── Global multi-app split panes ──
+
+  initializePanesIfEmpty: () => {
+    const { rootLayout, currentApp, appStates } = get()
+    if (rootLayout) return
+    // Settings is overlay-only; never seed a layout with it. Fallback to notes.app.
+    const seedApp: AppType = currentApp === 'settings.app' ? 'notes.app' : currentApp
+    const paneId = genPaneId()
+    const seedResource = appStates[seedApp]?.activeFilePath ?? null
+    const firstTab = makeItem(seedApp, seedResource)
+    const pane: Pane = {
+      id: paneId,
+      tabs: [firstTab],
+      activeTabId: firstTab.id,
+    }
+    set({
+      panes: { [paneId]: pane },
+      rootLayout: { type: 'pane', paneId },
+      focusedPaneId: paneId,
+    })
+    persistState({ panes: { [paneId]: pane }, rootLayout: { type: 'pane', paneId }, focusedPaneId: paneId })
+  },
+
+  createPane: (appId, activeFilePath = null) => {
+    const paneId = genPaneId()
+    const firstTab = makeItem(appId, activeFilePath)
+    const pane: Pane = {
+      id: paneId,
+      tabs: [firstTab],
+      activeTabId: firstTab.id,
+    }
+    const nextPanes = { ...get().panes, [paneId]: pane }
+    set({ panes: nextPanes })
+    persistState({ panes: nextPanes })
+    return paneId
+  },
+
+  splitPane: (targetPaneId, newAppId, direction, position, initialFilePath = null) => {
+    const state = get()
+    // settings.app is an overlay, never a pane. Deflect to notes.app.
+    const safeAppId: AppType = newAppId === 'settings.app' ? 'notes.app' : newAppId
+    const newPaneId = genPaneId()
+    const newResource = safeAppId === newAppId ? initialFilePath : null
+    const firstTab = makeItem(safeAppId, newResource)
+    const newPane: Pane = {
+      id: newPaneId,
+      tabs: [firstTab],
+      activeTabId: firstTab.id,
+    }
+    const nextPanes = { ...state.panes, [newPaneId]: newPane }
+    let nextLayout: PaneNode
+    if (!state.rootLayout) {
+      nextLayout = { type: 'pane', paneId: newPaneId }
+    } else {
+      nextLayout = insertPaneIntoTree(state.rootLayout, targetPaneId, newPaneId, direction, position)
+    }
+    set({ panes: nextPanes, rootLayout: nextLayout, focusedPaneId: newPaneId })
+    persistState({ panes: nextPanes, rootLayout: nextLayout, focusedPaneId: newPaneId })
+    return newPaneId
+  },
+
+  removePane: (paneId) => {
+    const state = get()
+    if (!state.rootLayout) return
+    const nextLayout = removePaneFromTree(state.rootLayout, paneId)
+    const nextPanes = { ...state.panes }
+    delete nextPanes[paneId]
+    const remainingIds = nextLayout ? collectPaneIds(nextLayout) : []
+    const nextFocus = state.focusedPaneId === paneId
+      ? (remainingIds[remainingIds.length - 1] ?? null)
+      : state.focusedPaneId
+    set({ panes: nextPanes, rootLayout: nextLayout, focusedPaneId: nextFocus })
+    persistState({ panes: nextPanes, rootLayout: nextLayout, focusedPaneId: nextFocus })
+  },
+
+  movePane: (sourcePaneId, targetPaneId, direction, position) => {
+    const state = get()
+    if (!state.rootLayout || sourcePaneId === targetPaneId) return
+    // Step 1: pluck source out of the tree. Target paneId remains.
+    const without = removePaneFromTree(state.rootLayout, sourcePaneId)
+    if (!without) return
+    // Step 2: re-insert source next to target.
+    const nextLayout = insertPaneIntoTree(without, targetPaneId, sourcePaneId, direction, position)
+    set({ rootLayout: nextLayout, focusedPaneId: sourcePaneId })
+    persistState({ rootLayout: nextLayout, focusedPaneId: sourcePaneId })
+  },
+
+  setFocusedPane: (paneId) => {
+    const state = get()
+    const pane = state.panes[paneId]
+    if (!pane) return
+    const paneApp = getPaneAppId(pane, state.currentApp)
+    if (paneApp !== state.currentApp) {
+      set({ focusedPaneId: paneId, currentApp: paneApp })
+      persistState({ focusedPaneId: paneId, lastApp: paneApp })
+    } else {
+      set({ focusedPaneId: paneId })
+      persistState({ focusedPaneId: paneId })
+    }
+  },
+
+  setPaneActiveFile: (paneId, filePath) => {
+    const state = get()
+    const pane = state.panes[paneId]
+    if (!pane) return
+    // Update the active tab's resource (and label). If no active tab exists,
+    // create one under the pane's current effective app.
+    let nextTabs: Item[]
+    let nextActiveTabId = pane.activeTabId
+    if (pane.activeTabId) {
+      nextTabs = pane.tabs.map((t) =>
+        t.id === pane.activeTabId
+          ? { ...t, resource: filePath, label: itemLabel(t.appId, filePath) }
+          : t,
+      )
+    } else {
+      const fresh = makeItem(getPaneAppId(pane, state.currentApp), filePath)
+      nextTabs = [...pane.tabs, fresh]
+      nextActiveTabId = fresh.id
+    }
+    const nextPane: Pane = { ...pane, tabs: nextTabs, activeTabId: nextActiveTabId }
+    const nextPanes = { ...state.panes, [paneId]: nextPane }
+    set({ panes: nextPanes })
+    persistState({ panes: nextPanes })
+  },
+
+  findPaneByFile: (filePath) => {
+    const { panes } = get()
+    for (const id in panes) {
+      const pane = panes[id]
+      if (pane.tabs.some((t) => t.resource === filePath)) return id
+    }
+    return null
+  },
+
+  openTabInPane: (paneId, appId, resource) => {
+    const state = get()
+    const pane = state.panes[paneId]
+    if (!pane) return
+    // Dedupe: if a tab with same appId+resource already exists, activate it.
+    const existing = pane.tabs.find((t) => t.appId === appId && t.resource === resource)
+    if (existing) {
+      const nextPane = ({ ...pane, activeTabId: existing.id })
+      const nextPanes = { ...state.panes, [paneId]: nextPane }
+      set({ panes: nextPanes })
+      persistState({ panes: nextPanes })
+      return
+    }
+    const fresh = makeItem(appId, resource)
+    const nextPane = ({
+      ...pane,
+      tabs: [...pane.tabs, fresh],
+      activeTabId: fresh.id,
+    })
+    const nextPanes = { ...state.panes, [paneId]: nextPane }
+    set({ panes: nextPanes, focusedPaneId: paneId })
+    persistState({ panes: nextPanes, focusedPaneId: paneId })
+  },
+
+  setActiveTab: (paneId, tabId) => {
+    const state = get()
+    const pane = state.panes[paneId]
+    if (!pane || pane.activeTabId === tabId) return
+    if (!pane.tabs.some((t) => t.id === tabId)) return
+    const nextPane: Pane = { ...pane, activeTabId: tabId }
+    const nextPanes = { ...state.panes, [paneId]: nextPane }
+    // Sync appStates mirror so sidebar highlights the active tab's file.
+    const nextApp = getPaneAppId(nextPane, state.currentApp)
+    const nextResource = getPaneResource(nextPane)
+    const updatedAppStates = {
+      ...state.appStates,
+      [nextApp]: {
+        ...state.appStates[nextApp],
+        activeFilePath: nextResource,
+      },
+    }
+    set({ panes: nextPanes, appStates: updatedAppStates, currentApp: nextApp })
+    persistState({ panes: nextPanes, appStates: updatedAppStates, lastApp: nextApp })
+  },
+
+  closeTab: (paneId, tabId) => {
+    const state = get()
+    const pane = state.panes[paneId]
+    if (!pane) return
+    const idx = pane.tabs.findIndex((t) => t.id === tabId)
+    if (idx === -1) return
+    const nextTabs = pane.tabs.filter((t) => t.id !== tabId)
+    // Last tab closed: if this is the only pane, leave an empty tab state.
+    // Otherwise remove the pane entirely (VSCode convention).
+    if (nextTabs.length === 0) {
+      const paneCount = Object.keys(state.panes).length
+      if (paneCount > 1) {
+        get().removePane(paneId)
+        return
       }
+      // Single pane: re-seed with an empty tab of the same app (keeps layout).
+      const emptyTab = makeItem(getPaneAppId(pane, get().currentApp), null)
+      const nextPane = ({
+        ...pane,
+        tabs: [emptyTab],
+        activeTabId: emptyTab.id,
+      })
+      const nextPanes = { ...state.panes, [paneId]: nextPane }
+      set({ panes: nextPanes })
+      persistState({ panes: nextPanes })
+      return
+    }
+    // Pick a neighbor as the new active tab if we closed the active one.
+    let nextActiveTabId = pane.activeTabId
+    if (pane.activeTabId === tabId) {
+      const neighbor = nextTabs[Math.min(idx, nextTabs.length - 1)]
+      nextActiveTabId = neighbor.id
+    }
+    const nextPane = ({
+      ...pane,
+      tabs: nextTabs,
+      activeTabId: nextActiveTabId,
     })
-    set({
-      terminalWorkspaces: finalWorkspaces,
-      activeWorkspaceId: workspaceId,
-      activeTerminalId: newTermId,
-    })
+    const nextPanes = { ...state.panes, [paneId]: nextPane }
+    set({ panes: nextPanes })
+    persistState({ panes: nextPanes })
   },
 
-  unsplitTerminal: (terminalId) => {
-    const prev = get()
-    const ws = prev.terminalWorkspaces.find((w) => w.id === prev.activeWorkspaceId)
-    if (!ws) return
-    // Find the group containing this terminal
-    const group = ws.groups.find((g) => collectTerminalIds(g.layout).includes(terminalId))
-    if (!group) return
-    // If terminal is alone in its group, nothing to unsplit
-    if (group.layout.type === 'terminal') return
-    // Remove terminal from its current group
-    const cleaned = removeFromTree(group.layout, terminalId)
-    // Create a new standalone group for this terminal
-    const newGroupId = `group-${terminalId}-${Date.now()}`
-    const newGroup = { id: newGroupId, layout: { type: 'terminal' as const, terminalId } }
-    const nextWorkspaces = prev.terminalWorkspaces.map((w) => {
-      if (w.id !== ws.id) return w
-      const groups = w.groups.map((g) => {
-        if (g.id !== group.id) return g
-        return cleaned ? { ...g, layout: cleaned } : null
-      }).filter(Boolean) as typeof w.groups
-      return { ...w, groups: [...groups, newGroup], activeGroupId: newGroupId }
+  moveTabWithinPane: (paneId, tabId, targetIndex) => {
+    const state = get()
+    const pane = state.panes[paneId]
+    if (!pane) return
+    const idx = pane.tabs.findIndex((t) => t.id === tabId)
+    if (idx === -1 || idx === targetIndex) return
+    const clampedTarget = Math.max(0, Math.min(targetIndex, pane.tabs.length - 1))
+    const nextTabs = [...pane.tabs]
+    const [moved] = nextTabs.splice(idx, 1)
+    nextTabs.splice(clampedTarget, 0, moved)
+    const nextPane = { ...pane, tabs: nextTabs }
+    const nextPanes = { ...state.panes, [paneId]: nextPane }
+    set({ panes: nextPanes })
+    persistState({ panes: nextPanes })
+  },
+
+  moveTabToPane: (sourcePaneId, tabId, targetPaneId, insertIndex) => {
+    const state = get()
+    if (sourcePaneId === targetPaneId) {
+      if (insertIndex !== undefined) get().moveTabWithinPane(sourcePaneId, tabId, insertIndex)
+      return
+    }
+    const source = state.panes[sourcePaneId]
+    const target = state.panes[targetPaneId]
+    if (!source || !target) return
+    const tab = source.tabs.find((t) => t.id === tabId)
+    if (!tab) return
+    // Target dedupe: if target already has this resource under same app, just activate.
+    const dupe = target.tabs.find(
+      (t) => t.appId === tab.appId && t.resource === tab.resource && t.resource !== null,
+    )
+    const sourceRemaining = source.tabs.filter((t) => t.id !== tabId)
+    const nextTargetTabs = dupe
+      ? target.tabs
+      : (() => {
+          const arr = [...target.tabs]
+          const idx = insertIndex ?? arr.length
+          arr.splice(Math.max(0, Math.min(idx, arr.length)), 0, tab)
+          return arr
+        })()
+    const nextTargetActive = dupe ? dupe.id : tab.id
+
+    // Build next panes map
+    const nextPanes: Record<string, Pane> = { ...state.panes }
+    // Target always updates
+    nextPanes[targetPaneId] = ({
+      ...target,
+      tabs: nextTargetTabs,
+      activeTabId: nextTargetActive,
     })
+    // Source: drop the tab. If empty afterwards and not the only pane, remove it.
+    if (sourceRemaining.length === 0) {
+      const totalPanes = Object.keys(state.panes).length
+      if (totalPanes > 1) {
+        // Remove source pane from layout + panes map.
+        delete nextPanes[sourcePaneId]
+        const nextLayout = state.rootLayout ? removePaneFromTree(state.rootLayout, sourcePaneId) : null
+        set({
+          panes: nextPanes,
+          rootLayout: nextLayout,
+          focusedPaneId: targetPaneId,
+        })
+        persistState({ panes: nextPanes, rootLayout: nextLayout, focusedPaneId: targetPaneId })
+        return
+      }
+      // Only pane — keep it but re-seed with an empty tab.
+      const emptyTab = makeItem(getPaneAppId(source, get().currentApp), null)
+      nextPanes[sourcePaneId] = ({
+        ...source,
+        tabs: [emptyTab],
+        activeTabId: emptyTab.id,
+      })
+    } else {
+      // Move the source's active pointer if we pulled out the active tab.
+      const sourceNextActive =
+        source.activeTabId === tabId
+          ? sourceRemaining[Math.min(
+              source.tabs.findIndex((t) => t.id === tabId),
+              sourceRemaining.length - 1,
+            )].id
+          : source.activeTabId
+      nextPanes[sourcePaneId] = ({
+        ...source,
+        tabs: sourceRemaining,
+        activeTabId: sourceNextActive,
+      })
+    }
+    set({ panes: nextPanes, focusedPaneId: targetPaneId })
+    persistState({ panes: nextPanes, focusedPaneId: targetPaneId })
+  },
+
+  splitPaneWithTab: (sourcePaneId, tabId, targetPaneId, direction, position) => {
+    const state = get()
+    const source = state.panes[sourcePaneId]
+    if (!source || !state.rootLayout) return
+    const tab = source.tabs.find((t) => t.id === tabId)
+    if (!tab) return
+    // Prevent dropping onto self's edge when source has only one tab — that's a no-op.
+    if (sourcePaneId === targetPaneId && source.tabs.length === 1) return
+
+    const newPaneId = genPaneId()
+    const newPane: Pane = {
+      id: newPaneId,
+      tabs: [tab],
+      activeTabId: tab.id,
+    }
+
+    // Step 1: remove the tab from source's tabs.
+    const sourceRemaining = source.tabs.filter((t) => t.id !== tabId)
+    const nextPanes: Record<string, Pane> = { ...state.panes, [newPaneId]: newPane }
+
+    // Step 2: handle source (empty → remove; else keep).
+    let workingLayout: PaneNode | null = state.rootLayout
+    if (sourceRemaining.length === 0) {
+      const totalPanes = Object.keys(state.panes).length
+      if (totalPanes > 1) {
+        delete nextPanes[sourcePaneId]
+        workingLayout = removePaneFromTree(state.rootLayout, sourcePaneId)
+      } else {
+        // Only pane — keep it but re-seed empty.
+        const emptyTab = makeItem(getPaneAppId(source, state.currentApp), null)
+        nextPanes[sourcePaneId] = ({
+          ...source,
+          tabs: [emptyTab],
+          activeTabId: emptyTab.id,
+        })
+      }
+    } else {
+      const sourceNextActive =
+        source.activeTabId === tabId
+          ? sourceRemaining[Math.min(
+              source.tabs.findIndex((t) => t.id === tabId),
+              sourceRemaining.length - 1,
+            )].id
+          : source.activeTabId
+      nextPanes[sourcePaneId] = ({
+        ...source,
+        tabs: sourceRemaining,
+        activeTabId: sourceNextActive,
+      })
+    }
+
+    // Step 3: insert the new pane next to target in the (possibly pruned) layout.
+    const nextLayout = workingLayout
+      ? insertPaneIntoTree(workingLayout, targetPaneId, newPaneId, direction, position)
+      : ({ type: 'pane', paneId: newPaneId } as PaneNode)
+
+    set({ panes: nextPanes, rootLayout: nextLayout, focusedPaneId: newPaneId })
+    persistState({ panes: nextPanes, rootLayout: nextLayout, focusedPaneId: newPaneId })
+  },
+
+  openFileInPane: ({ filePath, appId, targetPaneId, direction, position }) => {
+    const state = get()
+    // Dedupe: if already open in a pane, focus that pane + activate that tab.
+    const existingId = state.findPaneByFile(filePath)
+    if (existingId) {
+      const existingPane = state.panes[existingId]
+      const matchingTab = existingPane.tabs.find((t) => t.resource === filePath)
+      if (matchingTab) get().setActiveTab(existingId, matchingTab.id)
+      get().setFocusedPane(existingId)
+      return
+    }
+    // Split off target, create a new pane pre-loaded with the file.
+    const newPaneId = genPaneId()
+    const firstTab = makeItem(appId, filePath)
+    const newPane: Pane = {
+      id: newPaneId,
+      tabs: [firstTab],
+      activeTabId: firstTab.id,
+    }
+    const nextPanes = { ...state.panes, [newPaneId]: newPane }
+    const nextLayout = state.rootLayout
+      ? insertPaneIntoTree(state.rootLayout, targetPaneId, newPaneId, direction, position)
+      : ({ type: 'pane', paneId: newPaneId } as PaneNode)
+    const updatedAppStates = {
+      ...state.appStates,
+      [appId]: { ...state.appStates[appId], activeFilePath: filePath },
+    }
     set({
-      terminalWorkspaces: nextWorkspaces,
-      activeTerminalId: terminalId,
+      panes: nextPanes,
+      rootLayout: nextLayout,
+      focusedPaneId: newPaneId,
+      currentApp: appId,
+      appStates: updatedAppStates,
     })
+    persistState({
+      panes: nextPanes,
+      rootLayout: nextLayout,
+      focusedPaneId: newPaneId,
+      lastApp: appId,
+      appStates: updatedAppStates,
+    })
+    get().trackRecentFile(filePath, appId)
   },
 
   // ── navigation ──
@@ -794,3 +1422,9 @@ export const useUIStore = create<UIState>((set, get) => ({
     }
   },
 }))
+
+// Dev-only: expose store for debug tooling. Gated on import.meta.env.DEV so
+// the reference is tree-shaken out of production builds.
+if (import.meta.env.DEV) {
+  ;(window as unknown as { __store?: typeof useUIStore }).__store = useUIStore
+}

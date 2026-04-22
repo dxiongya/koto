@@ -345,7 +345,7 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
   // ── Convert chat history to API messages ──
   const buildAPIMessages = useCallback((userPrompt: string, refs: AttachedRef[]): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> => {
     const hasSelection = !!selectedText.trim()
-    const activeFilePath = useUIStore.getState().appStates['notes.app'].activeFilePath || ''
+    const activeFilePath = useUIStore.getState().getActiveFilePath() || ''
     const fullSystemPrompt = `## Context
 - Active file: ${activeFilePath}
 - Mode: ${hasSelection ? 'REPLACE (your output replaces the selected text)' : 'INSERT (your output is inserted into the document)'}
@@ -767,16 +767,14 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
 
   return createPortal(
     <div
-      className="fixed z-[60] flex flex-col rounded-2xl overflow-hidden ai-diff-panel-enter"
+      className="fixed z-[60] flex flex-col rounded-2xl overflow-hidden ai-diff-panel-enter bg-bg-popover border border-border-subtle"
       style={{
         left: pos.x,
         top: pos.y,
         width: PANEL_W,
         maxHeight: `calc(100vh - ${pos.y + 20}px)`,
         minHeight: PANEL_H_MIN,
-        background: 'linear-gradient(180deg, rgba(30,30,30,0.98) 0%, rgba(22,22,22,0.98) 100%)',
-        border: '1px solid rgba(255,255,255,0.07)',
-        boxShadow: '0 12px 48px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04)',
+        boxShadow: '0 12px 48px color-mix(in srgb, var(--tx-main) 24%, transparent), 0 2px 8px color-mix(in srgb, var(--tx-main) 10%, transparent)',
         backdropFilter: 'blur(20px)',
       }}
       onMouseDown={(e) => {
@@ -786,12 +784,11 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
     >
       {/* ── Header (draggable) ── */}
       <div
-        className="flex items-center gap-2.5 px-4 py-2.5 cursor-grab active:cursor-grabbing shrink-0 select-none"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+        className="flex items-center gap-2.5 px-4 py-2.5 cursor-grab active:cursor-grabbing shrink-0 select-none border-b border-border-subtle"
         onPointerDown={onHeaderPointerDown}
       >
         <div className="flex items-center gap-2 flex-1">
-          <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(94,234,212,0.2) 0%, rgba(94,234,212,0.08) 100%)' }}>
+          <div className="w-6 h-6 rounded-lg flex items-center justify-center bg-accent-main/15">
             <Sparkles size={12} className="text-accent-main" />
           </div>
           <div className="flex flex-col">
@@ -805,7 +802,7 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
           {chatHistory.length > 0 && (
             <button
               onClick={() => { setChatHistory([]); setError(null) }}
-              className="w-6 h-6 flex items-center justify-center rounded-lg text-tx-faint hover:text-tx-muted hover:bg-white/[0.05] transition-all duration-200"
+              className="w-6 h-6 flex items-center justify-center rounded-lg text-tx-faint hover:text-tx-muted hover:bg-bg-hover transition-all duration-200"
               title="Clear history"
             >
               <RotateCcw size={11} />
@@ -813,7 +810,7 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
           )}
           <button
             onClick={onClose}
-            className="w-6 h-6 flex items-center justify-center rounded-lg text-tx-faint hover:text-status-error/80 hover:bg-red-400/10 transition-all duration-200"
+            className="w-6 h-6 flex items-center justify-center rounded-lg text-tx-faint hover:text-status-error hover:bg-status-error/10 transition-all duration-200"
             title="Close (Esc)"
           >
             <X size={12} />
@@ -823,9 +820,9 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
 
       {/* ── Selected text context — always visible as pinned context ── */}
       {selectedText && (
-        <div className="mx-3 mt-2 mb-1 rounded-lg shrink-0" style={{ background: 'rgba(94,234,212,0.04)', border: '1px solid rgba(94,234,212,0.08)' }}>
+        <div className="mx-3 mt-2 mb-1 rounded-lg shrink-0 bg-accent-main/5 border border-accent-main/10">
           <div className="px-3 py-2">
-            <div className="text-[9px] text-accent-main/60 uppercase tracking-wider font-medium mb-1">Selected context</div>
+            <div className="text-[9px] text-accent-main/70 uppercase tracking-wider font-medium mb-1">Selected context</div>
             <pre className="text-[11px] text-tx-muted font-mono whitespace-pre-wrap break-words max-h-[80px] overflow-y-auto leading-relaxed">
               {selectedText.length > 400 ? selectedText.slice(0, 400) + '...' : selectedText}
             </pre>
@@ -837,11 +834,11 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
       <div className="flex-1 overflow-y-auto min-h-0 px-3 py-2 space-y-3">
         {chatHistory.length === 0 && !selectedText && (
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: 'rgba(94,234,212,0.08)' }}>
-              <Sparkles size={18} className="text-accent-main/40" />
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3 bg-accent-main/10">
+              <Sparkles size={18} className="text-accent-main/50" />
             </div>
             <span className="text-[11px] text-tx-faint">Select text and describe what you want</span>
-            <span className="text-[9px] text-tx-faint/60 mt-0.5">Use @ to reference files for context</span>
+            <span className="text-[9px] text-tx-faint/70 mt-0.5">Use @ to reference files for context</span>
           </div>
         )}
 
@@ -849,13 +846,12 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
           if (entry.role === 'user') {
             return (
               <div key={idx} className="flex justify-end animate-in fade-in slide-in-from-right-2 duration-200">
-                <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md text-[11px] text-tx-main leading-relaxed"
-                  style={{ background: 'rgba(94,234,212,0.08)', border: '1px solid rgba(94,234,212,0.1)' }}>
+                <div className="max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md text-[11px] text-tx-main leading-relaxed bg-accent-main/10 border border-accent-main/15">
                   {entry.content}
                   {entry.refs.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1.5 pt-1.5" style={{ borderTop: '1px solid rgba(94,234,212,0.08)' }}>
+                    <div className="flex flex-wrap gap-1 mt-1.5 pt-1.5 border-t border-accent-main/10">
                       {entry.refs.map((r, ri) => (
-                        <span key={ri} className="text-[9px] text-accent-main/60 bg-accent-main/5 px-1.5 py-0.5 rounded-md">
+                        <span key={ri} className="text-[9px] text-accent-main/70 bg-accent-main/5 px-1.5 py-0.5 rounded-md">
                           @{r.label}
                         </span>
                       ))}
@@ -869,7 +865,7 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
           if (entry.role === 'note') {
             return (
               <div key={idx} className="flex justify-center py-1 animate-in fade-in duration-200">
-                <span className="text-[9px] text-tx-faint/70 italic px-3 py-1 rounded-full" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                <span className="text-[9px] text-tx-faint italic px-3 py-1 rounded-full bg-bg-hover">
                   {entry.content}
                 </span>
               </div>
@@ -889,27 +885,26 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
               ? Object.values(entry.toolInput).map(v => typeof v === 'object' ? JSON.stringify(v) : String(v)).join(', ').slice(0, 80)
               : ''
             return (
-              <div key={idx} className="rounded-lg animate-in fade-in duration-200 overflow-hidden"
-                style={{ background: 'rgba(94,234,212,0.03)', border: '1px solid rgba(94,234,212,0.06)' }}>
-                <button onClick={toggleExpand} className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent-main/5 transition-colors text-left">
+              <div key={idx} className="rounded-lg animate-in fade-in duration-200 overflow-hidden bg-accent-main/5 border border-accent-main/10">
+                <button onClick={toggleExpand} className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-accent-main/10 transition-colors text-left">
                   {entry.status === 'running' ? (
-                    <Loader2 size={10} className="text-accent-main/60 animate-spin shrink-0" />
+                    <Loader2 size={10} className="text-accent-main/70 animate-spin shrink-0" />
                   ) : (
-                    <CheckCircle2 size={10} className="text-status-success/60 shrink-0" />
+                    <CheckCircle2 size={10} className="text-status-success/70 shrink-0" />
                   )}
-                  <span className="text-[10px] text-accent-main/70 font-mono shrink-0">{entry.toolName}</span>
+                  <span className="text-[10px] text-accent-main/80 font-mono shrink-0">{entry.toolName}</span>
                   {!isExpanded && inputSummary && (
                     <span className="text-[9px] text-tx-faint truncate flex-1">{inputSummary}</span>
                   )}
                   <span className="ml-auto shrink-0 flex items-center gap-1">
                     {entry.status === 'done' && entry.durationMs != null && (
-                      <span className="text-[9px] text-tx-faint/50">{(entry.durationMs / 1000).toFixed(1)}s</span>
+                      <span className="text-[9px] text-tx-faint">{(entry.durationMs / 1000).toFixed(1)}s</span>
                     )}
-                    {isExpanded ? <ChevronDown size={10} className="text-tx-faint/50" /> : <ChevronRight size={10} className="text-tx-faint/50" />}
+                    {isExpanded ? <ChevronDown size={10} className="text-tx-faint" /> : <ChevronRight size={10} className="text-tx-faint" />}
                   </span>
                 </button>
                 {isExpanded && (
-                  <div className="px-3 pb-2 space-y-1.5" style={{ borderTop: '1px solid rgba(94,234,212,0.06)' }}>
+                  <div className="px-3 pb-2 space-y-1.5 border-t border-accent-main/10">
                     {entry.toolInput && Object.keys(entry.toolInput).length > 0 && (
                       <div className="pt-1.5">
                         <div className="text-[9px] text-tx-faint uppercase tracking-wider mb-1">Input</div>
@@ -940,13 +935,13 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
           const removedCount = entry.diff.filter(d => d.type === 'removed').length
 
           return (
-            <div key={idx} className={`rounded-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-300 ${isRejected ? 'opacity-50' : ''}`}
-              style={{
-                border: isAccepted ? '1px solid rgba(16,185,129,0.15)' : isRejected ? '1px solid rgba(239,68,68,0.1)' : '1px solid rgba(255,255,255,0.06)',
-                background: isAccepted ? 'rgba(16,185,129,0.03)' : 'rgba(255,255,255,0.02)'
-              }}>
+            <div key={idx} className={`rounded-xl overflow-hidden animate-in fade-in slide-in-from-left-2 duration-300 border ${
+              isAccepted ? 'border-status-success/20 bg-status-success/5' :
+              isRejected ? 'border-status-error/15 bg-bg-hover opacity-50' :
+              'border-border-subtle bg-bg-hover/50'
+            }`}>
               {/* Diff header */}
-              <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-border-subtle">
                 <div className={`w-4 h-4 rounded-md flex items-center justify-center ${
                   isAccepted ? 'bg-status-success/15' : isRejected ? 'bg-status-error/10' : 'bg-accent-main/10'
                 }`}>
@@ -973,22 +968,21 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
                   {entry.diff.map((line, li) => (
                     <div
                       key={li}
-                      className={`flex items-start ${
+                      className={`flex items-start border-l-2 ${
                         line.type === 'added'
-                          ? 'bg-status-success/[0.07]'
+                          ? 'bg-status-success/[0.07] border-status-success/40'
                           : line.type === 'removed'
-                          ? 'bg-status-error/[0.05]'
-                          : ''
+                          ? 'bg-status-error/[0.05] border-status-error/30'
+                          : 'border-transparent'
                       }`}
-                      style={{ borderLeft: line.type === 'added' ? '2px solid rgba(16,185,129,0.4)' : line.type === 'removed' ? '2px solid rgba(239,68,68,0.3)' : '2px solid transparent' }}
                     >
                       <span className={`inline-flex items-center justify-center w-6 shrink-0 text-[9px] select-none py-0.5 font-mono ${
-                        line.type === 'added' ? 'text-status-success/50' : line.type === 'removed' ? 'text-status-error/50' : 'text-tx-faint/20'
+                        line.type === 'added' ? 'text-status-success/60' : line.type === 'removed' ? 'text-status-error/60' : 'text-tx-faint/40'
                       }`}>
                         {line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' '}
                       </span>
                       <span className={`flex-1 px-1.5 py-0.5 whitespace-pre-wrap break-words ${
-                        line.type === 'added' ? 'text-status-success/90' : line.type === 'removed' ? 'text-status-error/60 line-through decoration-red-400/30' : 'text-tx-muted/50'
+                        line.type === 'added' ? 'text-status-success' : line.type === 'removed' ? 'text-status-error/70 line-through decoration-status-error/40' : 'text-tx-muted'
                       }`}>
                         {line.text || '\u00A0'}
                       </span>
@@ -999,18 +993,16 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
 
               {/* Accept / Reject buttons */}
               {isPending && (
-                <div className="flex items-center gap-2 px-3 py-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                <div className="flex items-center gap-2 px-3 py-2.5 border-t border-border-subtle">
                   <button
                     onClick={() => handleReject(idx)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-medium text-tx-faint transition-all duration-200 hover:text-status-error hover:bg-red-400/8"
-                    style={{ background: 'rgba(255,255,255,0.03)' }}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-medium text-tx-faint transition-all duration-200 hover:text-status-error hover:bg-status-error/10 bg-bg-hover"
                   >
                     <XCircle size={11} /> Reject
                   </button>
                   <button
                     onClick={() => handleAccept(idx)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-medium text-status-success transition-all duration-200 hover:brightness-110"
-                    style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.15) 0%, rgba(16,185,129,0.1) 100%)' }}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[10px] font-medium text-status-success transition-all duration-200 hover:brightness-110 bg-status-success/15"
                   >
                     <CheckCircle2 size={11} /> Accept
                   </button>
@@ -1023,15 +1015,15 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
         {/* Loading indicator */}
         {loading && (
           <div className="flex items-center gap-2.5 px-1 py-2 animate-in fade-in duration-200">
-            <div className="w-5 h-5 rounded-lg flex items-center justify-center" style={{ background: 'rgba(94,234,212,0.08)' }}>
+            <div className="w-5 h-5 rounded-lg flex items-center justify-center bg-accent-main/10">
               <Loader2 size={11} className="animate-spin text-accent-main" />
             </div>
             <div className="flex flex-col">
               <span className="text-[10px] text-tx-muted">Generating response...</span>
               <div className="flex gap-0.5 mt-1">
-                <span className="w-1 h-1 rounded-full bg-accent-main/40 animate-pulse" style={{ animationDelay: '0ms' }} />
-                <span className="w-1 h-1 rounded-full bg-accent-main/40 animate-pulse" style={{ animationDelay: '200ms' }} />
-                <span className="w-1 h-1 rounded-full bg-accent-main/40 animate-pulse" style={{ animationDelay: '400ms' }} />
+                <span className="w-1 h-1 rounded-full bg-accent-main/50 animate-pulse" style={{ animationDelay: '0ms' }} />
+                <span className="w-1 h-1 rounded-full bg-accent-main/50 animate-pulse" style={{ animationDelay: '200ms' }} />
+                <span className="w-1 h-1 rounded-full bg-accent-main/50 animate-pulse" style={{ animationDelay: '400ms' }} />
               </div>
             </div>
           </div>
@@ -1042,12 +1034,12 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
 
       {/* ── Attached refs ── */}
       {attachedRefs.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-4 py-2 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+        <div className="flex flex-wrap gap-1 px-4 py-2 shrink-0 border-t border-border-subtle">
           {attachedRefs.map((ref, i) => (
-            <span key={`${ref.type}-${ref.path}`} className="inline-flex items-center gap-1 text-[10px] text-accent-main/80 pl-2 pr-1 py-0.5 rounded-md" style={{ background: 'rgba(94,234,212,0.06)', border: '1px solid rgba(94,234,212,0.1)' }}>
+            <span key={`${ref.type}-${ref.path}`} className="inline-flex items-center gap-1 text-[10px] text-accent-main pl-2 pr-1 py-0.5 rounded-md bg-accent-main/10 border border-accent-main/15">
               {ref.type === 'file' ? <FileText size={9} /> : ref.type === 'folder' ? <FolderOpen size={9} /> : <Terminal size={9} />}
               <span className="max-w-[80px] truncate">{ref.label}</span>
-              <button onClick={() => removeRef(i)} className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent-main/15 transition-colors ml-0.5">
+              <button onClick={() => removeRef(i)} className="w-4 h-4 flex items-center justify-center rounded hover:bg-accent-main/20 transition-colors ml-0.5">
                 <X size={8} />
               </button>
             </span>
@@ -1058,7 +1050,7 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
       {/* ── Error ── */}
       {error && (
         <div className="px-4 pb-2 shrink-0">
-          <div className="text-[10px] text-status-error rounded-lg px-3 py-2" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.12)' }}>
+          <div className="text-[10px] text-status-error rounded-lg px-3 py-2 bg-status-error/10 border border-status-error/15">
             {error}
           </div>
         </div>
@@ -1067,8 +1059,7 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
       {/* ── Input area ── */}
       {showInput && (
         <div
-          className={`shrink-0 transition-colors duration-200 ${isDragOver ? 'bg-accent-main/5' : ''}`}
-          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+          className={`shrink-0 transition-colors duration-200 border-t border-border-subtle ${isDragOver ? 'bg-accent-main/5' : ''}`}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
@@ -1087,23 +1078,22 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
 
             {/* @ menu */}
             {showAtMenu && filteredAtItems.length > 0 && (
-              <div className="absolute left-3 bottom-full mb-1 z-50 rounded-xl shadow-lg py-1 min-w-[220px] max-h-[180px] overflow-y-auto"
-                style={{ background: 'rgba(30,30,30,0.98)', border: '1px solid rgba(255,255,255,0.08)', backdropFilter: 'blur(16px)' }}>
+              <div className="absolute left-3 bottom-full mb-1 z-50 rounded-xl shadow-lg py-1 min-w-[220px] max-h-[180px] overflow-y-auto bg-bg-popover border border-border-subtle"
+                style={{ backdropFilter: 'blur(16px)' }}>
                 {filteredAtItems.map((item, i) => {
                   const Icon = item.icon
                   return (
                     <button
                       key={`${item.type}-${item.path}`}
                       className={`w-full text-left px-3 py-1.5 flex items-center gap-2 text-[11px] transition-colors duration-150 ${
-                        i === atMenuIndex ? 'text-accent-main' : 'text-tx-muted hover:text-tx-main'
+                        i === atMenuIndex ? 'text-accent-main bg-accent-main/10' : 'text-tx-muted hover:text-tx-main'
                       }`}
-                      style={i === atMenuIndex ? { background: 'rgba(94,234,212,0.08)' } : undefined}
                       onMouseDown={(e) => { e.preventDefault(); selectAtItem(item) }}
                       onMouseEnter={() => setAtMenuIndex(i)}
                     >
                       <Icon size={12} className="shrink-0 opacity-60" />
                       <span className="truncate flex-1">{item.label}</span>
-                      <span className="text-[9px] text-tx-faint/50 font-mono">{item.type}</span>
+                      <span className="text-[9px] text-tx-faint font-mono">{item.type}</span>
                     </button>
                   )
                 })}
@@ -1111,19 +1101,16 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
             )}
           </div>
 
-          <div className="flex items-center justify-between px-4 py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.03)' }}>
-            <span className="text-[9px] text-tx-faint/40 font-mono">⌘↵ send · @ refs</span>
+          <div className="flex items-center justify-between px-4 py-2 border-t border-border-subtle">
+            <span className="text-[9px] text-tx-faint font-mono">⌘↵ send · @ refs</span>
             <button
               onClick={handleSubmit}
               disabled={!prompt.trim() || loading}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-medium transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed"
-              style={prompt.trim() ? {
-                background: 'linear-gradient(135deg, rgba(94,234,212,0.2) 0%, rgba(94,234,212,0.12) 100%)',
-                color: 'rgb(94,234,212)'
-              } : {
-                background: 'rgba(255,255,255,0.03)',
-                color: 'rgba(255,255,255,0.2)'
-              }}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-medium transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed ${
+                prompt.trim()
+                  ? 'bg-accent-main/20 text-accent-main hover:bg-accent-main/25'
+                  : 'bg-bg-hover text-tx-faint'
+              }`}
             >
               <Send size={10} />
               Send

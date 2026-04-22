@@ -19,7 +19,7 @@ export function CopyMetadataPlugin(): null {
     if (!root) return
 
     const handleCopy = () => {
-      const filePath = useUIStore.getState().appStates['notes.app']?.activeFilePath
+      const filePath = useUIStore.getState().getActiveFilePath()
       if (filePath) {
         // Store source path globally — terminal paste handler reads this
         ;(window as any).__liteClipboardSource = filePath

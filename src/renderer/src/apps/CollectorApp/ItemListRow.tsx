@@ -1,6 +1,7 @@
 import { X } from 'lucide-react'
 import type { CollectedItem } from '../../../../shared/types'
 import { getDomain, TYPE_ICONS, TYPE_LABELS } from './shared'
+import { setResourcePayload } from '../../layouts/resourceDrag'
 
 export const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string) => void; onOpen: (item: CollectedItem) => void }> = ({ item, onDelete, onOpen }) => {
   const Icon = TYPE_ICONS[item.type]
@@ -15,7 +16,19 @@ export const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string)
   return (
     <div
       draggable
-      onDragStart={(e) => { e.dataTransfer.setData('application/x-collector-item', item.id); e.dataTransfer.effectAllowed = 'move' }}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('application/x-collector-item', item.id)
+        setResourcePayload(e.dataTransfer, {
+          kind: 'collector-item',
+          itemId: item.id,
+          itemType: item.type,
+          title: item.title,
+          url: item.url,
+          assetPath: item.assetPath,
+          note: item.note,
+        })
+        e.dataTransfer.effectAllowed = 'copyMove'
+      }}
       onClick={() => onOpen(item)}
       className="group flex items-center gap-3 px-3 py-2 rounded-md hover:bg-bg-hover transition-colors cursor-pointer"
     >
