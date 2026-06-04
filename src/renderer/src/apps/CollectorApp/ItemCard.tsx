@@ -1,8 +1,18 @@
 import { useRef, useState, useEffect } from 'react'
-import { Globe, Twitter, Play, Monitor, Image, X, BookOpen } from 'lucide-react'
+import { Globe, Twitter, Play, Monitor, Image, X, BookOpen, Copy, ExternalLink } from 'lucide-react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import type { CollectedItem } from '../../../../shared/types'
 import { getDomain, TYPE_ICONS, TYPE_LABELS } from './shared'
 import { setResourcePayload } from '../../layouts/resourceDrag'
+
+// Shared button styling for the hover toolbar that sits on top of an
+// item's thumbnail image. Theme-independent on purpose — the chip is
+// always over an arbitrary image, so we use a fixed dark scrim + bright
+// icon so contrast holds in light, dark, and high-contrast themes alike.
+// `backdrop-blur-sm` softens busy images underneath. Each consumer adds
+// its own `hover:text-*` for the final icon color.
+const OVERLAY_BTN_CLS =
+  'p-1 rounded bg-black/55 text-white/85 backdrop-blur-sm hover:bg-black/75 transition-colors shadow-[0_1px_3px_rgba(0,0,0,0.25)]'
 
 export const ItemCard: React.FC<{
   item: CollectedItem
@@ -30,6 +40,18 @@ export const ItemCard: React.FC<{
   // Lazy-load OG image for links without any image
   const [lazyOg, setLazyOg] = useState<string | null>(null)
   const hasNoImage = !localAsset && !ogImage && !tweetThumbnail
+
+  // Copy targets — `path` is the in-app asset URL (drop into a note and it
+  // resolves), `source` is the origin URL where the item was collected from.
+  // Both fall back to the item title so the menu is never a no-op.
+  const copyPath = (): void => {
+    const text = localAsset || item.url || item.title
+    void navigator.clipboard.writeText(text)
+  }
+  const copySource = (): void => {
+    const text = item.url || item.title
+    void navigator.clipboard.writeText(text)
+  }
   useEffect(() => {
     if (!hasNoImage || !item.url || item.type === 'text') return
     let cancelled = false
@@ -46,6 +68,7 @@ export const ItemCard: React.FC<{
       draggable
       onDragStart={(e) => {
         wasDragged.current = true
+        // ── In-app MIME types (consumed by other Lite panes/apps) ──
         e.dataTransfer.setData('application/x-collector-item', item.id)
         setResourcePayload(e.dataTransfer, {
           kind: 'collector-item',
@@ -56,6 +79,25 @@ export const ItemCard: React.FC<{
           assetPath: item.assetPath,
           note: item.note,
         })
+
+        // ── External-app MIME types (consumed by chat inputs, browsers,
+        //    text fields outside Lite) ─────────────────────────────────
+        // text/plain: works as a fallback in basically every text input.
+        //   - text items: the note body itself
+        //   - link/tweet/video items: the URL
+        //   - image/screenshot items with no URL: the title (filename-ish)
+        const plainText = item.type === 'text'
+          ? (item.note || item.title)
+          : (item.url || item.title)
+        if (plainText) e.dataTransfer.setData('text/plain', plainText)
+        // text/uri-list: browsers and link inputs auto-resolve this to a
+        // navigable URL.
+        if (item.url) e.dataTransfer.setData('text/uri-list', item.url)
+
+        // OS-level file drag lives on a dedicated handle (see ExternalDragHandle
+        // below) — calling it in parallel with the HTML5 drag locked up the
+        // input loop and prevented subsequent drags from starting.
+
         // 'copyMove' (not just 'move') so target handlers that set
         // dropEffect='copy' are compatible — otherwise the browser resolves
         // the drop to 'none' and silently drops the event.
@@ -85,13 +127,17 @@ export const ItemCard: React.FC<{
             </>
           )}
           <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {item.assetPath && (
+              <ExternalDragHandle assetPath={item.assetPath} variant="overlay" />
+            )}
+            <CopyMenu onCopyPath={copyPath} onCopySource={copySource} variant="overlay" />
             {onSendToWiki && (
               <button onClick={(e) => { e.stopPropagation(); onSendToWiki(item.id) }} aria-label="Send to Wiki"
                 title="Send to Wiki"
-                className="p-1 rounded bg-bg-app/60 text-tx-faint hover:text-accent-main transition-colors"><BookOpen size={10} /></button>
+                className={OVERLAY_BTN_CLS + ' hover:text-accent-main'}><BookOpen size={11} /></button>
             )}
             <button onClick={(e) => { e.stopPropagation(); onDelete(item.id) }} aria-label="Delete"
-              className="p-1 rounded bg-bg-app/60 text-tx-faint hover:text-tx-main transition-colors"><X size={10} /></button>
+              className={OVERLAY_BTN_CLS + ' hover:text-white'}><X size={11} /></button>
           </div>
         </div>
       )}
@@ -112,6 +158,7 @@ export const ItemCard: React.FC<{
         )}
         {item.type === 'text' && (
           <div className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <CopyMenu onCopyPath={copyPath} onCopySource={copySource} variant="bare" />
             {onSendToWiki && (
               <button onClick={(e) => { e.stopPropagation(); onSendToWiki(item.id) }} aria-label="Send to Wiki"
                 title="Send to Wiki"
@@ -122,6 +169,93 @@ export const ItemCard: React.FC<{
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+const CopyMenu: React.FC<{
+  onCopyPath: () => void
+  onCopySource: () => void
+  // `overlay` sits on top of the thumbnail (semi-opaque chip), `bare` sits on
+  // a plain card surface (no chip background) — matches the two existing
+  // toolbar treatments in ItemCard.
+  variant: 'overlay' | 'bare'
+}> = ({ onCopyPath, onCopySource, variant }) => {
+  const triggerCls =
+    variant === 'overlay'
+      ? `${OVERLAY_BTN_CLS} hover:text-white`
+      : 'p-0.5 rounded text-tx-faint hover:text-tx-main transition-colors'
+  const stop = (e: React.SyntheticEvent): void => e.stopPropagation()
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          type="button"
+          aria-label="Copy"
+          title="Copy"
+          onClick={stop}
+          onPointerDown={stop}
+          className={triggerCls}
+        >
+          <Copy size={variant === 'overlay' ? 11 : 10} />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          side="bottom"
+          align="end"
+          sideOffset={4}
+          onClick={stop}
+          className="z-50 min-w-[140px] rounded-md py-1 bg-bg-popover border border-border-subtle shadow-[0_4px_16px_rgba(0,0,0,0.25)]"
+        >
+          <DropdownMenu.Item
+            onSelect={onCopyPath}
+            className="px-3 py-1.5 text-[11px] text-tx-muted outline-none cursor-pointer hover:text-tx-main hover:bg-bg-hover"
+          >
+            Copy path
+          </DropdownMenu.Item>
+          <DropdownMenu.Item
+            onSelect={onCopySource}
+            className="px-3 py-1.5 text-[11px] text-tx-muted outline-none cursor-pointer hover:text-tx-main hover:bg-bg-hover"
+          >
+            Copy source
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  )
+}
+
+// Dedicated handle for OS-level file drag (Finder, Photoshop, Slack
+// upload, etc.). Must live on its own draggable element — combining
+// `webContents.startDrag()` with the card's HTML5 drag in the same
+// dragstart locks the input loop and prevents subsequent drags.
+//
+// Pattern (per Electron docs): preventDefault to cancel the HTML5 drag,
+// then immediately ask main to begin a native drag from the still-held
+// mouse button.
+const ExternalDragHandle: React.FC<{
+  assetPath: string
+  variant: 'overlay' | 'bare'
+}> = ({ assetPath, variant }) => {
+  const cls =
+    variant === 'overlay'
+      ? `${OVERLAY_BTN_CLS} hover:text-white cursor-grab active:cursor-grabbing`
+      : 'p-0.5 rounded text-tx-faint hover:text-tx-main transition-colors cursor-grab active:cursor-grabbing'
+  return (
+    <div
+      draggable
+      aria-label="Drag to other app"
+      title="Drag to other app (Finder, Photoshop, etc.)"
+      onClick={(e) => e.stopPropagation()}
+      onDragStart={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        window.api.shell.startDrag(assetPath)
+      }}
+      className={cls}
+    >
+      <ExternalLink size={variant === 'overlay' ? 11 : 10} />
     </div>
   )
 }

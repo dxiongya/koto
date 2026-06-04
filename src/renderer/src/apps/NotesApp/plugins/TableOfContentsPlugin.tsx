@@ -4,6 +4,7 @@ import { $getRoot, $getNodeByKey, type NodeKey } from 'lexical'
 import { $isHeadingNode, type HeadingTagType } from '@lexical/rich-text'
 import { List, PanelRightClose, PanelRightOpen, X } from 'lucide-react'
 import { ResizeHandle } from '../../../components/ResizeHandle'
+import { useUIStore } from '../../../store/useUIStore'
 
 interface TocItem {
   key: NodeKey
@@ -22,7 +23,13 @@ export function TableOfContentsPlugin(): JSX.Element {
   const [editor] = useLexicalComposerContext()
   const [items, setItems] = useState<TocItem[]>([])
   const [activeKey, setActiveKey] = useState<NodeKey | null>(null)
-  const [mode, setMode] = useState<TocMode>('floating')
+  // Initial mode/visibility come from the user's saved Notes preferences —
+  // see Settings → Apps → Notes → Configure. Falls back to floating + open.
+  const tocVisibleDefault = useUIStore((s) => s.notesTocVisible)
+  const tocModeDefault = useUIStore((s) => s.notesTocMode)
+  const [mode, setMode] = useState<TocMode>(
+    tocVisibleDefault ? tocModeDefault : 'collapsed',
+  )
   const [pinnedWidth, setPinnedWidth] = useState(180)
   const scrollContainerRef = useRef<HTMLElement | null>(null)
 

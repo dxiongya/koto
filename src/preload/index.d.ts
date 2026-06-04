@@ -89,6 +89,12 @@ export interface ShellAPI {
   openExternal: (url: string) => Promise<IpcResult<void>>
   openPath: (filePath: string) => Promise<IpcResult<void>>
   revealPath: (filePath: string) => Promise<IpcResult<void>>
+  /**
+   * Start a native OS drag for a file. Fire-and-forget — must be called
+   * inside a renderer `dragstart` handler. `filePath` may be absolute or
+   * relative to `{liteHome}/collected/`.
+   */
+  startDrag: (filePath: string) => void
 }
 
 // Collector API is not fully typed — existing code uses many call shapes.

@@ -1282,4 +1282,43 @@ export function setupIpcHandlers(): void {
     shell.showItemInFolder(filePath)
     return { ok: true, data: undefined }
   })
+
+  // OS-level drag-out: caller fires from a renderer `dragstart` handler so
+  // the resulting drag is treated as a native file drag by the OS (Finder,
+  // Photoshop, Slack upload zones, etc.). Uses `ipcMain.on` (fire-and-forget,
+  // synchronous-ish) rather than `invoke` so the call lands inside the same
+  // input event tick — `invoke` adds async wait that misses the drag window.
+  ipcMain.on(IpcChannels.SHELL_START_DRAG, (event, payload: { filePath: string }) => {
+    try {
+      const { filePath } = payload || {}
+      if (!filePath) return
+      const abs = path.isAbsolute(filePath)
+        ? filePath
+        : path.join(getLiteHome(), 'collected', filePath)
+      if (!fs.existsSync(abs)) return
+      const win = BrowserWindow.fromWebContents(event.sender)
+      if (!win) return
+      // Use the file itself as the drag icon when it's a small-enough image,
+      // otherwise fall back to an empty native image so the OS shows its own
+      // generic file icon.
+      let icon: Electron.NativeImage
+      const ext = path.extname(abs).toLowerCase()
+      const isImage = ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.gif' || ext === '.webp'
+      try {
+        const { nativeImage } = require('electron') as typeof import('electron')
+        if (isImage) {
+          const img = nativeImage.createFromPath(abs)
+          // Resize so the cursor preview isn't a giant 4k thumbnail.
+          icon = img.isEmpty() ? nativeImage.createEmpty() : img.resize({ width: 64 })
+        } else {
+          icon = nativeImage.createEmpty()
+        }
+      } catch {
+        icon = require('electron').nativeImage.createEmpty()
+      }
+      win.webContents.startDrag({ file: abs, icon })
+    } catch (e) {
+      console.warn('[shell:startDrag] failed:', e)
+    }
+  })
 }

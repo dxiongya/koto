@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback, memo, useRef, useEffect, useState } from 'react'
-import { FileText, Archive, Terminal, BookOpen, Brain, File, X } from 'lucide-react'
+import { FileText, Archive, Terminal, BookOpen, Brain, File, X, XSquare, ArrowLeftFromLine, ArrowRightFromLine, Pencil } from 'lucide-react'
+import { useContextMenu, type ContextMenuItem } from '../components/ContextMenu'
 import type { LucideIcon } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import type { PaneNode, Pane, Item } from '../store/useUIStore'
@@ -23,8 +24,48 @@ const APP_ICONS: Record<string, LucideIcon> = {
   'memory.app': Brain,
 }
 
+// Per-app icon tint — picked for **maximum chromatic separation** on a
+// 12-13px Lucide icon. Earlier the palette put notes/terminal both in the
+// teal/emerald family and at 60% opacity the eye couldn't tell them apart
+// in a tab strip. We now spread the hues across the wheel and keep
+// inactive icons at high opacity so the color carries through the small
+// stroke.
+const APP_ICON_COLOR: Record<string, string> = {
+  'notes.app':     '#5eead4',  // teal — brand accent (180°)
+  'collector.app': '#f59e0b',  // amber — "archive" warmth (40°)
+  'terminal.app':  '#818cf8',  // indigo — distinct from teal, "shell prompt" feel (235°)
+  'wiki.app':      '#c084fc',  // violet — knowledge / linked (280°)
+  'memory.app':    '#f472b6',  // pink — recall / mind (330°)
+  'code.app':      '#38bdf8',  // sky — code/dev tooling (200°)
+  'browser.app':   '#fb923c',  // orange (25°)
+  'settings.app':  '#94a3b8',  // slate (neutral — quiet)
+}
+
 function getAppIcon(appId: AppType): LucideIcon {
   return APP_ICONS[appId] ?? File
+}
+
+function getAppIconColor(appId: AppType): string {
+  return APP_ICON_COLOR[appId] ?? '#94a3b8'
+}
+
+// User-pickable tab background tints. Same hue family as the app-icon
+// palette, lifted slightly so the tint is unambiguous against the dark
+// surfaces. Stored keyed by `${appId}:${resource}` in tabColors so the
+// same file/terminal shows the same tint in every pane it's open.
+const TAB_COLOR_PALETTE: { name: string; value: string }[] = [
+  { name: 'Teal',   value: '#5eead4' },
+  { name: 'Amber',  value: '#f59e0b' },
+  { name: 'Indigo', value: '#818cf8' },
+  { name: 'Violet', value: '#c084fc' },
+  { name: 'Pink',   value: '#f472b6' },
+  { name: 'Sky',    value: '#38bdf8' },
+  { name: 'Lime',   value: '#a3e635' },
+  { name: 'Slate',  value: '#94a3b8' },
+]
+
+function tabColorKey(item: Item): string {
+  return `${item.appId}:${item.resource ?? ''}`
 }
 
 function appName(appId: AppType): string {
@@ -143,6 +184,11 @@ const PaneHost = memo(function PaneHost({
 }) {
   const pane = useUIStore(useCallback((s) => s.panes[paneId], [paneId]))
   const setFocusedPane = useUIStore((s) => s.setFocusedPane)
+  // Subscribe to appsVersion so a re-render fires when the registry shape
+  // changes (e.g. welcome onboarding finishes and apps the existing tabs
+  // reference become available). Without this, AppComponent stays `undefined`
+  // until something else triggers a render.
+  useUIStore((s) => s.appsVersion)
   const containerRef = useRef<HTMLDivElement>(null)
   const [dropZone, setDropZone] = useState<DropZone | null>(null)
 
@@ -269,6 +315,11 @@ const PaneHost = memo(function PaneHost({
   const activeAppId = activeTab?.appId ?? 'notes.app'
   const registered = registry.get(activeAppId)
   const AppComponent = activeAppId === 'settings.app' ? SettingsApp : registered?.definition.component
+  // If the active tab points at an app that isn't registered yet (timing
+  // race during welcome onboarding, or app removed from disk), don't render
+  // a blank pane — show a placeholder so the user knows what's going on
+  // instead of staring at an empty surface.
+  // (The actual placeholder JSX lives below; this comment is for readers.)
 
   const style: React.CSSProperties = {
     position: 'absolute',
@@ -448,6 +499,8 @@ const PaneTabs = memo(function PaneTabs({
           <TabChip
             paneId={paneId}
             item={item}
+            tabs={pane.tabs}
+            index={i}
             isActive={item.id === pane.activeTabId}
             isPaneFocused={isFocused}
             onActivate={() => setActiveTab(paneId, item.id)}
@@ -471,7 +524,7 @@ function PaneEmptyState({ appId }: { appId: AppType }) {
   const name = appName(appId)
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-3 text-tx-faint">
-      <Icon size={22} strokeWidth={1.5} className="text-tx-faint" />
+      <Icon size={22} strokeWidth={1.5} style={{ color: getAppIconColor(appId), opacity: 0.7 }} />
       <div className="text-[12px]">{name}</div>
     </div>
   )
@@ -480,6 +533,8 @@ function PaneEmptyState({ appId }: { appId: AppType }) {
 const TabChip = memo(function TabChip({
   paneId,
   item,
+  tabs,
+  index,
   isActive,
   isPaneFocused,
   onActivate,
@@ -487,12 +542,103 @@ const TabChip = memo(function TabChip({
 }: {
   paneId: string
   item: Item
+  tabs: Item[]
+  index: number
   isActive: boolean
   isPaneFocused: boolean
   onActivate: () => void
   onClose: () => void
 }) {
   const Icon = getAppIcon(item.appId)
+  const openContextMenu = useContextMenu()
+  const closeTab = useUIStore((s) => s.closeTab)
+  const renameTerminalSession = useUIStore((s) => s.renameTerminalSession)
+  const setTabColor = useUIStore((s) => s.setTabColor)
+  const colorKey = tabColorKey(item)
+  const customColor = useUIStore((s) => s.tabColors[colorKey])
+
+  // Inline rename — only terminal tabs can be renamed via tab right-click
+  // for now; note tabs derive their label from the file name and are renamed
+  // through the sidebar's rename file flow.
+  const [editing, setEditing] = useState(false)
+  const [draftLabel, setDraftLabel] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Resolve the terminal session id encoded in item.resource, if any.
+  const terminalSessionId = item.appId === 'terminal.app' && item.resource
+    ? (item.resource.startsWith('terminal://') ? item.resource.slice('terminal://'.length) : item.resource)
+    : null
+
+  const startRename = useCallback((initial: string) => {
+    setDraftLabel(initial)
+    setEditing(true)
+    // Focus + select on next frame so the value is already in the input.
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    })
+  }, [])
+
+  const commitRename = useCallback(() => {
+    if (!editing) return
+    const next = draftLabel.trim()
+    if (next && terminalSessionId) renameTerminalSession(terminalSessionId, next)
+    setEditing(false)
+  }, [editing, draftLabel, terminalSessionId, renameTerminalSession])
+
+  const cancelRename = useCallback(() => setEditing(false), [])
+
+  // VSCode-style right-click actions. We snapshot the tab IDs at menu-build
+  // time and close them one at a time — closeTab mutates pane.tabs so we
+  // can't iterate over a stale reference mid-loop.
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    const hasLeft = index > 0
+    const hasRight = index < tabs.length - 1
+    const hasOthers = tabs.length > 1
+    const idsRight = tabs.slice(index + 1).map((t) => t.id)
+    const idsLeft = tabs.slice(0, index).map((t) => t.id)
+    const idsOthers = tabs.filter((t) => t.id !== item.id).map((t) => t.id)
+    const idsAll = tabs.map((t) => t.id)
+    const closeMany = (ids: string[]): void => { for (const id of ids) closeTab(paneId, id) }
+    // Capture the label as the rename starting point at menu-open time.
+    const initialLabel = (e.currentTarget as HTMLElement).querySelector('span')?.textContent || item.label
+
+    const items: ContextMenuItem[] = []
+    if (terminalSessionId) {
+      items.push(
+        { label: 'Rename',               icon: <Pencil size={14} />,             onClick: () => startRename(initialLabel) },
+        { label: '', separator: true, onClick: () => {} },
+      )
+    }
+    items.push(
+      { label: 'Close',                  icon: <X size={14} />,                  onClick: onClose },
+      { label: 'Close Others',           icon: <XSquare size={14} />,            disabled: !hasOthers, onClick: () => closeMany(idsOthers) },
+      { label: 'Close to the Left',      icon: <ArrowLeftFromLine size={14} />,  disabled: !hasLeft,   onClick: () => closeMany(idsLeft) },
+      { label: 'Close to the Right',     icon: <ArrowRightFromLine size={14} />, disabled: !hasRight,  onClick: () => closeMany(idsRight) },
+      { label: '', separator: true, onClick: () => {} },
+      // Color picker — each swatch sets / replaces the tab tint. "None"
+      // clears the override so the tab reverts to the surface palette.
+      ...TAB_COLOR_PALETTE.map((c): ContextMenuItem => ({
+        label: c.name,
+        icon: (
+          <span
+            className="w-3 h-3 rounded-full border border-black/20"
+            style={{ backgroundColor: c.value }}
+          />
+        ),
+        onClick: () => setTabColor(colorKey, c.value),
+      })),
+      {
+        label: 'None',
+        icon: <span className="w-3 h-3 rounded-full border border-tx-faint/40" />,
+        disabled: !customColor,
+        onClick: () => setTabColor(colorKey, null),
+      },
+      { label: '', separator: true, onClick: () => {} },
+      { label: 'Close All',              icon: <XSquare size={14} />,            danger: true,         onClick: () => closeMany(idsAll) },
+    )
+    openContextMenu(e, items)
+  }, [openContextMenu, closeTab, onClose, paneId, item.id, item.label, tabs, index, terminalSessionId, startRename, setTabColor, colorKey, customColor])
 
   // Terminal tabs derive their label from the live session title (which can
   // change as the shell runs). When the session can't be found (e.g. stale
@@ -531,22 +677,70 @@ const TabChip = memo(function TabChip({
   }, [onClose])
 
   const activeCls = isActive
-    ? 'text-tx-active bg-bg-app border-b-transparent'
-    : 'text-tx-muted hover:text-tx-main hover:bg-bg-hover'
+    ? 'text-tx-active border-b-transparent font-medium'
+    : 'text-tx-muted hover:text-tx-main'
+
+  // Custom tab tint — blend with the surface color so the dark theme reads
+  // through. Active+focused gets a stronger mix; merely active less; inactive
+  // stays whisper-quiet. Falls back to surface palette when no override.
+  const tintedBg = customColor
+    ? `color-mix(in srgb, ${customColor} ${isActive ? (isPaneFocused ? 35 : 25) : 16}%, var(--bg-app))`
+    : undefined
+  const fallbackBgCls = customColor
+    ? ''
+    : (isActive
+        ? (isPaneFocused ? 'bg-bg-active' : 'bg-bg-app')
+        : 'hover:bg-bg-hover')
+
+  // Double-click also enters rename mode for terminal tabs — VSCode-style.
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    if (!terminalSessionId) return
+    e.stopPropagation()
+    startRename(displayLabel)
+  }, [terminalSessionId, startRename, displayLabel])
 
   return (
     <div
-      draggable
+      draggable={!editing}
       data-tab-id={item.id}
       onDragStart={handleDragStart}
-      onClick={onActivate}
-      onMouseDown={handleMouseDown}
+      onClick={editing ? undefined : onActivate}
+      onDoubleClick={handleDoubleClick}
+      onMouseDown={editing ? undefined : handleMouseDown}
+      onContextMenu={handleContextMenu}
       title={tabTooltip(item)}
+      style={tintedBg ? { backgroundColor: tintedBg } : undefined}
       className={`group/tab relative flex items-center gap-1.5 px-3 h-full min-w-[110px] max-w-[200px]
-        border-r border-border-subtle cursor-pointer transition-colors ${activeCls}`}
+        border-r border-border-subtle cursor-pointer transition-colors ${activeCls} ${fallbackBgCls}`}
     >
-      <Icon size={12} className={`shrink-0 ${isActive ? 'text-tx-active' : 'text-tx-faint'}`} />
-      <span className="truncate flex-1 text-[12px]">{displayLabel}</span>
+      <Icon
+        size={13}
+        strokeWidth={2}
+        className="shrink-0"
+        // Per-app color tint. Kept at 0.85 even on inactive tabs — Lucide
+        // icons are stroke-only so anything dimmer than that washes the hue
+        // out and the per-app differentiation disappears.
+        style={{ color: getAppIconColor(item.appId), opacity: isActive ? 1 : 0.85 }}
+      />
+      {editing ? (
+        <input
+          ref={inputRef}
+          type="text"
+          value={draftLabel}
+          onChange={(e) => setDraftLabel(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') { e.preventDefault(); commitRename() }
+            else if (e.key === 'Escape') { e.preventDefault(); cancelRename() }
+          }}
+          onBlur={commitRename}
+          className="flex-1 min-w-0 bg-transparent text-[12px] text-tx-main outline-none border-b border-accent-main/60 -mb-px"
+        />
+      ) : (
+        <span className="truncate flex-1 text-[12px]">{displayLabel}</span>
+      )}
       <button
         type="button"
         onClick={handleClose}
@@ -556,9 +750,19 @@ const TabChip = memo(function TabChip({
       >
         <X size={11} />
       </button>
-      {/* underline accent for active tab in focused pane */}
-      {isActive && isPaneFocused && (
-        <span className="absolute inset-x-0 bottom-0 h-[1px] bg-accent-main/60 pointer-events-none" />
+      {/* Active-tab accent line. Uses the tab's custom color when set
+       *  (so a colored tab reads as one unit), otherwise the brand teal.
+       *  Focused pane: 2px, full opacity; unfocused pane: 1px, dimmed —
+       *  still shows which tab would be selected if the pane re-focused. */}
+      {isActive && (
+        <span
+          className="absolute inset-x-0 bottom-0 pointer-events-none"
+          style={{
+            height: isPaneFocused ? 2 : 1,
+            backgroundColor: customColor ?? 'var(--accent-main)',
+            opacity: isPaneFocused ? 1 : 0.45,
+          }}
+        />
       )}
     </div>
   )

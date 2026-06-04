@@ -101,11 +101,15 @@ export const ContextMenuProvider: React.FC = () => {
               setState(null)
               item.onClick()
             }}
+            // Hover/focus: full accent fill + bg-app text (max contrast against
+            // teal). Matches VSCode/macOS native menus where the hovered row
+            // visibly inverts. Plain `bg-bg-hover` was too close to the menu
+            // surface (bg-bg-sidebar) to read as a state change.
             className={`w-full px-3 py-[5px] text-[13px] text-left flex items-center gap-2 transition-colors
-              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
+              focus-visible:outline-none
               ${item.disabled ? 'text-tx-faint cursor-default' : ''}
-              ${item.danger && !item.disabled ? 'text-status-error hover:bg-status-error/10' : ''}
-              ${!item.danger && !item.disabled ? 'text-tx-main hover:bg-bg-hover' : ''}`}
+              ${item.danger && !item.disabled ? 'text-status-error hover:bg-status-error hover:text-white focus-visible:bg-status-error focus-visible:text-white' : ''}
+              ${!item.danger && !item.disabled ? 'text-tx-main hover:bg-accent-main hover:text-bg-app focus-visible:bg-accent-main focus-visible:text-bg-app' : ''}`}
           >
             {item.icon && <span className="w-4 h-4 flex items-center justify-center shrink-0">{item.icon}</span>}
             <span>{item.label}</span>

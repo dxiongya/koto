@@ -3,11 +3,12 @@ import { createPortal } from 'react-dom'
 import {
   ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal,
   FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Plus, Moon, Sun, FolderOpen, FolderPlus, X,
-  Pencil, Trash2, FilePlus, FolderInput, Settings, Zap, Archive, Layers, Folder,
+  Pencil, Trash2, FilePlus, FolderInput, Settings, Zap, Archive, Folder, Copy as CopyIcon,
   Link, Image, Video, Twitter, Monitor, Type, Brain, BookOpen
 } from 'lucide-react'
 import { useUIStore, genTerminalPersistKey } from '../store/useUIStore'
 import { setResourcePayload } from './resourceDrag'
+import { openTerminalInCurrentSurface } from '../apps/TerminalApp/index'
 import { useContextMenu, type ContextMenuItem } from '../components/ContextMenu'
 import { getAppRegistry } from '../core/AppContext'
 import type { AppType, FileNode, CollectedItem } from '../../../shared/types'
@@ -157,7 +158,7 @@ const AppSectionHeader: React.FC<{
       }
     }}
     aria-expanded={expanded}
-    className={`w-full px-4 py-[6px] flex items-center gap-2 cursor-pointer tracking-wide relative group
+    className={`w-full h-8 px-4 flex items-center gap-2 cursor-pointer tracking-wide relative group
       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
       ${currentApp === appId ? 'bg-bg-active text-tx-active' : 'hover:bg-bg-hover text-tx-main'}`}
   >
@@ -404,7 +405,22 @@ const NotesAppSection: React.FC<{
         moveToItems.push({ label: `Move to ${g.name}`, icon: <FolderInput size={14} />, onClick: () => moveNote(note.path, g.path) })
       }
     }
+    // Relative path = the identifier MCP's notes.{read,write,create} tools
+    // accept. AI clients (Claude Desktop / Code, Codex) can route a write
+    // straight to this note when the user pastes this reference.
+    const relPath = notesDir && note.path.startsWith(notesDir + '/')
+      ? note.path.slice(notesDir.length + 1)
+      : note.path
+    const copyRef = (): void => {
+      void navigator.clipboard.writeText(relPath)
+      useUIStore.getState().setAppToast({
+        message: `已复制：${relPath}（可直接发给 AI）`,
+        status: 'success',
+      })
+    }
     return [
+      { label: 'Copy reference (for AI)', icon: <CopyIcon size={14} />, onClick: copyRef },
+      { label: '', separator: true, onClick: () => {} },
       { label: 'Rename', icon: <Pencil size={14} />, onClick: () => showInput('rename', { renamePath: note.path, renameIsDir: false }) },
       ...(moveToItems.length > 0 ? [{ label: '', separator: true, onClick: () => {} } as ContextMenuItem, ...moveToItems] : []),
       { label: '', separator: true, onClick: () => {} },
@@ -828,11 +844,17 @@ const TerminalAppSection: React.FC<{
   const removeTerminalWorkspace = useUIStore((s) => s.removeTerminalWorkspace)
   const setActiveWorkspace = useUIStore((s) => s.setActiveWorkspace)
   const createTerminalInWorkspace = useUIStore((s) => s.createTerminalInWorkspace)
-  const openTabInPane = useUIStore((s) => s.openTabInPane)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
   const [collapsedWs, setCollapsedWs] = useState<Set<string>>(new Set())
+  const openContextMenu = useContextMenu()
+
+  const startRenameSession = useCallback((id: string, currentTitle: string) => {
+    setRenamingId(id)
+    setRenameValue(currentTitle)
+    setTimeout(() => { renameInputRef.current?.focus(); renameInputRef.current?.select() }, 50)
+  }, [])
 
   useEffect(() => {
     if (renameTrigger === 0 || currentApp !== 'terminal.app' || !activeTerminalId || renamingId) return
@@ -867,14 +889,17 @@ const TerminalAppSection: React.FC<{
 
   const handleCreateInWorkspace = useCallback(async (workspaceId: string, cwd: string) => {
     const res = await window.api.terminal.create(cwd)
-    if (res.ok) {
-      const count = useUIStore.getState().terminalSessions.length
-      addSession({ id: res.data, persistKey: genTerminalPersistKey(), title: `Terminal ${count + 1}`, cwd })
-      // createTerminalInWorkspace also opens the session as a tab in focused pane.
-      createTerminalInWorkspace(workspaceId, res.data)
-      setCurrentApp('terminal.app')
-    }
-  }, [addSession, createTerminalInWorkspace, setCurrentApp])
+    if (!res.ok) return
+    const count = useUIStore.getState().terminalSessions.length
+    addSession({ id: res.data, persistKey: genTerminalPersistKey(), title: `Terminal ${count + 1}`, cwd })
+    // Wire the session into the workspace's flat session list (used by the
+    // sidebar grouping) and route it to whichever surface the user is
+    // looking at — Classic mode would otherwise miss the session because
+    // `createTerminalInWorkspace` only opens it as a tab in the global
+    // Tabs `panes` map.
+    createTerminalInWorkspace(workspaceId, res.data)
+    openTerminalInCurrentSurface(res.data)
+  }, [addSession, createTerminalInWorkspace])
 
   const handleHeaderCreate = useCallback(async () => {
     const activeWs = terminalWorkspaces.find((ws) => ws.id === activeWorkspaceId)
@@ -892,13 +917,15 @@ const TerminalAppSection: React.FC<{
   }, [removeSession])
 
   const handleSelect = useCallback((id: string, workspaceId: string) => {
-    // Open session as a tab in the focused pane (via store logic).
+    // Route to whichever surface is active (Tabs-mode pane vs. Classic-mode
+    // terminal pane tree) and focus the xterm. Without this, clicking a
+    // terminal in the sidebar while in Classic mode would add the tab to
+    // the global Tabs `panes` map — which Classic mode doesn't render — so
+    // nothing would appear on the right.
     setActiveWorkspace(workspaceId)
-    const focusId = useUIStore.getState().focusedPaneId
-    if (focusId) openTabInPane(focusId, 'terminal.app', id)
-    setCurrentApp('terminal.app')
+    openTerminalInCurrentSurface(id)
     onFocusSidebar?.()
-  }, [setActiveWorkspace, openTabInPane, setCurrentApp, onFocusSidebar])
+  }, [setActiveWorkspace, onFocusSidebar])
 
   const handleDragStart = useCallback((e: React.DragEvent, terminalId: string) => {
     const session = useUIStore.getState().terminalSessions.find((t) => t.id === terminalId)
@@ -933,8 +960,23 @@ const TerminalAppSection: React.FC<{
         aria-selected={isActive}
         draggable={!isRenaming}
         onClick={() => handleSelect(session.id, workspaceId)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelect(session.id, workspaceId) } }}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          if (!isRenaming) startRenameSession(session.id, session.title)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleSelect(session.id, workspaceId) }
+          if (e.key === 'F2') { e.preventDefault(); startRenameSession(session.id, session.title) }
+        }}
         onDragStart={(e) => handleDragStart(e, session.id)}
+        onContextMenu={(e) => {
+          const items: ContextMenuItem[] = [
+            { label: 'Rename', icon: <Pencil size={14} />, onClick: () => startRenameSession(session.id, session.title) },
+            { label: '', separator: true, onClick: () => {} },
+            { label: 'Close', icon: <X size={14} />, danger: true, onClick: () => { window.api.terminal.close(session.id); removeSession(session.id) } },
+          ]
+          openContextMenu(e, items)
+        }}
         className={`pl-[36px] py-[4px] pr-4 flex items-center gap-1.5 cursor-pointer text-[13px] tracking-wide relative group
           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
           ${isActive ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
@@ -1134,11 +1176,32 @@ const CollectorAppSection: React.FC<{
   }
 
   const setActiveItem = useCallback((filter: string) => {
+    // setCurrentApp finds/creates a collector tab in the focused pane (Tabs
+    // mode) AND switches Classic mode's currentApp.
     useUIStore.getState().setCurrentApp('collector.app')
     const store = useUIStore.getState()
-    useUIStore.setState({
-      appStates: { ...store.appStates, 'collector.app': { ...store.appStates['collector.app'], activeFilePath: filter } },
-    })
+    // Classic / single-app mode reads its filter from appStates.
+    const nextAppStates = {
+      ...store.appStates,
+      'collector.app': { ...store.appStates['collector.app'], activeFilePath: filter },
+    }
+    // Tabs mode: CollectorApp reads its filter from the active tab's
+    // `resource` string. Without this update, clicking a group toggled the
+    // sidebar highlight but the right-side pane stayed on whatever filter
+    // the tab already had ('all' for a freshly-created tab).
+    let nextPanes = store.panes
+    const focusId = store.focusedPaneId
+    if (focusId) {
+      const pane = store.panes[focusId]
+      const activeTab = pane?.tabs.find((t) => t.id === pane.activeTabId)
+      if (pane && activeTab && activeTab.appId === 'collector.app' && activeTab.resource !== filter) {
+        const nextTabs = pane.tabs.map((t) =>
+          t.id === activeTab.id ? { ...t, resource: filter } : t,
+        )
+        nextPanes = { ...store.panes, [focusId]: { ...pane, tabs: nextTabs } }
+      }
+    }
+    useUIStore.setState({ appStates: nextAppStates, panes: nextPanes })
   }, [])
 
   const toggleGroup = useCallback((group: string) => {
@@ -1234,13 +1297,10 @@ const CollectorAppSection: React.FC<{
         onClick={(e) => {
           e.stopPropagation()
           setSelectedItemId(selected ? null : item.id)
-          // Navigate to collector.app and set group filter to show this item
-          useUIStore.getState().setCurrentApp('collector.app')
+          // Route the focused pane to collector.app + this item's group, so
+          // both the right-side view and the sidebar selection stay in sync.
           const group = item.group && item.group !== 'all' ? item.group : 'all'
-          const store = useUIStore.getState()
-          useUIStore.setState({
-            appStates: { ...store.appStates, 'collector.app': { ...store.appStates['collector.app'], activeFilePath: group } },
-          })
+          setActiveItem(group)
           // Dispatch event for main area to scroll to this item
           setTimeout(() => {
             window.dispatchEvent(new CustomEvent('lite:collector-focus-item', { detail: { itemId: item.id } }))
@@ -1259,6 +1319,15 @@ const CollectorAppSection: React.FC<{
     )
   }
 
+  // Clicking the collector.app section header should both expand it AND
+  // route the right-side workspace to the "all" view — without the explicit
+  // "All" entry that used to live below the header, this is the only way
+  // back to the unfiltered list.
+  const handleHeaderClick = useCallback(() => {
+    onHeaderClick()
+    setActiveItem('all')
+  }, [onHeaderClick, setActiveItem])
+
   return (
     <>
       <AppSectionHeader
@@ -1266,7 +1335,7 @@ const CollectorAppSection: React.FC<{
         icon={<Archive size={14} strokeWidth={2.5} />}
         currentApp={currentApp}
         expanded={expanded}
-        onClick={onHeaderClick}
+        onClick={handleHeaderClick}
         actions={
           <button
             type="button"
@@ -1281,22 +1350,6 @@ const CollectorAppSection: React.FC<{
       />
       {expanded && (
         <div className="mb-3 mt-1">
-          {/* All */}
-          <button
-            type="button"
-            onClick={() => setActiveItem('all')}
-            onDragOver={(e) => handleDragOver(e, 'all')}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, 'all')}
-            className={`w-full text-left pl-[28px] py-[3px] pr-4 flex items-center gap-2 text-[12px] hover:bg-bg-hover
-              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-main/50 focus-visible:ring-inset
-              ${isActive('all') ? 'bg-bg-active' : ''} ${dropTarget === 'all' ? 'bg-accent-main/10' : ''}`}
-          >
-            <Layers size={12} className={isActive('all') ? 'text-tx-active' : 'text-tx-faint'} />
-            <span className={isActive('all') ? 'text-tx-active font-medium' : 'text-tx-muted'}>All</span>
-            <span className="text-tx-faint text-[10px] ml-auto">{items.length}</span>
-          </button>
-
           {/* Groups with expandable items */}
           {groups.map((group) => {
             const active = isActive(group)
@@ -1510,8 +1563,10 @@ export const Sidebar: React.FC = () => {
       {/* Top drag area for macOS */}
       <div className="h-8 w-full shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
 
-      {/* App Sections — dynamically from Registry */}
-      <div className="flex-1 overflow-y-auto pb-4 pt-2">
+      {/* App Sections — dynamically from Registry. No top padding so the
+          first app section header lines up with the main pane's tab bar
+          (both end up at Y=32 below the macOS drag area / TopStrip). */}
+      <div className="flex-1 overflow-y-auto pb-4">
         {enabledApps.map(({ definition }) => {
           const id = definition.manifest.id
           switch (id) {

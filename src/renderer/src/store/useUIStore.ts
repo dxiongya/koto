@@ -174,7 +174,14 @@ export interface TerminalWorkspace {
   id: string
   path: string            // absolute folder path
   name: string            // display name (folder basename)
-  sessionIds: string[]    // flat list; internal splits retired in favor of outer pane splits
+  sessionIds: string[]    // flat list used by Tabs mode (each session = a pane tab)
+  /**
+   * Classic/Single-app mode split tree. Independent from the Tabs-mode flat
+   * list so the two modes can coexist with different layouts. `undefined`
+   * means "no classic layout yet" — the Classic host derives a trivial
+   * single-terminal layout from sessionIds[0] in that case.
+   */
+  classicLayout?: SplitNode | null
 }
 
 interface UIState {
@@ -222,6 +229,13 @@ interface UIState {
   rootLayout: PaneNode | null
   focusedPaneId: string | null
 
+  // Classic-mode terminal.app pane tree — a PaneTree-shaped surface scoped
+  // to terminal.app. Isolated from the global `panes`/`rootLayout` so that
+  // flipping the content layout mode preserves both surfaces independently.
+  classicTermPanes: Record<string, Pane>
+  classicTermRoot: PaneNode | null
+  classicTermFocusedPaneId: string | null
+
   // recent files
   recentFiles: RecentFileEntry[]
 
@@ -238,6 +252,17 @@ interface UIState {
   // Markdown theme
   markdownTheme: string
   setMarkdownTheme: (themeId: string) => void
+
+  // Notes Table-of-Contents preferences
+  notesTocVisible: boolean                       // show TOC on note open
+  notesTocMode: 'floating' | 'pinned'            // initial layout
+  setNotesTocVisible: (v: boolean) => void
+  setNotesTocMode: (m: 'floating' | 'pinned') => void
+
+  // Global app-level toast (used for cross-component feedback like
+  // "Copied to clipboard"). Auto-clears after 2s in the renderer.
+  appToast: { message: string; status: 'success' | 'error' } | null
+  setAppToast: (toast: { message: string; status: 'success' | 'error' } | null) => void
 
   // First-run welcome dialog
   hasSeenWelcome: boolean
@@ -324,6 +349,38 @@ interface UIState {
     direction: 'horizontal' | 'vertical',
     position: 'before' | 'after',
   ) => void
+
+  // ── Classic-mode terminal pane tree ──
+  /** Seed the classic terminal tree with a first empty pane. Idempotent. */
+  ensureClassicTermRoot: () => string
+  /** Spawn a new PTY, register a session, open it as a tab in the given pane. */
+  openNewClassicTerm: (paneId: string) => Promise<string | null>
+  /**
+   * Add an existing terminal session as a tab in the focused classic pane
+   * (seeding the tree if needed). Dedupes — if the session is already a tab
+   * in any pane, activate it there instead. Returns the pane that received
+   * the tab (or had it).
+   */
+  openClassicTermSession: (sessionId: string) => string
+  setClassicTermActiveTab: (paneId: string, tabId: string) => void
+  closeClassicTermTab: (paneId: string, tabId: string) => void
+  moveClassicTermTabWithinPane: (paneId: string, tabId: string, targetIndex: number) => void
+  moveClassicTermTabToPane: (
+    sourcePaneId: string,
+    tabId: string,
+    targetPaneId: string,
+    insertIndex?: number,
+  ) => void
+  splitClassicTermWithTab: (
+    sourcePaneId: string,
+    tabId: string,
+    targetPaneId: string,
+    direction: 'horizontal' | 'vertical',
+    position: 'before' | 'after',
+  ) => void
+  /** Replace the classic-term layout tree wholesale (used after drag-resize). */
+  setClassicTermLayout: (root: PaneNode | null) => void
+  setClassicTermFocusedPane: (paneId: string) => void
   /** Open a file in the layout: dedupe existing, else create a new pane split off target. */
   openFileInPane: (args: {
     filePath: string
@@ -336,6 +393,11 @@ interface UIState {
   // terminal.app
   addTerminalSession: (session: TerminalSession) => void
   removeTerminalSession: (id: string) => void
+  renameTerminalSession: (id: string, title: string) => void
+  // Per-resource tab color override. Key = `${appId}:${resource ?? ''}` so the
+  // same file/terminal session shows the same color in every pane it's open.
+  tabColors: Record<string, string>
+  setTabColor: (key: string, color: string | null) => void
   setActiveTerminalId: (id: string | null) => void
   addTerminalWorkspace: (path: string) => void
   removeTerminalWorkspace: (id: string) => void
@@ -344,6 +406,23 @@ interface UIState {
   createTerminalInWorkspace: (workspaceId: string, sessionId: string) => void
   /** Remove a session id from its workspace's sessionIds (cleanup helper). */
   detachTerminalFromWorkspaces: (sessionId: string) => void
+
+  // terminal.app — Classic (single-app) mode internal layout.
+  /** Set/replace a workspace's classic split tree (e.g. after a drag resize). */
+  classicSetLayout: (workspaceId: string, layout: SplitNode | null) => void
+  /** Seed a workspace with a single terminal leaf (used when no layout yet). */
+  classicSeedLayout: (workspaceId: string, sessionId: string) => void
+  /**
+   * Split an existing terminal leaf in the workspace's classic layout.
+   * `targetTermId` is the leaf to split; `newTermId` is the session to insert.
+   */
+  classicSplitAt: (
+    workspaceId: string,
+    targetTermId: string,
+    newTermId: string,
+    direction: 'horizontal' | 'vertical',
+    position: 'before' | 'after',
+  ) => void
 
   // recent files / terminals (unified MRU)
   trackRecentFile: (filePath: string, app: AppType) => void
@@ -412,10 +491,28 @@ export const useUIStore = create<UIState>((set, get) => ({
   panes: {},
   rootLayout: null,
   focusedPaneId: null,
+  classicTermPanes: {},
+  classicTermRoot: null,
+  classicTermFocusedPaneId: null,
   recentFiles: [],
   ai: { ...DEFAULT_AI_SETTINGS },
   mcpServers: [],
   markdownTheme: 'default',
+  notesTocVisible: true,
+  notesTocMode: 'floating',
+  setNotesTocVisible: (v) => { set({ notesTocVisible: v }); persistState({ notesTocVisible: v }) },
+  setNotesTocMode: (m) => { set({ notesTocMode: m }); persistState({ notesTocMode: m }) },
+  tabColors: {},
+  setTabColor: (key, color) => {
+    const prev = get().tabColors
+    const next = { ...prev }
+    if (color) next[key] = color
+    else delete next[key]
+    set({ tabColors: next })
+    persistState({ tabColors: next })
+  },
+  appToast: null,
+  setAppToast: (toast) => set({ appToast: toast }),
   setMarkdownTheme: (themeId: string) => {
     set({ markdownTheme: themeId })
     persistState({ markdownTheme: themeId })
@@ -569,9 +666,21 @@ export const useUIStore = create<UIState>((set, get) => ({
         nextTabs = pane.tabs
         nextActiveTabId = existing.id
       } else {
-        const fresh = makeItem(paneApp, path)
-        nextTabs = [...pane.tabs, fresh]
-        nextActiveTabId = fresh.id
+        // If the currently-active tab is an empty placeholder for the same
+        // app (no resource — e.g. the seeded "notes" tab when the pane was
+        // first created), reuse it instead of stacking a second tab next to
+        // it. Otherwise append a fresh tab.
+        const activeTab = pane.tabs.find((t) => t.id === pane.activeTabId)
+        if (activeTab && activeTab.appId === paneApp && !activeTab.resource) {
+          nextTabs = pane.tabs.map((t) =>
+            t.id === activeTab.id ? { ...t, resource: path, label: itemLabel(paneApp, path) } : t,
+          )
+          nextActiveTabId = activeTab.id
+        } else {
+          const fresh = makeItem(paneApp, path)
+          nextTabs = [...pane.tabs, fresh]
+          nextActiveTabId = fresh.id
+        }
       }
       const nextPane: Pane = { ...pane, tabs: nextTabs, activeTabId: nextActiveTabId }
       const nextPanes = { ...state.panes, [focusId]: nextPane }
@@ -692,13 +801,30 @@ export const useUIStore = create<UIState>((set, get) => ({
     persistState({ terminalSessions: nextSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })) })
   },
 
+  renameTerminalSession: (id, title) => {
+    const trimmed = title.trim()
+    if (!trimmed) return
+    const prev = get()
+    const nextSessions = prev.terminalSessions.map((t) =>
+      t.id === id ? { ...t, title: trimmed } : t,
+    )
+    set({ terminalSessions: nextSessions })
+    persistState({ terminalSessions: nextSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })) })
+  },
+
   removeTerminalSession: (id) => {
     const prev = get()
     const nextSessions = prev.terminalSessions.filter((t) => t.id !== id)
-    // Detach from all workspaces' flat sessionId lists.
+    // Detach from all workspaces' flat sessionId lists AND classic layouts.
     const nextWorkspaces = prev.terminalWorkspaces.map((ws) => {
-      if (!ws.sessionIds.includes(id)) return ws
-      return { ...ws, sessionIds: ws.sessionIds.filter((s) => s !== id) }
+      const touchesFlat = ws.sessionIds.includes(id)
+      const touchesClassic = !!ws.classicLayout && collectTerminalIds(ws.classicLayout).includes(id)
+      if (!touchesFlat && !touchesClassic) return ws
+      return {
+        ...ws,
+        sessionIds: touchesFlat ? ws.sessionIds.filter((s) => s !== id) : ws.sessionIds,
+        classicLayout: touchesClassic ? removeFromTree(ws.classicLayout!, id) : ws.classicLayout,
+      }
     })
     // Also close any panes whose active tab was this session (and its tabs).
     const nextPanes = { ...prev.panes }
@@ -817,6 +943,39 @@ export const useUIStore = create<UIState>((set, get) => ({
       return { ...ws, sessionIds: ws.sessionIds.filter((s) => s !== sessionId) }
     })
     if (!changed) return
+    set({ terminalWorkspaces: nextWorkspaces })
+    persistState({ terminalWorkspaces: nextWorkspaces })
+  },
+
+  classicSetLayout: (workspaceId, layout) => {
+    const state = get()
+    const nextWorkspaces = state.terminalWorkspaces.map((ws) =>
+      ws.id === workspaceId ? { ...ws, classicLayout: layout } : ws,
+    )
+    set({ terminalWorkspaces: nextWorkspaces })
+    persistState({ terminalWorkspaces: nextWorkspaces })
+  },
+
+  classicSeedLayout: (workspaceId, sessionId) => {
+    const state = get()
+    const nextWorkspaces = state.terminalWorkspaces.map((ws) => {
+      if (ws.id !== workspaceId) return ws
+      if (ws.classicLayout) return ws
+      return { ...ws, classicLayout: { type: 'terminal', terminalId: sessionId } as SplitNode }
+    })
+    set({ terminalWorkspaces: nextWorkspaces })
+    persistState({ terminalWorkspaces: nextWorkspaces })
+  },
+
+  classicSplitAt: (workspaceId, targetTermId, newTermId, direction, position) => {
+    const state = get()
+    const nextWorkspaces = state.terminalWorkspaces.map((ws) => {
+      if (ws.id !== workspaceId) return ws
+      const base: SplitNode =
+        ws.classicLayout ?? ({ type: 'terminal', terminalId: targetTermId } as SplitNode)
+      const nextLayout = insertIntoTree(base, targetTermId, newTermId, direction, position)
+      return { ...ws, classicLayout: nextLayout }
+    })
     set({ terminalWorkspaces: nextWorkspaces })
     persistState({ terminalWorkspaces: nextWorkspaces })
   },
@@ -965,8 +1124,22 @@ export const useUIStore = create<UIState>((set, get) => ({
     if (existing) {
       const nextPane = ({ ...pane, activeTabId: existing.id })
       const nextPanes = { ...state.panes, [paneId]: nextPane }
-      set({ panes: nextPanes })
-      persistState({ panes: nextPanes })
+      set({ panes: nextPanes, focusedPaneId: paneId })
+      persistState({ panes: nextPanes, focusedPaneId: paneId })
+      return
+    }
+    // Reuse an empty placeholder of the same app instead of appending — keeps
+    // the seeded "notes"/"collector"/etc. starter tab from sticking around as
+    // an empty sibling next to the file the user just opened.
+    const activeTab = pane.tabs.find((t) => t.id === pane.activeTabId)
+    if (resource && activeTab && activeTab.appId === appId && !activeTab.resource) {
+      const nextTabs = pane.tabs.map((t) =>
+        t.id === activeTab.id ? { ...t, resource, label: itemLabel(appId, resource) } : t,
+      )
+      const nextPane = ({ ...pane, tabs: nextTabs, activeTabId: activeTab.id })
+      const nextPanes = { ...state.panes, [paneId]: nextPane }
+      set({ panes: nextPanes, focusedPaneId: paneId })
+      persistState({ panes: nextPanes, focusedPaneId: paneId })
       return
     }
     const fresh = makeItem(appId, resource)
@@ -1193,6 +1366,330 @@ export const useUIStore = create<UIState>((set, get) => ({
 
     set({ panes: nextPanes, rootLayout: nextLayout, focusedPaneId: newPaneId })
     persistState({ panes: nextPanes, rootLayout: nextLayout, focusedPaneId: newPaneId })
+  },
+
+  // ── Classic-mode terminal pane tree ──
+  //
+  // Mirrors the Tabs-mode `panes` / `rootLayout` surface but scoped to
+  // terminal.app only. Tabs carry a session id as their `resource`. All
+  // state is persisted so flipping between Tabs and Classic preserves
+  // the Classic tree.
+
+  ensureClassicTermRoot: () => {
+    const state = get()
+    if (state.classicTermRoot) {
+      const firstId = collectPaneIds(state.classicTermRoot)[0]
+      if (firstId && state.classicTermPanes[firstId]) return firstId
+    }
+    const paneId = genPaneId()
+    const pane: Pane = { id: paneId, tabs: [], activeTabId: null }
+    const panes = { ...state.classicTermPanes, [paneId]: pane }
+    const root: PaneNode = { type: 'pane', paneId }
+    set({
+      classicTermPanes: panes,
+      classicTermRoot: root,
+      classicTermFocusedPaneId: paneId,
+    })
+    persistState({
+      classicTermPanes: panes,
+      classicTermRoot: root,
+      classicTermFocusedPaneId: paneId,
+    })
+    return paneId
+  },
+
+  openNewClassicTerm: async (paneId) => {
+    const state = get()
+    const pane = state.classicTermPanes[paneId]
+    if (!pane) return null
+    const cwd = state.codeProjectPath ?? undefined
+    const res = await window.api.terminal.create(cwd)
+    if (!res.ok) return null
+    const count = state.terminalSessions.length
+    const session: TerminalSession = {
+      id: res.data,
+      persistKey: genTerminalPersistKey(),
+      title: `Terminal ${count + 1}`,
+      cwd,
+    }
+    // Register the PTY in the global session registry (so replay buffer
+    // + rename + serialize all keep working).
+    const nextSessions = [...state.terminalSessions, session]
+    // Tab item points at session id as its resource.
+    const tab: Item = {
+      id: genItemId(),
+      appId: 'terminal.app',
+      resource: session.id,
+      label: session.title,
+    }
+    const nextPane: Pane = {
+      ...pane,
+      tabs: [...pane.tabs, tab],
+      activeTabId: tab.id,
+    }
+    const nextPanes = { ...state.classicTermPanes, [paneId]: nextPane }
+    set({
+      terminalSessions: nextSessions,
+      activeTerminalId: session.id,
+      classicTermPanes: nextPanes,
+      classicTermFocusedPaneId: paneId,
+    })
+    persistState({
+      terminalSessions: nextSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })),
+      classicTermPanes: nextPanes,
+    })
+    return session.id
+  },
+
+  openClassicTermSession: (sessionId) => {
+    const state = get()
+    // Dedupe across all classic panes.
+    for (const pid in state.classicTermPanes) {
+      const pane = state.classicTermPanes[pid]
+      const existing = pane.tabs.find((t) => t.resource === sessionId)
+      if (existing) {
+        const nextPanes = {
+          ...state.classicTermPanes,
+          [pid]: { ...pane, activeTabId: existing.id },
+        }
+        set({
+          classicTermPanes: nextPanes,
+          classicTermFocusedPaneId: pid,
+          activeTerminalId: sessionId,
+        })
+        persistState({ classicTermPanes: nextPanes, classicTermFocusedPaneId: pid })
+        return pid
+      }
+    }
+    // Not found — append to the focused pane (or first, or seed a new one).
+    const targetPaneId =
+      state.classicTermFocusedPaneId && state.classicTermPanes[state.classicTermFocusedPaneId]
+        ? state.classicTermFocusedPaneId
+        : (Object.keys(state.classicTermPanes)[0] ?? get().ensureClassicTermRoot())
+    const targetPane = get().classicTermPanes[targetPaneId]
+    const session = state.terminalSessions.find((s) => s.id === sessionId)
+    const label = session?.title ?? 'Terminal'
+    const tab: Item = {
+      id: genItemId(),
+      appId: 'terminal.app',
+      resource: sessionId,
+      label,
+    }
+    const nextPane: Pane = {
+      ...targetPane,
+      tabs: [...targetPane.tabs, tab],
+      activeTabId: tab.id,
+    }
+    const nextPanes = { ...get().classicTermPanes, [targetPaneId]: nextPane }
+    set({
+      classicTermPanes: nextPanes,
+      classicTermFocusedPaneId: targetPaneId,
+      activeTerminalId: sessionId,
+    })
+    persistState({ classicTermPanes: nextPanes, classicTermFocusedPaneId: targetPaneId })
+    return targetPaneId
+  },
+
+  setClassicTermActiveTab: (paneId, tabId) => {
+    const state = get()
+    const pane = state.classicTermPanes[paneId]
+    if (!pane || pane.activeTabId === tabId) return
+    const next = { ...pane, activeTabId: tabId }
+    const nextPanes = { ...state.classicTermPanes, [paneId]: next }
+    // Also bump the session's active-terminal marker so things like rename,
+    // MRU tracking continue to work.
+    const tab = pane.tabs.find((t) => t.id === tabId)
+    const updates: Partial<UIState> = {
+      classicTermPanes: nextPanes,
+      classicTermFocusedPaneId: paneId,
+    }
+    if (tab?.resource) updates.activeTerminalId = tab.resource
+    set(updates as UIState)
+    persistState({ classicTermPanes: nextPanes, classicTermFocusedPaneId: paneId })
+  },
+
+  closeClassicTermTab: (paneId, tabId) => {
+    const state = get()
+    const pane = state.classicTermPanes[paneId]
+    if (!pane) return
+    const tab = pane.tabs.find((t) => t.id === tabId)
+    if (!tab) return
+    // Close the PTY and scrub the session.
+    if (tab.resource) {
+      try { window.api.terminal.close(tab.resource) } catch { /* ignore */ }
+    }
+    const nextSessions = tab.resource
+      ? state.terminalSessions.filter((s) => s.id !== tab.resource)
+      : state.terminalSessions
+
+    const remainingTabs = pane.tabs.filter((t) => t.id !== tabId)
+    let nextPanes = { ...state.classicTermPanes }
+    let nextRoot: PaneNode | null = state.classicTermRoot
+    let nextFocus: string | null = state.classicTermFocusedPaneId
+
+    if (remainingTabs.length > 0) {
+      const nextActive =
+        pane.activeTabId === tabId
+          ? remainingTabs[
+              Math.min(
+                pane.tabs.findIndex((t) => t.id === tabId),
+                remainingTabs.length - 1,
+              )
+            ].id
+          : pane.activeTabId
+      nextPanes[paneId] = { ...pane, tabs: remainingTabs, activeTabId: nextActive }
+    } else {
+      // Last tab gone — drop the pane too, unless it's the only pane (keep
+      // it around as an empty shell so the user can click "+" to start over).
+      const totalPanes = Object.keys(nextPanes).length
+      if (totalPanes > 1 && state.classicTermRoot) {
+        delete nextPanes[paneId]
+        nextRoot = removePaneFromTree(state.classicTermRoot, paneId)
+        if (nextFocus === paneId) {
+          nextFocus = Object.keys(nextPanes)[0] ?? null
+        }
+      } else {
+        nextPanes[paneId] = { ...pane, tabs: [], activeTabId: null }
+      }
+    }
+
+    set({
+      terminalSessions: nextSessions,
+      classicTermPanes: nextPanes,
+      classicTermRoot: nextRoot,
+      classicTermFocusedPaneId: nextFocus,
+    })
+    persistState({
+      terminalSessions: nextSessions.map((t) => ({ persistKey: t.persistKey, title: t.title, cwd: t.cwd })),
+      classicTermPanes: nextPanes,
+      classicTermRoot: nextRoot,
+      classicTermFocusedPaneId: nextFocus,
+    })
+  },
+
+  moveClassicTermTabWithinPane: (paneId, tabId, targetIndex) => {
+    const state = get()
+    const pane = state.classicTermPanes[paneId]
+    if (!pane) return
+    const from = pane.tabs.findIndex((t) => t.id === tabId)
+    if (from < 0) return
+    const reordered = [...pane.tabs]
+    const [removed] = reordered.splice(from, 1)
+    reordered.splice(Math.max(0, Math.min(targetIndex, reordered.length)), 0, removed)
+    const nextPanes = { ...state.classicTermPanes, [paneId]: { ...pane, tabs: reordered } }
+    set({ classicTermPanes: nextPanes })
+    persistState({ classicTermPanes: nextPanes })
+  },
+
+  moveClassicTermTabToPane: (sourcePaneId, tabId, targetPaneId, insertIndex) => {
+    if (sourcePaneId === targetPaneId) return
+    const state = get()
+    const source = state.classicTermPanes[sourcePaneId]
+    const target = state.classicTermPanes[targetPaneId]
+    if (!source || !target) return
+    const tab = source.tabs.find((t) => t.id === tabId)
+    if (!tab) return
+
+    const sourceRemaining = source.tabs.filter((t) => t.id !== tabId)
+    const insertPos = insertIndex ?? target.tabs.length
+    const targetNextTabs = [...target.tabs]
+    targetNextTabs.splice(Math.max(0, Math.min(insertPos, target.tabs.length)), 0, tab)
+
+    let nextPanes: Record<string, Pane> = {
+      ...state.classicTermPanes,
+      [targetPaneId]: { ...target, tabs: targetNextTabs, activeTabId: tab.id },
+    }
+    let nextRoot = state.classicTermRoot
+    if (sourceRemaining.length === 0) {
+      const totalPanes = Object.keys(nextPanes).length
+      if (totalPanes > 1 && state.classicTermRoot) {
+        delete nextPanes[sourcePaneId]
+        nextRoot = removePaneFromTree(state.classicTermRoot, sourcePaneId)
+      } else {
+        nextPanes[sourcePaneId] = { ...source, tabs: [], activeTabId: null }
+      }
+    } else {
+      const sourceNextActive =
+        source.activeTabId === tabId
+          ? sourceRemaining[Math.min(
+              source.tabs.findIndex((t) => t.id === tabId),
+              sourceRemaining.length - 1,
+            )].id
+          : source.activeTabId
+      nextPanes[sourcePaneId] = { ...source, tabs: sourceRemaining, activeTabId: sourceNextActive }
+    }
+
+    set({
+      classicTermPanes: nextPanes,
+      classicTermRoot: nextRoot,
+      classicTermFocusedPaneId: targetPaneId,
+      activeTerminalId: tab.resource ?? state.activeTerminalId,
+    })
+    persistState({
+      classicTermPanes: nextPanes,
+      classicTermRoot: nextRoot,
+      classicTermFocusedPaneId: targetPaneId,
+    })
+  },
+
+  splitClassicTermWithTab: (sourcePaneId, tabId, targetPaneId, direction, position) => {
+    const state = get()
+    const source = state.classicTermPanes[sourcePaneId]
+    const target = state.classicTermPanes[targetPaneId]
+    if (!source || !target) return
+    const tab = source.tabs.find((t) => t.id === tabId)
+    if (!tab) return
+    if (sourcePaneId === targetPaneId && source.tabs.length === 1) return
+
+    const newPaneId = genPaneId()
+    const newPane: Pane = { id: newPaneId, tabs: [tab], activeTabId: tab.id }
+    const sourceRemaining = source.tabs.filter((t) => t.id !== tabId)
+
+    let nextPanes: Record<string, Pane> = { ...state.classicTermPanes, [newPaneId]: newPane }
+    let workingLayout: PaneNode | null = state.classicTermRoot
+    if (sourceRemaining.length === 0) {
+      const totalPanes = Object.keys(state.classicTermPanes).length
+      if (totalPanes > 1 && state.classicTermRoot) {
+        delete nextPanes[sourcePaneId]
+        workingLayout = removePaneFromTree(state.classicTermRoot, sourcePaneId)
+      } else {
+        nextPanes[sourcePaneId] = { ...source, tabs: [], activeTabId: null }
+      }
+    } else {
+      const sourceNextActive =
+        source.activeTabId === tabId
+          ? sourceRemaining[Math.min(
+              source.tabs.findIndex((t) => t.id === tabId),
+              sourceRemaining.length - 1,
+            )].id
+          : source.activeTabId
+      nextPanes[sourcePaneId] = { ...source, tabs: sourceRemaining, activeTabId: sourceNextActive }
+    }
+
+    const nextLayout = workingLayout
+      ? insertPaneIntoTree(workingLayout, targetPaneId, newPaneId, direction, position)
+      : ({ type: 'pane', paneId: newPaneId } as PaneNode)
+
+    set({
+      classicTermPanes: nextPanes,
+      classicTermRoot: nextLayout,
+      classicTermFocusedPaneId: newPaneId,
+      activeTerminalId: tab.resource ?? state.activeTerminalId,
+    })
+    persistState({
+      classicTermPanes: nextPanes,
+      classicTermRoot: nextLayout,
+      classicTermFocusedPaneId: newPaneId,
+    })
+  },
+
+  setClassicTermLayout: (root) => {
+    set({ classicTermRoot: root })
+    persistState({ classicTermRoot: root })
+  },
+
+  setClassicTermFocusedPane: (paneId) => {
+    set({ classicTermFocusedPaneId: paneId })
   },
 
   openFileInPane: ({ filePath, appId, targetPaneId, direction, position }) => {

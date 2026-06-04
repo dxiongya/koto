@@ -170,6 +170,7 @@ export const IpcChannels = {
   SHELL_OPEN_EXTERNAL: 'shell:openExternal',
   SHELL_OPEN_PATH: 'shell:openPath',
   SHELL_REVEAL_PATH: 'shell:revealPath',
+  SHELL_START_DRAG: 'shell:startDrag',
 
   // App events (main → renderer push) — cross-app notifications
   APP_EVENT: 'app:event',

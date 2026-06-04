@@ -27,6 +27,18 @@ export interface TerminalViewHandle {
   refresh: () => void
 }
 
+// Module-level cache of the last serialized xterm state per session id.
+// PaneHost only renders the active tab's app, so switching away from a
+// terminal tab unmounts <TerminalView /> and disposes its xterm instance.
+// Without this cache, scrollback is lost on every tab switch — the new
+// xterm would mount empty, and only get partial output back when the PTY
+// happens to redraw (e.g. on a ResizeObserver-triggered terminal.resize,
+// which is what makes content "magically reappear" when the window moves).
+//
+// Stored as raw xterm escape sequences so a single `term.write(cached)` on
+// re-mount restores the screen + scrollback verbatim.
+const _xtermStateCache = new Map<string, string>()
+
 export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
   ({ terminalId, replayBuffer }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null)
@@ -35,6 +47,27 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
     const serializeAddonRef = useRef<SerializeAddon | null>(null)
     const replayBufferRef = useRef(replayBuffer)
     const replayedRef = useRef(false)
+
+    // Keep the replay ref in sync with the prop so a buffer that arrives
+    // AFTER mount (e.g. `_replayBuffer` is populated on the session object
+    // after the restore's async loadBuffer resolves) still gets replayed
+    // on the next ResizeObserver tick. Without this the ref would stay
+    // frozen at the prop's mount-time value (often `undefined` because the
+    // session object was inserted into the store before loadBuffer completed).
+    useEffect(() => {
+      if (replayedRef.current) return
+      if (replayBuffer && !replayBufferRef.current) {
+        replayBufferRef.current = replayBuffer
+        // Try to replay immediately if xterm is already opened + fit; else
+        // the existing ResizeObserver path will catch it.
+        const term = termRef.current
+        if (term && term.cols > 1 && term.rows > 1) {
+          replayedRef.current = true
+          term.write(replayBuffer + '\x1b[?25h')
+          replayBufferRef.current = undefined
+        }
+      }
+    }, [replayBuffer])
 
     useImperativeHandle(ref, () => ({
       serialize: () => {
@@ -156,11 +189,29 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
           try {
             fitAddon.fit()
             window.api.terminal.resize(terminalId, term.cols, term.rows)
-            // Replay buffer after first successful fit
-            if (!replayedRef.current && replayBufferRef.current) {
-              replayedRef.current = true
-              term.write(replayBufferRef.current + '\x1b[?25h')
-              replayBufferRef.current = undefined
+            // Replay on the first successful fit. Source priority:
+            //   1) module-level xterm state cache — set on the previous
+            //      unmount of this same session (tab switch / pane reflow);
+            //      this is the most up-to-date representation of what the
+            //      user was looking at.
+            //   2) disk replay buffer (from `loadBuffer(persistKey)`),
+            //      delivered as the `replayBuffer` prop after a cold start.
+            // Reset the xterm screen first so any partial output from the
+            // freshly-spawned PTY (prompt rewrites etc.) doesn't get mixed
+            // into the scrollback we're about to restore.
+            if (!replayedRef.current) {
+              const cached = _xtermStateCache.get(terminalId)
+              if (cached) {
+                replayedRef.current = true
+                try { term.reset() } catch { /* ignore */ }
+                term.write(cached + '\x1b[?25h')
+                replayBufferRef.current = undefined
+              } else if (replayBufferRef.current) {
+                replayedRef.current = true
+                try { term.reset() } catch { /* ignore */ }
+                term.write(replayBufferRef.current + '\x1b[?25h')
+                replayBufferRef.current = undefined
+              }
             }
           } catch { /* ignore */ }
         })
@@ -173,6 +224,13 @@ export const TerminalView = forwardRef<TerminalViewHandle, TerminalViewProps>(
         themeObserver.disconnect()
         unsubData()
         unsubExit()
+        // Snapshot the xterm screen + scrollback before disposal so the
+        // next mount of this same session id can restore it. Without this
+        // every tab switch loses scrollback.
+        try {
+          const snapshot = serializeAddon.serialize()
+          if (snapshot) _xtermStateCache.set(terminalId, snapshot)
+        } catch { /* ignore */ }
         term.dispose()
       }
     }, [terminalId])

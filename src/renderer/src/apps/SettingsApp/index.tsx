@@ -1803,6 +1803,10 @@ const NotesAppSettings: React.FC = () => {
   const markdownTheme = useUIStore((s) => s.markdownTheme)
   const setMarkdownTheme = useUIStore((s) => s.setMarkdownTheme)
   const liteHome = useUIStore((s) => s.liteHome)
+  const tocVisible = useUIStore((s) => s.notesTocVisible)
+  const tocMode = useUIStore((s) => s.notesTocMode)
+  const setTocVisible = useUIStore((s) => s.setNotesTocVisible)
+  const setTocMode = useUIStore((s) => s.setNotesTocMode)
   const [userThemes, setUserThemes] = useState<string[]>([])
   const [userThemeCssCache, setUserThemeCssCache] = useState<Record<string, string>>({})
 
@@ -1832,6 +1836,7 @@ const NotesAppSettings: React.FC = () => {
 
   const mdThemes = [
     { id: 'default', name: 'Default', desc: 'Inherits app theme — monospace, dark' },
+    { id: 'editorial', name: 'Editorial', desc: 'Doc-site style — tinted code, callouts, brighter headings' },
     { id: 'github', name: 'GitHub', desc: 'Sans-serif, larger headings' },
     { id: 'serif', name: 'Serif', desc: 'Reading-focused, relaxed spacing' },
     { id: 'compact', name: 'Compact', desc: 'Tight spacing, smaller text' },
@@ -1939,6 +1944,52 @@ const NotesAppSettings: React.FC = () => {
             {importStatus}
           </span>
         )}
+      </div>
+
+      {/* Table of Contents — initial state when opening a note */}
+      <h3 className="text-tx-muted text-[11px] font-medium uppercase tracking-wider mt-6 mb-2">Table of Contents</h3>
+      <div className="rounded-lg border border-border-subtle divide-y divide-border-subtle">
+        <div className="flex items-center justify-between px-3 py-2.5">
+          <div>
+            <div className="text-[13px] text-tx-main">Show on note open</div>
+            <div className="text-[11px] text-tx-faint mt-0.5">When off, the TOC starts collapsed — click the icon to expand.</div>
+          </div>
+          <button
+            onClick={() => setTocVisible(!tocVisible)}
+            className={`shrink-0 w-9 h-5 rounded-full transition-colors relative ${tocVisible ? 'bg-accent-main' : 'bg-border-strong'}`}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-bg-app shadow transition-transform ${tocVisible ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
+          </button>
+        </div>
+        <div className="px-3 py-2.5">
+          <div className="text-[13px] text-tx-main mb-2">Default position</div>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setTocMode('floating')}
+              disabled={!tocVisible}
+              className={`px-3 py-2 rounded border text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                tocMode === 'floating'
+                  ? 'border-accent-main bg-accent-main/5 text-tx-active'
+                  : 'border-border-subtle text-tx-muted hover:border-border-strong'
+              }`}
+            >
+              <div className="text-[12px] font-medium">Floating</div>
+              <div className="text-[10px] text-tx-faint mt-0.5">Overlays the note, top-right</div>
+            </button>
+            <button
+              onClick={() => setTocMode('pinned')}
+              disabled={!tocVisible}
+              className={`px-3 py-2 rounded border text-left transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                tocMode === 'pinned'
+                  ? 'border-accent-main bg-accent-main/5 text-tx-active'
+                  : 'border-border-subtle text-tx-muted hover:border-border-strong'
+              }`}
+            >
+              <div className="text-[12px] font-medium">Pinned</div>
+              <div className="text-[10px] text-tx-faint mt-0.5">Inline sidebar, takes width</div>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -2062,10 +2113,9 @@ const SHORTCUTS: { group: string; items: { keys: string; label: string }[] }[] =
   {
     group: 'Global',
     items: [
-      { keys: '⌘K', label: 'Open command palette (search everything)' },
-      { keys: '⌘P', label: 'Open command palette (same as ⌘K)' },
+      { keys: '⌘P', label: 'Open command palette (search files, apps, actions)' },
       { keys: '⌘⇧P', label: 'Open command palette in command mode' },
-      { keys: '⌘⇧K', label: 'Open context panel (inject files/links into terminal)' },
+      { keys: '⌘⇧K', label: 'Copy resource path / inject into terminal (context panel)' },
       { keys: '⌘\\', label: 'Toggle sidebar' },
       { keys: 'Esc', label: 'Close command palette / file switcher / modal' },
     ],
@@ -2080,7 +2130,7 @@ const SHORTCUTS: { group: string; items: { keys: string; label: string }[] }[] =
     ],
   },
   {
-    group: 'Command Palette prefixes — type after ⌘K',
+    group: 'Command Palette prefixes — type after ⌘P',
     items: [
       { keys: '>', label: 'Run a command (new note, toggle sidebar, etc.)' },
       { keys: '#', label: 'Search inside file contents (ripgrep)' },

@@ -25,6 +25,60 @@ export function getTerminalRefs(): Map<string, React.RefObject<TerminalViewHandl
   return terminalRefs
 }
 
+/**
+ * Open a terminal session in whichever surface the user's currently looking
+ * at (Classic mode → the classic term pane tree; Tabs mode → a tab in the
+ * focused pane) and focus the xterm instance once it's rendered.
+ *
+ * Used by Command Palette, sidebar selects, etc. — anywhere that used to
+ * just call `setActiveTerminalId` (which only flipped a flag and did not
+ * actually route the session to any visible pane or focus the shell).
+ */
+export function openTerminalInCurrentSurface(sessionId: string): void {
+  const state = useUIStore.getState()
+  state.setCurrentApp('terminal.app')
+  if (state.contentLayoutMode === 'single') {
+    state.openClassicTermSession(sessionId)
+  } else {
+    const focused = state.focusedPaneId ?? Object.keys(state.panes)[0]
+    if (focused) state.openTabInPane(focused, 'terminal.app', sessionId)
+  }
+  state.setActiveTerminalId(sessionId)
+  // Focus the xterm once it's actually mounted. Retry a couple of frames so
+  // we don't miss the moment between React committing and xterm being opened.
+  let attempts = 0
+  const tryFocus = (): void => {
+    const ref = terminalRefs.get(sessionId)
+    if (ref?.current) {
+      ref.current.focus()
+      return
+    }
+    if (attempts++ < 10) requestAnimationFrame(tryFocus)
+  }
+  requestAnimationFrame(tryFocus)
+}
+
+/**
+ * Spawn a brand-new PTY + register the session + route it to the current
+ * surface. Returns the session id on success. Single place that "New
+ * Terminal" code paths should go through.
+ */
+export async function createAndOpenTerminal(): Promise<string | null> {
+  const state = useUIStore.getState()
+  const cwd = state.codeProjectPath ?? undefined
+  const res = await window.api.terminal.create(cwd)
+  if (!res.ok) return null
+  const count = state.terminalSessions.length
+  state.addTerminalSession({
+    id: res.data,
+    persistKey: genTerminalPersistKey(),
+    title: `Terminal ${count + 1}`,
+    cwd,
+  })
+  openTerminalInCurrentSurface(res.data)
+  return res.data
+}
+
 export const TerminalApp: React.FC = () => {
   const paneId = usePaneId()
   const itemId = usePaneItemId()

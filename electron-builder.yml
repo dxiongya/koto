@@ -40,5 +40,5 @@ appImage:
 npmRebuild: false
 publish:
   provider: github
-  owner: koto-app
+  owner: dxiongya
   repo: koto

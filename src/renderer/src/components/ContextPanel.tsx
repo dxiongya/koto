@@ -189,11 +189,25 @@ function ContextPanelInner({ onClose }: { onClose: () => void }) {
     setSelectedIndex((prev) => Math.min(prev, Math.max(0, items.length - 1)))
   }, [items.length])
 
-  // Inject into terminal
+  // Always copy the resource path/text to the clipboard. Additionally
+  // inject it into the focused terminal — but ONLY when terminal.app is the
+  // surface the user is currently looking at, otherwise we'd silently
+  // dump text into a backgrounded session the user can't see.
   const inject = useCallback((item: ContextItem) => {
-    const { activeTerminalId } = useUIStore.getState()
-    if (!activeTerminalId) return
-    window.api.terminal.write(activeTerminalId, item.injectText)
+    const state = useUIStore.getState()
+    void navigator.clipboard.writeText(item.injectText)
+
+    const focusedPane = state.focusedPaneId ? state.panes[state.focusedPaneId] : null
+    const focusedTab = focusedPane?.tabs.find((t) => t.id === focusedPane.activeTabId)
+    const terminalIsFocused =
+      focusedTab?.appId === 'terminal.app' || state.currentApp === 'terminal.app'
+
+    if (terminalIsFocused && state.activeTerminalId) {
+      window.api.terminal.write(state.activeTerminalId, item.injectText)
+      state.setAppToast({ message: '已注入到终端并复制', status: 'success' })
+    } else {
+      state.setAppToast({ message: '已复制到剪贴板', status: 'success' })
+    }
     onClose()
   }, [onClose])
 
@@ -304,7 +318,7 @@ function ContextPanelInner({ onClose }: { onClose: () => void }) {
 
         {/* Footer */}
         <div className="flex items-center gap-3 px-4 py-2 border-t border-border-subtle text-[10px] text-tx-faint">
-          <span><kbd className="bg-bg-hover px-1 py-0.5 rounded border border-border-subtle">Enter</kbd> inject to terminal</span>
+          <span><kbd className="bg-bg-hover px-1 py-0.5 rounded border border-border-subtle">Enter</kbd> copy (terminal also injects)</span>
           <span><kbd className="bg-bg-hover px-1 py-0.5 rounded border border-border-subtle">Tab</kbd> switch mode</span>
         </div>
       </div>

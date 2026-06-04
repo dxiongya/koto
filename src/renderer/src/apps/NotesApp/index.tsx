@@ -4,6 +4,62 @@ import { usePaneActiveFile } from '../../layouts/PaneContext'
 import { LexicalEditor } from './LexicalEditor'
 import { FileText } from 'lucide-react'
 
+// ── Auto-rename helpers ───────────────────────────────────────────────
+// Pull a human title out of the first H1 heading (preferred), else the
+// first non-blank, non-meta line. Returns null if nothing usable yet —
+// caller skips the rename.
+function deriveTitleFromMarkdown(md: string): string | null {
+  const lines = md.split('\n')
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (!line) continue
+    // Skip frontmatter fences and rule-only lines.
+    if (line === '---') continue
+    if (/^-{3,}$/.test(line) || /^_{3,}$/.test(line) || /^\*{3,}$/.test(line)) continue
+    // Skip image-only lines and unfinished heading markers (`#`, `##` with
+    // no text after) — those happen mid-edit and would otherwise produce
+    // garbage filenames like "#.md".
+    if (/^!\[/.test(line)) continue
+    if (/^#+\s*$/.test(line)) continue
+
+    // First proper H1 wins.
+    const h1 = line.match(/^#\s+(.+)$/)
+    if (h1) return h1[1].trim()
+    // H2/H3/... accepted as a fallback.
+    const h = line.match(/^#{2,6}\s+(.+)$/)
+    if (h) return h[1].trim()
+    // Plain text fallback: strip leading bullet/number prefixes, inline
+    // formatting markers, and link wrappers. Then return.
+    const cleaned = line
+      .replace(/^#+\s*/, '')
+      .replace(/^[-*+]\s+/, '')
+      .replace(/^\d+\.\s+/, '')
+      .replace(/^>\s*/, '')
+      .replace(/\[(.*?)\]\([^)]*\)/g, '$1')
+      .replace(/[*_`~]/g, '')
+      .trim()
+    return cleaned || null
+  }
+  return null
+}
+
+// Returns true if the candidate filename has at least one "word" character
+// (latin letter, digit, or CJK ideograph) — guards against renaming a file
+// to pure punctuation like "#" or "...".
+function hasMeaningfulCharacter(s: string): boolean {
+  return /[\p{L}\p{N}一-鿿]/u.test(s)
+}
+
+// Strip filesystem-illegal characters and tidy whitespace.
+function sanitizeFilename(name: string): string {
+  return name
+    .replace(/[\\/:*?"<>|]/g, ' ')
+    .replace(/^[#>\-*+]+\s*/, '')
+    .replace(/\.+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export const NotesApp: React.FC = () => {
   const showCommandPalette = useUIStore((s) => s.showCommandPalette)
   // Read from the pane's own state — each notes pane shows an independent file.
@@ -69,13 +125,46 @@ export const NotesApp: React.FC = () => {
   }, [activeFilePath])
 
   const handleSave = useCallback(
-    (markdown: string) => {
-      if (activeFilePath) {
-        lastEditorWriteRef.current = Date.now()
-        window.api.fs.writeFile(activeFilePath, markdown)
+    async (markdown: string) => {
+      if (!activeFilePath) return
+      lastEditorWriteRef.current = Date.now()
+      await window.api.fs.writeFile(activeFilePath, markdown)
+
+      // Auto-rename "Untitled" / "Untitled N" notes once the user has
+      // written real content. Pulls the title from the first H1 heading,
+      // else the first non-empty line. Runs at most once per file (the
+      // rename changes the basename so subsequent saves no longer match).
+      const basename = activeFilePath.split('/').pop() ?? ''
+      if (!/^Untitled( \d+)?\.md$/i.test(basename)) return
+      const dir = activeFilePath.slice(0, -basename.length - 1)
+      const title = deriveTitleFromMarkdown(markdown)
+      if (!title) return
+      const safe = sanitizeFilename(title).slice(0, 60)
+      if (!safe) return
+      if (/^untitled( \d+)?$/i.test(safe)) return
+      // Reject all-punctuation candidates ("#", "...", "—", etc.) — those
+      // are mid-edit artefacts, not a real title.
+      if (!hasMeaningfulCharacter(safe)) return
+      // Pick a unique target name in the same directory.
+      const dirRes = await window.api.fs.readDir(dir)
+      const taken = new Set(dirRes.ok ? dirRes.data.map((f) => f.name) : [])
+      let candidate = `${safe}.md`
+      if (taken.has(candidate) && candidate !== basename) {
+        for (let i = 2; i < 100; i++) {
+          const next = `${safe} ${i}.md`
+          if (!taken.has(next)) { candidate = next; break }
+        }
+      }
+      if (candidate === basename) return
+      const newPath = `${dir}/${candidate}`
+      const renameRes = await window.api.fs.rename(activeFilePath, newPath)
+      if (renameRes.ok) {
+        // Point the active tab at the renamed file. The watcher will pick
+        // up the rename event but we don't want to wait for it.
+        setPaneActiveFile(newPath)
       }
     },
-    [activeFilePath],
+    [activeFilePath, setPaneActiveFile],
   )
 
   const handleQuickCreate = useCallback(async () => {

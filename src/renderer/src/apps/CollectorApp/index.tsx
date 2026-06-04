@@ -299,6 +299,20 @@ export const CollectorApp: React.FC = () => {
 
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent): void => {
+      // Only handle paste when THIS collector instance is the one the user
+      // is actually looking at. Each mounted CollectorApp registers a
+      // window-level paste listener; without this guard, pasting into a
+      // sibling notes/terminal pane would still silently collect into
+      // whichever collector happens to exist, which is confusing.
+      const state = useUIStore.getState()
+      if (paneId) {
+        if (state.focusedPaneId !== paneId) return
+        const pane = state.panes[paneId]
+        if (!pane || pane.activeTabId !== itemId) return
+      } else {
+        // Classic / single-app mode: only collect when collector is the front app.
+        if (state.currentApp !== 'collector.app') return
+      }
       const tag = (document.activeElement as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
       const files = e.clipboardData?.files
@@ -312,7 +326,7 @@ export const CollectorApp: React.FC = () => {
     }
     window.addEventListener('paste', handlePaste)
     return () => window.removeEventListener('paste', handlePaste)
-  }, [])
+  }, [paneId, itemId])
 
   // Cross-app drags (terminal/notes/pane-tab moves, lite resources from the
   // sidebar) are routed by PaneHost — either split/dock or open-as-tab. If
@@ -505,12 +519,17 @@ export const CollectorApp: React.FC = () => {
             {searchResults === null && <button onClick={() => setShowCollectPanel(true)} className="text-[12px] text-accent-main hover:underline">Collect your first item</button>}
           </div>
         ) : viewMode === 'grid' ? (
-          <div
-            className="grid gap-2.5 p-0.5 pb-4"
-            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}
-          >
+          // CSS multi-column masonry: variable card heights stack without
+          // the row-locked gaps a uniform grid produces. Column-major order
+          // (newest fills column 1 first) — same flow react-masonry-css uses,
+          // no extra dep needed.
+          <div className="columns-[220px] gap-2.5 p-0.5 pb-4 [column-fill:_balance]">
             {filteredItems.map((item) => (
-              <div key={item.id} data-collector-id={item.id} className={focusedItemId === item.id ? 'ring-2 ring-accent-main rounded-md transition-all' : ''}>
+              <div
+                key={item.id}
+                data-collector-id={item.id}
+                className={`break-inside-avoid mb-2.5 ${focusedItemId === item.id ? 'ring-2 ring-accent-main rounded-md transition-all' : ''}`}
+              >
                 <ItemCard item={item} onDelete={handleDelete} onOpen={handleOpen} onSendToWiki={handleSendToWiki} />
               </div>
             ))}

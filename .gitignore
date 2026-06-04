@@ -4,3 +4,11 @@ out
 .DS_Store
 .eslintcache
 *.log*
+
+# Build / TS cache
+*.tsbuildinfo
+.icon-backup-*
+
+# Local-only scratch test docs
+test-*.md
+

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import { getAppRegistry } from '../core/AppContext'
-import { DEFAULT_ENABLED } from '../core/builtinApps'
+import { DEFAULT_ENABLED, registerBuiltinApps } from '../core/builtinApps'
 
 type Step = {
   id: string
@@ -105,8 +105,8 @@ const AppsCard = ({
 )
 
 const SHORTCUTS = [
-  { keys: '⌘K', label: 'Open command palette (search everything)' },
-  { keys: '⌘⇧K', label: 'Context panel (inject into terminal)' },
+  { keys: '⌘P', label: 'Open command palette (search everything)' },
+  { keys: '⌘⇧K', label: 'Copy resource path / inject into terminal' },
   { keys: '⌃Tab', label: 'Switch between recent files & terminals' },
   { keys: '⌘\\', label: 'Toggle sidebar' },
 ] as const
@@ -148,7 +148,7 @@ const PaletteCard = (): React.ReactElement => (
       <h2 className="text-[18px] font-semibold text-tx-main">Command palette tips</h2>
     </div>
     <p className="text-center text-[12px] text-tx-faint mb-6">
-      Press <kbd className="px-1.5 py-0.5 font-mono text-[10px] bg-bg-hover border border-border-subtle rounded">⌘K</kbd>, then type a prefix to filter.
+      Press <kbd className="px-1.5 py-0.5 font-mono text-[10px] bg-bg-hover border border-border-subtle rounded">⌘P</kbd>, then type a prefix to filter.
     </p>
     <div className="space-y-1.5">
       {PALETTE_PREFIXES.map((p) => (
@@ -209,23 +209,36 @@ export function WelcomeDialog(): React.ReactElement | null {
   }, [])
 
   // Persist app selection + toggle registry + remember welcome seen.
-  const persistAndClose = useCallback(() => {
+  // The order matters: write to disk FIRST, then re-run the full registry
+  // bootstrap so the in-memory registry is guaranteed to mirror the
+  // persisted state. The earlier "loop registry.setEnabled + bump version"
+  // approach left a window where setEnabled could race with first-boot
+  // registerBuiltinApps and silently no-op for apps not yet registered —
+  // which is what caused the "走完引导后界面空白，要重启两次" symptom.
+  const persistAndClose = useCallback(async () => {
+    const selectedArray = Array.from(selectedApps)
+    const safeEnabled = selectedArray.length > 0 ? selectedArray : [...DEFAULT_ENABLED_APPS]
+
+    // 1. Write the user's selection to disk and wait for it to land before
+    //    re-running registry bootstrap (registerBuiltinApps reads from disk).
+    await window.api.state.update({ enabledApps: safeEnabled }).catch(() => {})
+
+    // 2. Re-bootstrap the registry from the just-persisted selection. This
+    //    is idempotent: register() ignores duplicate ids, and setEnabled()
+    //    inside the bootstrap is now guaranteed to act on already-registered
+    //    apps.
     try {
+      await registerBuiltinApps(getAppRegistry())
+    } catch {
+      // Fall back to in-place toggling if re-bootstrap fails for any reason.
       const registry = getAppRegistry()
-      // Update registry for the apps shown in the welcome dialog
       for (const app of APPS) {
         registry.setEnabled(app.id, selectedApps.has(app.id))
       }
-      // Persist ALL enabled apps from the registry (not just the APPS constant)
-      // so apps not listed in the welcome dialog keep their enabled state.
-      const allEnabled = registry.getEnabled().map((a) => a.definition.manifest.id)
-      window.api.state.update({ enabledApps: allEnabled }).catch(() => {})
-    } catch {
-      // Registry not ready — save just the selected set as fallback
-      window.api.state.update({ enabledApps: Array.from(selectedApps) }).catch(() => {})
     }
-    // Bump the apps version so Sidebar re-reads the registry and shows the
-    // newly-enabled apps immediately (no manual refresh needed).
+
+    // 3. Force every consumer (Sidebar, PaneTree, etc.) to recompute now
+    //    that the registry has the right shape.
     useUIStore.getState().bumpAppsVersion()
     setHasSeenWelcome(true)
   }, [selectedApps, setHasSeenWelcome])

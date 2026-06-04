@@ -27,6 +27,16 @@ export const ItemListRow: React.FC<{ item: CollectedItem; onDelete: (id: string)
           assetPath: item.assetPath,
           note: item.note,
         })
+        // External-app MIMEs (chat/browser/etc.) — see ItemCard.tsx.
+        // The OS-level file drag intentionally does NOT fire here; mixing
+        // it with HTML5 drag locks the input loop. List rows don't have a
+        // dedicated drag handle (Card view does); user can switch view if
+        // they need the external-file workflow.
+        const plainText = item.type === 'text'
+          ? (item.note || item.title)
+          : (item.url || item.title)
+        if (plainText) e.dataTransfer.setData('text/plain', plainText)
+        if (item.url) e.dataTransfer.setData('text/uri-list', item.url)
         e.dataTransfer.effectAllowed = 'copyMove'
       }}
       onClick={() => onOpen(item)}

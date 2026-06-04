@@ -1,0 +1,63 @@
+name: Release macOS
+
+on:
+  push:
+    tags:
+      - 'v*'           # e.g. v1.0.0, v1.2.3-beta
+  workflow_dispatch:    # also lets you trigger manually from Actions tab
+
+permissions:
+  contents: write       # required to upload built .dmg/.zip to a GitHub Release
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        # `electron-builder install-app-deps` (run via postinstall) rebuilds
+        # native modules (better-sqlite3, node-pty) against the Electron ABI.
+        run: pnpm install --frozen-lockfile
+
+      - name: Build & package (.app / .dmg / .zip)
+        env:
+          # CI doesn't have the user's Apple Developer cert; tell electron-
+          # builder to skip auto-discovery and produce an ad-hoc signed app.
+          # Users will need to right-click → Open the first time, or run
+          # `xattr -dr com.apple.quarantine` on the installed .app.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: pnpm build:mac
+
+      - name: Upload artifacts (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: koto-mac-arm64
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/latest-mac.yml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Publish to GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.dmg
+            dist/*.zip
+            dist/latest-mac.yml
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true

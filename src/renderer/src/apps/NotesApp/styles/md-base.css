@@ -174,3 +174,22 @@
   color: var(--md-hashtag-color) !important;
   border-radius: var(--md-hashtag-radius) !important;
 }
+
+/* ── Reading aids (CSS Custom Highlight API) ───────────────────────────
+ * ReadingHighlightPlugin paints these via Range objects; we never mutate
+ * the DOM. Colors are subtle on purpose — these are reading anchors, not
+ * banners. They should disappear into the page at a glance and only pop
+ * when the eye scans for structure.
+ */
+::highlight(rd-keyword) {
+  background-color: color-mix(in srgb, var(--status-warning) 22%, transparent);
+  color: var(--status-warning);
+  border-radius: 3px;
+}
+::highlight(rd-number) {
+  color: var(--accent-main);
+}
+::highlight(rd-acronym) {
+  color: color-mix(in srgb, var(--accent-main) 80%, var(--tx-main) 20%);
+  letter-spacing: 0.02em;
+}

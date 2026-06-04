@@ -250,8 +250,12 @@ export async function semanticSearch(query: string, topK = 20): Promise<SearchRe
     source: 'semantic' as const,
   }))
 
-  // Filter by minimum similarity threshold, then sort
-  const MIN_SIMILARITY = 0.7
+  // Threshold tuning: Gemini cross-language similarity (e.g. Chinese query
+  // vs English content) typically lands in 0.55-0.70 — a 0.7 cutoff was
+  // dropping legitimate matches like "爬虫" → "Stealth Chromium / bot
+  // detection / Playwright". 0.5 is a more forgiving floor; RRF still
+  // ranks tighter matches first via cosine score.
+  const MIN_SIMILARITY = 0.5
   const filtered = scored.filter((s) => s.score >= MIN_SIMILARITY)
   filtered.sort((a, b) => b.score - a.score)
   console.log(`[Search] ${filtered.length}/${scored.length} pass threshold ${MIN_SIMILARITY}. All scores: ${scored.map(s => (s.score * 100).toFixed(1) + '%').join(', ')}`)

@@ -144,10 +144,10 @@ function HorizontalRuleComponent({ nodeKey }: { nodeKey: NodeKey }): JSX.Element
   }, [isSelected, editor, clearSelection, setSelected, nodeKey])
 
   return (
-    <div data-hr-key={nodeKey} className="py-3 cursor-pointer">
+    <div data-hr-key={nodeKey} className="py-1 cursor-pointer">
       <hr
         className={`border-0 h-[1px] transition-colors ${
-          isSelected ? 'bg-accent-main' : 'bg-bg-active'
+          isSelected ? 'bg-accent-main' : 'bg-border-strong'
         }`}
       />
     </div>

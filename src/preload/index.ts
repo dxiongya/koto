@@ -337,6 +337,10 @@ const api = {
     openExternal: (url: string) => ipcRenderer.invoke(IpcChannels.SHELL_OPEN_EXTERNAL, url),
     openPath: (filePath: string) => ipcRenderer.invoke(IpcChannels.SHELL_OPEN_PATH, filePath),
     revealPath: (filePath: string) => ipcRenderer.invoke(IpcChannels.SHELL_REVEAL_PATH, filePath),
+    // Fire-and-forget: starts a native OS-level drag so the file can be
+    // dropped into apps outside Lite (Finder, Photoshop, Slack, etc.).
+    // Must be called from inside a `dragstart` event handler.
+    startDrag: (filePath: string) => ipcRenderer.send(IpcChannels.SHELL_START_DRAG, { filePath }),
   },
   shortcut: {
     onShortcut: (callback: (shortcut: string) => void) => {

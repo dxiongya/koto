@@ -2,9 +2,10 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   Search, FileText, FileCode, Terminal, Settings, Globe, Archive,
   Plus, PanelLeft, Moon, Sun, ArrowRight, Hash, Clock, HelpCircle,
-  Link, Image, Video, Twitter, Monitor, Type, Brain, BookOpen,
+  Link, Image, Video, Twitter, Monitor, Type, Brain, BookOpen, Folder,
 } from 'lucide-react'
-import { useUIStore, genTerminalPersistKey } from '../store/useUIStore'
+import { useUIStore } from '../store/useUIStore'
+import { openTerminalInCurrentSurface, createAndOpenTerminal } from '../apps/TerminalApp/index'
 import type { AppType } from '../../../shared/types'
 import type { AppSearchResult } from '../../../shared/app-interface'
 import { getAppBus } from '../core/AppContext'
@@ -245,6 +246,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
   const SEARCH_ICON_MAP: Record<string, React.FC<{ size?: number; className?: string }>> = {
     'file-text': FileText, link: Link, image: Image, twitter: Twitter,
     archive: Archive, video: Video, monitor: Monitor, type: Type, terminal: Terminal,
+    folder: Folder,
   }
 
   const shouldSearch = (appShortcutMatch && searchQuery.length >= 1) ||
@@ -295,10 +297,12 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
           const store = useUIStore.getState()
           if (r.action.type === 'open-file') {
             const app: AppType = r.source === 'notes.app' ? 'notes.app' : 'code.app'
+            // setCurrentApp ensures the focused pane has a tab for the right
+            // app, then setActiveFilePath wires that tab to the file —
+            // works in both Tabs and Classic layout modes. Writing directly
+            // to appStates was Classic-only and silently no-op'd under Tabs.
             store.setCurrentApp(app)
-            useUIStore.setState({
-              appStates: { ...store.appStates, [app]: { ...store.appStates[app], activeFilePath: r.action.path } },
-            })
+            store.setActiveFilePath(r.action.path)
             if (r.action.line) {
               setTimeout(() => window.dispatchEvent(new CustomEvent('lite:goto-line', { detail: { line: r.action.line } })), 100)
             }
@@ -362,18 +366,30 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       const commands: PaletteItem[] = [
         {
           id: 'cmd:new-note', label: 'New Note', icon: Plus, category: 'Actions',
-          action: () => store.setCurrentApp('notes.app'),
+          // Actually create + open a fresh "Untitled" .md instead of just
+          // switching to the notes app with an empty tab — that did nothing
+          // visible in tabs mode and was a dead-end for users.
+          action: async () => {
+            if (!liteHome) { store.setCurrentApp('notes.app'); return }
+            const notesDir = `${liteHome}/notes`
+            const res = await window.api.fs.readDir(notesDir)
+            const existing = res.ok ? res.data.map((f: { name: string }) => f.name) : []
+            let name = 'Untitled'
+            if (existing.includes('Untitled.md')) {
+              let i = 2
+              while (existing.includes(`Untitled ${i}.md`)) i++
+              name = `Untitled ${i}`
+            }
+            const filePath = `${notesDir}/${name}.md`
+            await window.api.fs.createFile(filePath)
+            await window.api.fs.writeFile(filePath, `# ${name}\n\n`)
+            store.setCurrentApp('notes.app')
+            store.setActiveFilePath(filePath)
+          },
         },
         {
           id: 'cmd:new-terminal', label: 'New Terminal', icon: Terminal, category: 'Actions',
-          action: async () => {
-            const cwd = store.codeProjectPath ?? undefined
-            const res = await window.api.terminal.create(cwd)
-            if (res.ok) {
-              store.addTerminalSession({ id: res.data, persistKey: genTerminalPersistKey(), title: `Terminal ${store.terminalSessions.length + 1}`, cwd })
-              store.setCurrentApp('terminal.app')
-            }
-          },
+          action: () => { void createAndOpenTerminal() },
         },
         {
           id: 'cmd:toggle-sidebar', label: 'Toggle Sidebar', shortcut: '⌘\\', icon: PanelLeft, category: 'Actions',
@@ -418,18 +434,16 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
         if (appId === currentApp) continue
         commands.push({
           id: `cmd:switch-${appId}`, label: `Switch to ${meta.label}`, icon: meta.icon, category: 'Apps',
-          action: async () => {
+          action: () => {
             store.setCurrentApp(appId as AppType)
             if (appId === 'terminal.app') {
               const sessions = store.terminalSessions
-              if (sessions.length > 0 && !store.activeTerminalId) {
-                store.setActiveTerminalId(sessions[0].id)
-              } else if (sessions.length === 0) {
-                const cwd = store.codeProjectPath ?? undefined
-                const res = await window.api.terminal.create(cwd)
-                if (res.ok) {
-                  store.addTerminalSession({ id: res.data, persistKey: genTerminalPersistKey(), title: 'Terminal 1', cwd })
-                }
+              if (sessions.length > 0) {
+                openTerminalInCurrentSurface(sessions[store.activeTerminalId
+                  ? Math.max(0, sessions.findIndex((s) => s.id === store.activeTerminalId))
+                  : sessions.length - 1].id)
+              } else {
+                void createAndOpenTerminal()
               }
             }
           },
@@ -455,24 +469,24 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
           icon: Clock,
           category: 'Recent',
           boost: recentRankByKey.get(key) || 0,
-          action: () => { store.setCurrentApp('terminal.app'); store.setActiveTerminalId(session.id) },
+          action: () => { openTerminalInCurrentSurface(session.id) },
         })
       } else if (recent.path) {
-        const fileName = recent.path.split('/').pop() || recent.path
-        const isNote = recent.app === 'notes.app'
-        seenRecentKeys.add(recent.path)
+        const path = recent.path
+        const app = recent.app
+        const fileName = path.split('/').pop() || path
+        const isNote = app === 'notes.app'
+        seenRecentKeys.add(path)
         all.push({
-          id: `recent:${recent.path}`,
+          id: `recent:${path}`,
           label: fileName,
-          hint: isNote ? 'notes' : recent.path.split('/').slice(-2, -1)[0],
+          hint: isNote ? 'notes' : path.split('/').slice(-2, -1)[0],
           icon: Clock,
           category: 'Recent',
-          boost: recentRankByKey.get(recent.path) || 0,
+          boost: recentRankByKey.get(path) || 0,
           action: () => {
-            store.setCurrentApp(recent.app)
-            useUIStore.setState({
-              appStates: { ...store.appStates, [recent.app]: { ...store.appStates[recent.app], activeFilePath: recent.path } },
-            })
+            store.setCurrentApp(app)
+            store.setActiveFilePath(path)
           },
         })
       }
@@ -483,19 +497,15 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       if (appId === currentApp) continue
       all.push({
         id: `app:${appId}`, label: meta.label, icon: meta.icon, category: 'Apps',
-        action: async () => {
+        action: () => {
           store.setCurrentApp(appId as AppType)
-          // Ensure terminal has an active session when switching to it
+          // Ensure terminal has an active session + is focused when switching.
           if (appId === 'terminal.app') {
             const sessions = store.terminalSessions
-            if (sessions.length > 0 && !store.activeTerminalId) {
-              store.setActiveTerminalId(sessions[0].id)
-            } else if (sessions.length === 0) {
-              const cwd = store.codeProjectPath ?? undefined
-              const res = await window.api.terminal.create(cwd)
-              if (res.ok) {
-                store.addTerminalSession({ id: res.data, persistKey: genTerminalPersistKey(), title: 'Terminal 1', cwd })
-              }
+            if (sessions.length > 0) {
+              openTerminalInCurrentSurface(store.activeTerminalId ?? sessions[sessions.length - 1].id)
+            } else {
+              void createAndOpenTerminal()
             }
           }
         },
@@ -512,9 +522,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
         boost: mruRank + (currentApp === 'notes.app' ? 5 : 0),
         action: () => {
           store.setCurrentApp('notes.app')
-          useUIStore.setState({
-            appStates: { ...store.appStates, 'notes.app': { ...store.appStates['notes.app'], activeFilePath: file.path } },
-          })
+          store.setActiveFilePath(file.path)
         },
       })
     }
@@ -530,9 +538,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
         boost: mruRank + (currentApp === 'code.app' ? 5 : 0),
         action: () => {
           store.setCurrentApp('code.app')
-          useUIStore.setState({
-            appStates: { ...store.appStates, 'code.app': { ...store.appStates['code.app'], activeFilePath: file.path } },
-          })
+          store.setActiveFilePath(file.path)
         },
       })
     }
@@ -563,6 +569,15 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
             useUIStore.setState({
               appStates: { ...store.appStates, 'collector.app': { ...store.appStates['collector.app'], activeFilePath: 'all' } },
             })
+            // Tell the mounted CollectorApp to scroll to + ring-highlight
+            // the item. Fires after setCurrentApp so the listener (attached
+            // on mount) is ready. One frame delay covers the case where
+            // CollectorApp is mounting for the first time.
+            requestAnimationFrame(() => {
+              window.dispatchEvent(
+                new CustomEvent('lite:collector-focus-item', { detail: { itemId: ci.id } }),
+              )
+            })
           },
         })
       }
@@ -573,14 +588,7 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
       { id: 'action:new-note', label: 'New Note', icon: Plus, category: 'Actions', action: () => store.setCurrentApp('notes.app') },
       {
         id: 'action:new-terminal', label: 'New Terminal', icon: Plus, category: 'Actions',
-        action: async () => {
-          const cwd = store.codeProjectPath ?? undefined
-          const res = await window.api.terminal.create(cwd)
-          if (res.ok) {
-            store.addTerminalSession({ id: res.data, persistKey: genTerminalPersistKey(), title: `Terminal ${store.terminalSessions.length + 1}`, cwd })
-            store.setCurrentApp('terminal.app')
-          }
-        },
+        action: () => { void createAndOpenTerminal() },
       },
     )
 
@@ -699,16 +707,20 @@ function CommandPaletteInner({ onClose }: { onClose: () => void }) {
           />
           {!isCommandMode && !isContentMode && !isLineMode && !isHelpMode && !appShortcutMatch && (
             <div className="flex items-center gap-1.5">
-              <button type="button" aria-label="Command mode" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
+              <button type="button" aria-label="Command mode" title="Run a command (>)"
+                className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
                 onClick={() => { setQuery('>'); inputRef.current?.focus() }}>{'>'}</button>
-              <button type="button" aria-label="Search content" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
+              <button type="button" aria-label="Search content" title="Search inside file contents (#)"
+                className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
                 onClick={() => { setQuery('#'); inputRef.current?.focus() }}>#</button>
               {Object.entries(APP_SHORTCUTS).map(([key, { label }]) => (
                 <button key={key} type="button" aria-label={`Search ${label}`}
+                  title={`Search only ${label} (${key} <query>)`}
                   className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
                   onClick={() => { setQuery(`${key} `); inputRef.current?.focus() }}>{key}</button>
               ))}
-              <button type="button" aria-label="Go to line" className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
+              <button type="button" aria-label="Go to line" title="Jump to line number (:42)"
+                className="text-[10px] text-tx-faint bg-bg-hover px-1.5 py-0.5 rounded border border-border-subtle cursor-pointer hover:text-tx-muted"
                 onClick={() => { setQuery(':'); inputRef.current?.focus() }}>:</button>
             </div>
           )}

@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import Graph from 'graphology'
 import Sigma from 'sigma'
+import forceAtlas2 from 'graphology-layout-forceatlas2'
 import FA2Layout from 'graphology-layout-forceatlas2/worker'
 import { Loader2 } from 'lucide-react'
 
@@ -134,6 +135,22 @@ export const WikiGraph: React.FC<WikiGraphProps> = ({ onSelectPage }) => {
           if (cancelled || !containerRef.current?.offsetWidth) { setLoading(false); return }
         }
 
+        // Pre-position with a synchronous FA2 pass so the graph appears
+        // already-settled at first paint. Without this the user sees the
+        // worker animating from random positions for a couple seconds —
+        // 600 iterations is enough for typical wiki sizes (<300 nodes) to
+        // converge into a stable shape.
+        const fa2Settings = {
+          gravity: 5,
+          scalingRatio: 2,
+          barnesHutOptimize: nodes.length > 50,
+          slowDown: 3,
+          strongGravityMode: true,
+        }
+        forceAtlas2.assign(graph, { iterations: 600, settings: fa2Settings })
+
+        if (cancelled) return
+
         // Create sigma renderer
         const sigma = new Sigma(graph, containerRef.current, {
           renderLabels: true,
@@ -165,22 +182,16 @@ export const WikiGraph: React.FC<WikiGraphProps> = ({ onSelectPage }) => {
         sigma.on('enterNode', handleEnterNode)
         sigma.on('leaveNode', handleLeaveNode)
 
-        // ForceAtlas2 layout
-        const layout = new FA2Layout(graph, {
-          settings: {
-            gravity: 5,
-            scalingRatio: 2,
-            barnesHutOptimize: nodes.length > 50,
-            slowDown: 3,
-            strongGravityMode: true,
-          },
-        })
+        // After the synchronous pre-pass the graph is already in a good
+        // shape. A short worker run polishes overlapping nodes — 1.2s is
+        // enough for visible refinement without the long "settling" effect.
+        const layout = new FA2Layout(graph, { settings: fa2Settings })
 
         if (cancelled) { sigma.kill(); return }
         layoutRef.current = layout
         layout.start()
 
-        layoutTimeoutId = setTimeout(() => { if (layoutRef.current === layout && !cancelled) layout.stop() }, 4000)
+        layoutTimeoutId = setTimeout(() => { if (layoutRef.current === layout && !cancelled) layout.stop() }, 1200)
       } finally {
         if (!cancelled) setLoading(false)
       }

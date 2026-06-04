@@ -1,0 +1,102 @@
+/**
+ * Editorial — documentation-style theme inspired by OpenRouter / Vercel /
+ * Linear docs. Brighter headings, tinted inline code, accented blockquotes
+ * used as callout boxes. Stays inside Koto's palette (teal + status tokens),
+ * just uses it more strategically than the Default theme.
+ *
+ * The intent is "restrained color, not no color" — paragraphs are still
+ * neutral, but inline code, links, lists, and quote blocks pick up tint
+ * cues so structure is visible at a glance.
+ */
+
+.markdown-body {
+  /* ── Typography ─────────────────────────────────────────── */
+  /* Slightly punchier body color — leans toward off-white rather than
+   * muted grey so the page reads "alive". */
+  --md-font-size: 15.5px;
+  --md-line-height: 1.75;
+  --md-color: color-mix(in srgb, var(--tx-main) 92%, var(--accent-main) 8%);
+
+  /* ── Headings ───────────────────────────────────────────── */
+  /* H1/H2 pop to pure white; H3 gets a hint of teal for hierarchy. */
+  --md-h1-size: 1.75em;
+  --md-h1-weight: 700;
+  --md-h1-color: #ffffff;
+  --md-h1-mt: 1.6em;
+  --md-h1-mb: 0.6em;
+
+  --md-h2-size: 1.35em;
+  --md-h2-weight: 650;
+  --md-h2-color: #f5f5f5;
+  --md-h2-mt: 1.4em;
+  --md-h2-mb: 0.5em;
+
+  --md-h3-size: 1.15em;
+  --md-h3-weight: 600;
+  --md-h3-color: color-mix(in srgb, #ffffff 85%, var(--accent-main) 15%);
+  --md-h3-mt: 1.2em;
+  --md-h3-mb: 0.4em;
+
+  --md-h4-size: 1em;
+  --md-h4-weight: 600;
+  --md-h4-color: var(--tx-muted);
+
+  /* ── Links ──────────────────────────────────────────────── */
+  /* Brighter teal that still reads as "link" against the warm body color.
+   * Hover lifts toward white. */
+  --md-link-color: #5eead4;
+  --md-link-hover-color: #99f6e4;
+  --md-link-decoration: underline;
+
+  /* ── Inline Code ────────────────────────────────────────── */
+  /* OpenRouter-style chip: tinted background + tinted text + subtle border.
+   * Reads as code AND is colorful enough to break up prose visually. */
+  --md-inline-code-bg: color-mix(in srgb, var(--accent-main) 10%, transparent);
+  --md-inline-code-color: color-mix(in srgb, var(--accent-main) 75%, #ffffff 25%);
+  --md-inline-code-radius: 0.3rem;
+  --md-inline-code-padding: 0.12em 0.42em;
+  --md-inline-code-font-size: 0.88em;
+
+  /* ── Blockquote (used as callout) ────────────────────────── */
+  /* Subtle emerald tint, left accent bar — turns a plain `>` block into a
+   * scannable highlight. Multiple status hues are available below via
+   * data-callout overrides. */
+  --md-quote-border-color: color-mix(in srgb, var(--status-success) 50%, transparent);
+  --md-quote-border-width: 3px;
+  --md-quote-bg: color-mix(in srgb, var(--status-success) 6%, transparent);
+  --md-quote-padding: 0.6em 0.9em 0.6em 1em;
+  --md-quote-color: color-mix(in srgb, var(--status-success) 60%, var(--tx-main) 40%);
+  --md-quote-font-style: normal;
+
+  /* ── Bold ───────────────────────────────────────────────── */
+  /* Bold pulls a hint of accent so it stands out without screaming. */
+  --md-bold-weight: 700;
+  --md-bold-color: #ffffff;
+
+  /* ── Lists ──────────────────────────────────────────────── */
+  --md-list-marker-color: var(--accent-main);
+
+  /* ── Hashtag ────────────────────────────────────────────── */
+  /* Slightly more chip-like — useful for tag-heavy notes. */
+  --md-hashtag-bg: color-mix(in srgb, var(--accent-main) 18%, transparent);
+  --md-hashtag-color: color-mix(in srgb, var(--accent-main) 85%, #ffffff 15%);
+
+  /* ── Highlight ──────────────────────────────────────────── */
+  --md-highlight-bg: color-mix(in srgb, var(--status-warning) 22%, transparent);
+  --md-highlight-color: color-mix(in srgb, var(--status-warning) 85%, #ffffff 15%);
+}
+
+/* Code-block surface — softer than default popover, with a touch more
+ * inset so it visually nests inside the page rather than floating on top. */
+.markdown-body .editor-code,
+.markdown-body pre {
+  background: color-mix(in srgb, var(--bg-popover) 80%, #000 20%) !important;
+  border-color: color-mix(in srgb, var(--border-subtle) 60%, var(--accent-main) 10%) !important;
+}
+
+/* H1 underline rule — gives long-form docs a chapter feel without being
+ * heavy. Uses the link color so the rule is on-palette. */
+.markdown-body h1 {
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent-main) 18%, transparent);
+}

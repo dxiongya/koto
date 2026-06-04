@@ -15,6 +15,7 @@ import { ContextMenuProvider } from './components/ContextMenu'
 import { FileSwitcher } from './components/FileSwitcher'
 import { ContextPanel } from './components/ContextPanel'
 import { WelcomeDialog } from './components/WelcomeDialog'
+import { AppToast } from './components/AppToast'
 import { builtinThemes, applyTheme, applyFont } from './themes'
 import type { FontId } from './themes'
 import { getAppRegistry, getAppBus } from './core/AppContext'
@@ -217,22 +218,51 @@ export default function App() {
               return ids
             }
 
-            let workspaces: { id: string; path: string; name: string; sessionIds: string[] }[]
+            // Walk a persisted classic SplitNode tree and remap old session
+            // ids to new ones. Leaves that can't be resolved (session gone)
+            // are pruned; if that collapses the whole tree, returns null.
+            function remapClassicLayout(node: SplitNode): SplitNode | null {
+              if (node.type === 'terminal') {
+                const newId = remapOldId(node.terminalId)
+                return newId ? { type: 'terminal', terminalId: newId } : null
+              }
+              const mapped = node.children
+                .map(remapClassicLayout)
+                .filter(Boolean) as SplitNode[]
+              if (mapped.length === 0) return null
+              if (mapped.length === 1) return mapped[0]
+              const sizesOk = node.sizes?.length === mapped.length ? node.sizes : undefined
+              return { type: 'split', direction: node.direction, children: mapped, sizes: sizesOk }
+            }
+
+            type SavedWsPlus = LegacyWs & { classicLayout?: SplitNode | null }
+            let workspaces: {
+              id: string; path: string; name: string
+              sessionIds: string[]; classicLayout?: SplitNode | null
+            }[]
             if (savedWorkspaces?.length) {
-              workspaces = savedWorkspaces.map((ws) => {
+              workspaces = (savedWorkspaces as SavedWsPlus[]).map((ws) => {
+                const classicLayout = ws.classicLayout
+                  ? remapClassicLayout(ws.classicLayout)
+                  : undefined
                 if (Array.isArray(ws.sessionIds)) {
                   // New-schema save — IDs are PTY ids from previous session;
                   // remap via persistKey only if they match old ids.
                   const mapped = ws.sessionIds
                     .map((id) => remapOldId(id) ?? (sessions.some((s) => s.id === id) ? id : null))
                     .filter(Boolean) as string[]
-                  return { id: ws.id, path: ws.path, name: ws.name, sessionIds: mapped }
+                  return {
+                    id: ws.id, path: ws.path, name: ws.name,
+                    sessionIds: mapped,
+                    ...(classicLayout !== undefined ? { classicLayout } : {}),
+                  }
                 }
                 return {
                   id: ws.id,
                   path: ws.path,
                   name: ws.name,
                   sessionIds: flattenLegacyGroups(ws.groups ?? []),
+                  ...(classicLayout !== undefined ? { classicLayout } : {}),
                 }
               })
             } else {
@@ -254,21 +284,44 @@ export default function App() {
             const savedActiveWsId = c.activeWorkspaceId as string | undefined
 
             // Remap stale terminal session ids in pane tabs so restored tabs
-            // reconnect to their freshly-created PTY instead of showing a UUID.
+            // reconnect to their freshly-created PTY instead of showing a
+            // "No terminal session" ghost. Tabs whose old id can't be
+            // resolved to a live session (PTY create failed, or the saved
+            // id is from an entirely orphaned save) are dropped — the user
+            // can always re-open the session from the sidebar.
             const currentPanes = useUIStore.getState().panes
-            let tabsChanged = false
+            let panesChanged = false
             const remappedPanes: typeof currentPanes = {}
+            const sessionIdSet = new Set(sessions.map((s) => s.id))
             for (const pid in currentPanes) {
               const p = currentPanes[pid]
-              const nextTabs = p.tabs.map((t) => {
-                if (t.appId !== 'terminal.app' || !t.resource) return t
+              let thisPaneChanged = false
+              const nextTabs = p.tabs.flatMap((t) => {
+                if (t.appId !== 'terminal.app' || !t.resource) return [t]
+                // 1) Already points at a live session (e.g. tab was created
+                //    within this session). Keep as-is.
+                if (sessionIdSet.has(t.resource)) return [t]
+                // 2) Old PTY id → persistKey → new PTY id.
                 const newId = remapOldId(t.resource)
-                if (!newId || newId === t.resource) return t
-                tabsChanged = true
-                const sess = sessions.find((s) => s.id === newId)
-                return { ...t, resource: newId, label: sess?.title ?? t.label }
+                if (newId && sessionIdSet.has(newId)) {
+                  thisPaneChanged = true
+                  const sess = sessions.find((s) => s.id === newId)
+                  return [{ ...t, resource: newId, label: sess?.title ?? t.label }]
+                }
+                // 3) Nothing resolves — drop the ghost tab.
+                thisPaneChanged = true
+                return []
               })
-              remappedPanes[pid] = tabsChanged ? { ...p, tabs: nextTabs } : p
+              if (thisPaneChanged) {
+                panesChanged = true
+                const nextActive =
+                  nextTabs.some((t) => t.id === p.activeTabId)
+                    ? p.activeTabId
+                    : nextTabs[0]?.id ?? null
+                remappedPanes[pid] = { ...p, tabs: nextTabs, activeTabId: nextActive }
+              } else {
+                remappedPanes[pid] = p
+              }
             }
 
             useUIStore.setState({
@@ -276,7 +329,7 @@ export default function App() {
               activeTerminalId: sessions[sessions.length - 1].id,
               terminalWorkspaces: workspaces,
               activeWorkspaceId: savedActiveWsId && workspaces.some((ws) => ws.id === savedActiveWsId) ? savedActiveWsId : workspaces[workspaces.length - 1]?.id ?? null,
-              ...(tabsChanged ? { panes: remappedPanes } : {}),
+              ...(panesChanged ? { panes: remappedPanes } : {}),
             })
           })
         }
@@ -421,6 +474,7 @@ export default function App() {
         terminalSessions: terminalSessions.map((t) => ({ id: t.id, persistKey: t.persistKey, title: t.title, cwd: t.cwd })),
         terminalWorkspaces: terminalWorkspaces.map((ws) => ({
           id: ws.id, path: ws.path, name: ws.name, sessionIds: ws.sessionIds,
+          ...(ws.classicLayout !== undefined ? { classicLayout: ws.classicLayout } : {}),
         })),
         activeWorkspaceId,
         activeTerminalId,
@@ -456,15 +510,18 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const store = useUIStore.getState()
 
-      // Cmd+Shift+K — Context Panel (inject notes/collector into terminal)
+      // Cmd+Shift+K — Context Panel: copy a resource path or inject it
+      // straight into the focused terminal (notes/collector/files).
       if (e.metaKey && e.key === 'k' && e.shiftKey) {
         e.preventDefault()
         store.setShowContextPanel(!store.showContextPanel)
         return
       }
 
-      // Cmd+K / Cmd+P — Command Palette (file search)
-      if (e.metaKey && (e.key === 'k' || e.key === 'p') && !e.shiftKey) {
+      // Cmd+P — Command Palette (file/app/action search). Cmd+K used to
+      // duplicate this; removed so it can be reclaimed (and so the binding
+      // table doesn't list two keys for the same action).
+      if (e.metaKey && e.key === 'p' && !e.shiftKey) {
         e.preventDefault()
         store.setShowCommandPalette(true)
         return
@@ -614,6 +671,7 @@ const ids = collectPaneIds(store.rootLayout)
       <FileSwitcher />
       <ContextPanel />
       <WelcomeDialog />
+      <AppToast />
     </>
   )
 }

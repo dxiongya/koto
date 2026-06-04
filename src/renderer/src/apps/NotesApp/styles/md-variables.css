@@ -98,7 +98,12 @@
   /* ── Horizontal Rule ────────────────────────────────────── */
   --md-hr-color: var(--border-subtle);
   --md-hr-height: 1px;
-  --md-hr-margin: 1.5em 0;
+  /* HR sits between block siblings that already have their own
+   * margin-top/bottom (paragraphs ~0.5em, headings ~1.1em+). With the old
+   * 1.5em-each-side spacing, total visual gap stacked up to ~3-4em which
+   * looked like a giant void around the divider. Tighten to 0.4em so the
+   * divider reads as a separator, not a section break. */
+  --md-hr-margin: 0.4em 0;
 
   /* ── Hashtag ────────────────────────────────────────────── */
   --md-hashtag-bg: rgba(94, 234, 212, 0.15);

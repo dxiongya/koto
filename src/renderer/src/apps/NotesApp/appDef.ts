@@ -26,10 +26,28 @@ export const notesAppDefinition: AppDefinition = {
 
     // ── MCP-ready tools (provideTool with metadata) ──
 
+    // Walk notes/ recursively, return every file + folder so the search
+    // handler below can match against names, not just contents.
+    const walkNotesTree = async (
+      dir: string,
+    ): Promise<Array<{ name: string; path: string; isDirectory: boolean }>> => {
+      const out: Array<{ name: string; path: string; isDirectory: boolean }> = []
+      const stack = [dir]
+      while (stack.length) {
+        const current = stack.pop()!
+        const children = await api.fs.readDir(current)
+        for (const node of children) {
+          out.push({ name: node.name, path: node.path, isDirectory: node.isDirectory })
+          if (node.isDirectory) stack.push(node.path)
+        }
+      }
+      return out
+    }
+
     api.bus.provideTool({
       name: 'notes.search',
       appId: 'notes.app',
-      description: 'Search notes by content. Returns matching lines with file paths.',
+      description: 'Search notes by content, file name, and folder name. Returns matching lines plus name matches.',
       parameters: {
         query: { type: 'string', description: 'Search query (supports Chinese, English, etc.)', required: true },
       },
@@ -37,29 +55,74 @@ export const notesAppDefinition: AppDefinition = {
         const query = params.query as string
         if (!query) return []
         const liteHome = getLiteHome()
-        const res = await window.api.search.content(query, [`${liteHome}/notes`], 20)
-        if (!res.ok) return []
-        return res.data.map((match: any, i: number) => {
-          const relPath = match.filePath.replace(`${liteHome}/notes/`, '')
-          const fileName = relPath.split('/').pop() || relPath
-          // content is the matched line — use it directly as snippet
-          const snippet = (match.content || '').trim().slice(0, 200)
-          return {
-            id: `note:${match.filePath}:${match.line}`,
-            title: fileName,
-            subtitle: relPath !== fileName ? relPath : `Line ${match.line}`,
-            snippet,
-            score: 100 - i,
+        const notesRoot = `${liteHome}/notes`
+        const ql = query.toLowerCase()
+
+        // Run content search and tree walk in parallel — folder/file name
+        // matches surface alongside line matches so prefixes like `n goduck`
+        // can find a folder named "goduck" even when no file *contents*
+        // mention it.
+        const [contentRes, allEntries] = await Promise.all([
+          window.api.search.content(query, [notesRoot], 20),
+          walkNotesTree(notesRoot).catch(() => []),
+        ])
+
+        const out: any[] = []
+        const seenPaths = new Set<string>()
+
+        if (contentRes.ok) {
+          contentRes.data.forEach((match: any, i: number) => {
+            const relPath = match.filePath.replace(`${notesRoot}/`, '')
+            const fileName = relPath.split('/').pop() || relPath
+            const snippet = (match.content || '').trim().slice(0, 200)
+            seenPaths.add(match.filePath)
+            out.push({
+              id: `note:${match.filePath}:${match.line}`,
+              title: fileName,
+              subtitle: relPath !== fileName ? relPath : `Line ${match.line}`,
+              snippet,
+              score: 100 - i,
+              source: 'notes.app',
+              icon: 'file-text',
+              action: { type: 'open-file', path: match.filePath, line: match.line },
+              file: relPath,
+              path: match.filePath,
+              line: match.line,
+              content: match.content,
+            })
+          })
+        }
+
+        // Name matches — folder hits expand the group in the sidebar; file
+        // hits open the file. Score below content matches so contents-first
+        // ordering is preserved.
+        let nameRank = 0
+        for (const entry of allEntries) {
+          if (seenPaths.has(entry.path)) continue
+          // For files, only consider .md (notes are markdown); for folders,
+          // include everything since groups can be arbitrary directories.
+          if (!entry.isDirectory && !entry.name.endsWith('.md')) continue
+          const rel = entry.path.replace(`${notesRoot}/`, '')
+          if (!rel.toLowerCase().includes(ql) && !entry.name.toLowerCase().includes(ql)) continue
+          seenPaths.add(entry.path)
+          const displayName = entry.isDirectory ? entry.name : entry.name.replace(/\.md$/, '')
+          out.push({
+            id: `note-name:${entry.path}`,
+            title: displayName,
+            subtitle: entry.isDirectory ? `${rel}/` : rel,
+            score: 50 - nameRank,
             source: 'notes.app',
-            icon: 'file-text',
-            action: { type: 'open-file', path: match.filePath, line: match.line },
-            // MCP-only fields:
-            file: relPath,
-            path: match.filePath,
-            line: match.line,
-            content: match.content,
-          }
-        })
+            icon: entry.isDirectory ? 'folder' : 'file-text',
+            action: entry.isDirectory
+              ? { type: 'navigate', app: 'notes.app' }
+              : { type: 'open-file', path: entry.path },
+            file: rel,
+            path: entry.path,
+          })
+          nameRank++
+        }
+
+        return out
       },
     })
 

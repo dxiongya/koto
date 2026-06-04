@@ -28,7 +28,13 @@ export async function registerBuiltinApps(registry: AppRegistry): Promise<void> 
     }
   } catch { /* ignore */ }
 
-  const enabledSet = savedEnabledApps
+  // Empty array is almost never what the user actually wants (it leaves the
+  // sidebar with no app sections, which looks like the app is broken).
+  // Treat `[]` the same as "unset" and fall back to defaults. This is
+  // self-healing for configs that somehow persisted an empty list, e.g. when
+  // the welcome dialog ran its `registry.getEnabled()` before apps were
+  // registered.
+  const enabledSet = savedEnabledApps && savedEnabledApps.length > 0
     ? new Set(savedEnabledApps)
     : new Set(DEFAULT_ENABLED)
 
