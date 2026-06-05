@@ -8,6 +8,19 @@ export interface ContextMenuItem {
   disabled?: boolean
   separator?: boolean
   onClick: () => void
+  /**
+   * When present, this entry renders as a single horizontal row of color
+   * swatches instead of a normal label-button. Keeps long color pickers
+   * (8+ entries) from blowing up the menu vertically. The row's leftmost
+   * cell is a "clear" / "default" slot when `onClear` is set.
+   */
+  swatches?: {
+    label?: string
+    colors: { name: string; value: string }[]
+    selected?: string
+    onPick: (value: string) => void
+    onClear?: () => void
+  }
 }
 
 interface ContextMenuState {
@@ -91,6 +104,49 @@ export const ContextMenuProvider: React.FC = () => {
       {state.items.map((item, i) => {
         if (item.separator) {
           return <div key={i} role="separator" className="my-1 border-t border-border-subtle" />
+        }
+        if (item.swatches) {
+          const sw = item.swatches
+          return (
+            <div key={i} className="px-3 py-1.5">
+              {sw.label && (
+                <div className="text-[10px] text-tx-faint uppercase tracking-wider mb-1.5">{sw.label}</div>
+              )}
+              <div className="flex items-center gap-1.5">
+                {sw.onClear && (
+                  <button
+                    type="button"
+                    title="Default"
+                    aria-label="Reset color"
+                    onClick={() => { setState(null); sw.onClear!() }}
+                    disabled={!sw.selected}
+                    className="w-5 h-5 rounded-full border border-tx-faint/40 flex items-center justify-center text-tx-faint hover:text-tx-main hover:border-tx-main disabled:opacity-40 disabled:cursor-default transition-colors"
+                  >
+                    {/* slash indicates "no color set" */}
+                    <span className="block w-3 h-px rotate-45 bg-current" />
+                  </button>
+                )}
+                {sw.colors.map((c) => {
+                  const isSelected = sw.selected === c.value
+                  return (
+                    <button
+                      key={c.value}
+                      type="button"
+                      title={c.name}
+                      aria-label={c.name}
+                      onClick={() => { setState(null); sw.onPick(c.value) }}
+                      // Outline ring when selected; subtle scale on hover.
+                      // Border-on-color helps light swatches stand out on
+                      // the dark menu surface without adding noise.
+                      className={`w-5 h-5 rounded-full transition-transform hover:scale-110
+                        ${isSelected ? 'ring-2 ring-offset-2 ring-offset-bg-sidebar ring-tx-main' : 'ring-1 ring-black/30'}`}
+                      style={{ backgroundColor: c.value }}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          )
         }
         return (
           <button

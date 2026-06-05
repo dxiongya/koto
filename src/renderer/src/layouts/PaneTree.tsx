@@ -616,23 +616,19 @@ const TabChip = memo(function TabChip({
       { label: 'Close to the Left',      icon: <ArrowLeftFromLine size={14} />,  disabled: !hasLeft,   onClick: () => closeMany(idsLeft) },
       { label: 'Close to the Right',     icon: <ArrowRightFromLine size={14} />, disabled: !hasRight,  onClick: () => closeMany(idsRight) },
       { label: '', separator: true, onClick: () => {} },
-      // Color picker — each swatch sets / replaces the tab tint. "None"
-      // clears the override so the tab reverts to the surface palette.
-      ...TAB_COLOR_PALETTE.map((c): ContextMenuItem => ({
-        label: c.name,
-        icon: (
-          <span
-            className="w-3 h-3 rounded-full border border-black/20"
-            style={{ backgroundColor: c.value }}
-          />
-        ),
-        onClick: () => setTabColor(colorKey, c.value),
-      })),
+      // Single horizontal swatch row + "default" slot. Keeps the menu short
+      // even with 8+ colors and matches how VSCode / Linear present color
+      // pickers in their context menus.
       {
-        label: 'None',
-        icon: <span className="w-3 h-3 rounded-full border border-tx-faint/40" />,
-        disabled: !customColor,
-        onClick: () => setTabColor(colorKey, null),
+        label: '',
+        onClick: () => {},
+        swatches: {
+          label: 'Color',
+          colors: TAB_COLOR_PALETTE,
+          selected: customColor,
+          onPick: (value) => setTabColor(colorKey, value),
+          onClear: () => setTabColor(colorKey, null),
+        },
       },
       { label: '', separator: true, onClick: () => {} },
       { label: 'Close All',              icon: <XSquare size={14} />,            danger: true,         onClick: () => closeMany(idsAll) },
