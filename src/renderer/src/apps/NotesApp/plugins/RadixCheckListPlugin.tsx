@@ -13,7 +13,9 @@ interface CheckItem {
   key: string
   checked: boolean
   top: number
-  height: number
+  /** First-line height — used to center the checkbox against the first line,
+   * not the whole multi-line item, so the box stays top-aligned when text wraps. */
+  firstLineHeight: number
   left: number
 }
 
@@ -34,7 +36,7 @@ function CheckboxButton({
       style={{
         position: 'absolute',
         left: item.left,
-        top: item.top + Math.round((item.height - CB_SIZE) / 2)
+        top: item.top + Math.round((item.firstLineHeight - CB_SIZE) / 2)
       }}
       onMouseDown={(e) => {
         e.preventDefault()
@@ -105,7 +107,14 @@ export function RadixCheckListPlugin(): JSX.Element | null {
       li.classList.add('has-radix-cb')
 
       const { top, left } = getOffsetRelativeTo(li, editorContainer)
-      const height = li.offsetHeight
+      // Use computed line-height (first-line height) instead of the full
+      // offsetHeight — keeps the checkbox aligned with the first line when
+      // the text wraps onto multiple lines.
+      const cs = getComputedStyle(li)
+      const parsedLh = parseFloat(cs.lineHeight)
+      const firstLineHeight = Number.isFinite(parsedLh) && parsedLh > 0
+        ? parsedLh
+        : li.offsetHeight
 
       const checked =
         li.getAttribute('aria-checked') === 'true' ||
@@ -113,7 +122,7 @@ export function RadixCheckListPlugin(): JSX.Element | null {
 
       const key = String(realIdx++)
       newMap.set(key, li)
-      next.push({ key, checked, top, height, left })
+      next.push({ key, checked, top, firstLineHeight, left })
     })
 
     liMapRef.current = newMap

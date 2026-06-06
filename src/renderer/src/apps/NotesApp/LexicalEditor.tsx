@@ -10,7 +10,7 @@ import { TabIndentationPlugin } from '@lexical/react/LexicalTabIndentationPlugin
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary'
 import { TablePlugin } from '@lexical/react/LexicalTablePlugin'
 import { HeadingNode, QuoteNode, $createHeadingNode } from '@lexical/rich-text'
-import { ListNode, ListItemNode } from '@lexical/list'
+import { ListNode, ListItemNode, $isListItemNode } from '@lexical/list'
 import { CodeNode, CodeHighlightNode } from '@lexical/code'
 import { LinkNode, AutoLinkNode } from '@lexical/link'
 import { HashtagNode } from '@lexical/hashtag'
@@ -31,7 +31,60 @@ import {
   type TextMatchTransformer
 } from '@lexical/markdown'
 import { $getRoot, $isParagraphNode, TextNode } from 'lexical'
-import type { EditorState } from 'lexical'
+import type { EditorState, LexicalEditor as LexicalEditorType, LexicalNode, ElementNode } from 'lexical'
+
+/** Tag for the inject/revert pair around markdown serialization. */
+const MD_SAVE_TAG = 'koto-md-save'
+
+/** Zero-width-space placeholder used to keep empty Paragraph/ListItem nodes
+ * from disappearing on the markdown round-trip:
+ *
+ *   - Empty paragraphs would otherwise be collapsed by `$convertToMarkdownString`
+ *     so blank lines the user inserted vanish on reload.
+ *   - Empty checklist items would otherwise serialize as `- [ ]` (no trailing
+ *     content). Markdown's CHECK_LIST regex requires a non-empty payload
+ *     after the brackets, so the item would re-import as a bullet line with
+ *     literal `[ ]` text.
+ *
+ * Both problems are fixed by appending a U+200B text node before serialization
+ * (see `injectZwspMarkers`) and clearing it on the way back in (`clearZwspMarkers`).
+ */
+const ZWSP = '​'
+
+/** Recursively inject ZWSP markers into empty Paragraphs and ListItems so the
+ *  markdown serializer emits a non-blank line for each one. Must run inside
+ *  an `editor.update` block. */
+function injectZwspMarkers(node: LexicalNode): void {
+  if ($isParagraphNode(node) || $isListItemNode(node)) {
+    // `getTextContent()` returns '' for items containing only empty text nodes,
+    // which is exactly when the markdown serializer would emit a blank/elided line.
+    if (node.getTextContent() === '') {
+      node.append($createTextNode(ZWSP))
+      return
+    }
+  }
+  if ('getChildren' in node && typeof (node as { getChildren?: unknown }).getChildren === 'function') {
+    for (const child of (node as ElementNode).getChildren()) {
+      injectZwspMarkers(child)
+    }
+  }
+}
+
+/** Recursively clear ZWSP-only Paragraphs/ListItems back to truly empty nodes.
+ *  Used both after import (the markdown contained a ZWSP) and after our own
+ *  inject/serialize/revert dance during save. Must run inside an editor read
+ *  context (`editorState` callback or `editor.update`). */
+function clearZwspMarkers(node: LexicalNode): void {
+  if (($isParagraphNode(node) || $isListItemNode(node)) && node.getTextContent() === ZWSP) {
+    node.clear()
+    return
+  }
+  if ('getChildren' in node && typeof (node as { getChildren?: unknown }).getChildren === 'function') {
+    for (const child of (node as ElementNode).getChildren()) {
+      clearZwspMarkers(child)
+    }
+  }
+}
 import type { TextFormatTransformer, ElementTransformer } from '@lexical/markdown'
 import { $createCodeNode, $isCodeNode } from '@lexical/code'
 import { lexicalTheme } from './lexical-theme'
@@ -536,13 +589,12 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
 
         $convertFromMarkdownString(processed, ALL_TRANSFORMERS)
 
-        // 3. Clear the zero-width space markers to make truly empty paragraphs
+        // 3. Clear the zero-width space markers so injected empty paragraphs
+        //    AND empty list items round-trip back to truly-empty nodes.
+        //    Walks recursively because empty list items live nested in
+        //    ListNode > ListItemNode, not at the root.
         const root = $getRoot()
-        root.getChildren().forEach((node) => {
-          if ($isParagraphNode(node) && node.getTextContent() === '\u200B') {
-            node.clear()
-          }
-        })
+        clearZwspMarkers(root)
 
         // 4. Replace placeholders with actual TableNodes
         if (tables.length > 0) {
@@ -566,15 +618,41 @@ export const LexicalEditor: React.FC<LexicalEditorProps> = ({ initialContent, on
   )
 
   const handleChange = useCallback(
-    (editorState: EditorState) => {
+    (editorState: EditorState, editor: LexicalEditorType, tags: Set<string>) => {
+      // Skip self-triggered updates from the inject/revert pair below.
+      if (tags.has(MD_SAVE_TAG)) return
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
       saveTimerRef.current = setTimeout(() => {
         // Don't auto-save while ghost text is showing (it's a transient DecoratorNode)
         if (_hasGhostText) return
-        editorState.read(() => {
-          const md = $convertToMarkdownString(ALL_TRANSFORMERS)
-          onSave(md)
+
+        // Inject ZWSP markers into empty Paragraphs and empty ListItems so
+        // the markdown round-trip preserves them — see comments on
+        // `injectZwspMarkers` / `ZWSP` above for the rationale.
+        editor.update(
+          () => {
+            const root = $getRoot()
+            injectZwspMarkers(root)
+          },
+          { tag: MD_SAVE_TAG, discrete: true },
+        )
+
+        let md = ''
+        editor.getEditorState().read(() => {
+          md = $convertToMarkdownString(ALL_TRANSFORMERS)
         })
+
+        // Revert: clear the marker text so the user's editor state is
+        // visually unchanged.
+        editor.update(
+          () => {
+            const root = $getRoot()
+            clearZwspMarkers(root)
+          },
+          { tag: MD_SAVE_TAG, discrete: true },
+        )
+
+        onSave(md)
       }, 800)
     },
     [onSave],

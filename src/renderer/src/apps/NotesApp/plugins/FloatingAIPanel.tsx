@@ -774,7 +774,10 @@ export function FloatingAIPanel({ editor, savedSelectionRef, onClose, filePath }
         width: PANEL_W,
         maxHeight: `calc(100vh - ${pos.y + 20}px)`,
         minHeight: PANEL_H_MIN,
-        boxShadow: '0 12px 48px color-mix(in srgb, var(--tx-main) 24%, transparent), 0 2px 8px color-mix(in srgb, var(--tx-main) 10%, transparent)',
+        // Dark, tight popover shadow — was using `tx-main` (the text color)
+        // which on dark themes is near-white, producing a glowing halo.
+        // Pure-black at low alpha reads as depth on both light & dark surfaces.
+        boxShadow: '0 16px 36px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25)',
         backdropFilter: 'blur(20px)',
       }}
       onMouseDown={(e) => {

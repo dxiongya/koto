@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import {
   ChevronRight, ChevronDown, Loader2, Chrome, FileText, Terminal,
   FileCode, FileJson, FileType, Palette, FileImage, File, LayoutTemplate, Plus, Moon, Sun, FolderOpen, FolderPlus, X,
-  Pencil, Trash2, FilePlus, FolderInput, Settings, Zap, Archive, Folder, Copy as CopyIcon,
+  Pencil, Trash2, FilePlus, FolderInput, Settings, Zap, Archive, Folder, Copy as CopyIcon, Files,
   Link, Image, Video, Twitter, Monitor, Type, Brain, BookOpen
 } from 'lucide-react'
 import { useUIStore, genTerminalPersistKey } from '../store/useUIStore'
@@ -310,6 +310,34 @@ const NotesAppSection: React.FC<{
     }
   }, [onFileClick, nextUntitledName])
 
+  /** Duplicate a note in the same folder. Picks the next `{stem} 副本[ N].md`
+   * that doesn't already exist (Finder-style). Opens the copy after creation. */
+  const duplicateNote = useCallback(async (notePath: string) => {
+    const parent = notePath.substring(0, notePath.lastIndexOf('/'))
+    const fileName = notePath.substring(notePath.lastIndexOf('/') + 1)
+    const stem = fileName.replace(/\.md$/i, '')
+
+    const dirRes = await window.api.fs.readDir(parent)
+    const existing = new Set(dirRes.ok ? dirRes.data.map((f) => f.name) : [])
+
+    let target = `${stem} 副本.md`
+    if (existing.has(target)) {
+      let i = 2
+      while (existing.has(`${stem} 副本 ${i}.md`)) i++
+      target = `${stem} 副本 ${i}.md`
+    }
+    const targetPath = `${parent}/${target}`
+
+    const readRes = await window.api.fs.readFile(notePath)
+    if (!readRes.ok) return
+    const createRes = await window.api.fs.createFile(targetPath)
+    if (!createRes.ok) return
+    await window.api.fs.writeFile(targetPath, readRes.data)
+
+    setRefreshCounter((c) => c + 1)
+    onFileClick(targetPath)
+  }, [onFileClick])
+
   const createGroup = useCallback(async (name: string) => {
     if (!notesDir) return
     const groupPath = `${notesDir}/${name}`
@@ -421,12 +449,13 @@ const NotesAppSection: React.FC<{
     return [
       { label: 'Copy reference (for AI)', icon: <CopyIcon size={14} />, onClick: copyRef },
       { label: '', separator: true, onClick: () => {} },
+      { label: 'Duplicate', icon: <Files size={14} />, onClick: () => duplicateNote(note.path) },
       { label: 'Rename', icon: <Pencil size={14} />, onClick: () => showInput('rename', { renamePath: note.path, renameIsDir: false }) },
       ...(moveToItems.length > 0 ? [{ label: '', separator: true, onClick: () => {} } as ContextMenuItem, ...moveToItems] : []),
       { label: '', separator: true, onClick: () => {} },
       { label: 'Delete', icon: <Trash2 size={14} />, danger: true, onClick: () => deleteItem(note.path) },
     ]
-  }, [notesDir, groups, showInput, moveNote, deleteItem])
+  }, [notesDir, groups, showInput, moveNote, deleteItem, duplicateNote])
 
   // ── Drag handlers ──
 

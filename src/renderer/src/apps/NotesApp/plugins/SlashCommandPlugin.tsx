@@ -349,7 +349,10 @@ export function SlashCommandPlugin(): JSX.Element | null {
         }
 
         const textBefore = node.getTextContent().slice(0, anchor.offset)
-        const slashMatch = textBefore.match(/\/([^\s/]*)$/)
+        // `/` only triggers when it starts the line or follows whitespace.
+        // Otherwise typing a file path like `/Users/.../foo.p8` would silently
+        // open an invisible empty panel that still ate Enter / Arrow keys.
+        const slashMatch = textBefore.match(/(?:^|\s)\/([^\s/]*)$/)
 
         if (slashMatch) {
           setQuery(slashMatch[1])
@@ -376,6 +379,9 @@ export function SlashCommandPlugin(): JSX.Element | null {
       if (!isOpenRef.current) return
 
       const items = filteredRef.current
+      // Safety net: if no commands match the query, the panel renders null —
+      // we must NOT intercept keys, or the editor freezes silently.
+      if (items.length === 0) return
       const idx = selectedIndexRef.current
 
       switch (e.key) {

@@ -296,6 +296,13 @@ export const BUILTIN_TOOLS: Record<string, ToolHandler> = {
   },
 }
 
+/** Normalize a tool name to OpenAI/Anthropic's required pattern
+ * `^[a-zA-Z0-9_-]+$`. Replaces any other character (commonly `.` and `/`)
+ * with `_`. Length-capped at 64 to satisfy provider limits. */
+function sanitizeToolName(raw: string): string {
+  return raw.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)
+}
+
 /** Get all tools: built-in + MCP */
 // Cache Bus tools (refreshed periodically or on demand)
 let _cachedBusTools: ToolHandler[] = []
@@ -312,7 +319,11 @@ export async function refreshBusTools(): Promise<void> {
   const tools = await listBusTools()
   _cachedBusTools = tools.filter((t) => !disabledSet.has(t.name)).map((t) => ({
     definition: {
-      name: t.name,
+      // Bus tool names use `app.action` form (e.g. `notes.search`). Both
+      // OpenAI and Anthropic require function names to match
+      // `^[a-zA-Z0-9_-]+$`, so we expose the sanitized form to the model
+      // while `execute` keeps the original dotted name in closure.
+      name: sanitizeToolName(t.name),
       description: `[${t.appId}] ${t.description}`,
       parameters: {
         type: 'object',
@@ -334,7 +345,10 @@ function getAllToolHandlers(): ToolHandler[] {
 
   const mcpTools: ToolHandler[] = mcpManager.getAllTools().map((t) => ({
     definition: {
-      name: `mcp_${t.serverId}_${t.name}`,
+      // MCP server IDs and tool names may contain dots/slashes; sanitize
+      // for OpenAI/Anthropic's `^[a-zA-Z0-9_-]+$` constraint. The original
+      // serverId + toolName are kept in the closure for execution.
+      name: sanitizeToolName(`mcp_${t.serverId}_${t.name}`),
       description: `[MCP: ${t.serverName}] ${t.description}`,
       parameters: t.inputSchema,
     },
@@ -370,22 +384,18 @@ export function getAllToolDefinitions(): AIToolDefinition[] {
   return getAllToolHandlers().map(t => t.definition)
 }
 
-/** Execute a tool by name (built-in, Bus, or MCP) */
+/** Execute a tool by name (built-in, Bus, or MCP).
+ *
+ * Looks the tool up by its *sanitized* name across all handlers — that's the
+ * name the model sees and echoes back. Each handler keeps its real
+ * identifiers (Bus dotted name, MCP serverId + toolName) in the `execute`
+ * closure, so callers don't need a reverse mapping. */
 export async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
-  // Check built-in tools first
   const handler = BUILTIN_TOOLS[name]
   if (handler) return handler.execute(input)
 
-  // Check Bus tools (app-provided via provideTool)
-  const busTool = _cachedBusTools.find((t) => t.definition.name === name)
-  if (busTool) return busTool.execute(input)
-
-  // Check MCP tools (name format: mcp_{serverId}_{toolName})
-  const mcpMatch = name.match(/^mcp_([^_]+)_(.+)$/)
-  if (mcpMatch) {
-    const [, serverId, toolName] = mcpMatch
-    return mcpManager.callTool(serverId, toolName, input)
-  }
+  const matched = getAllToolHandlers().find((t) => t.definition.name === name)
+  if (matched) return matched.execute(input)
 
   return `Unknown tool: ${name}`
 }
