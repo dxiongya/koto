@@ -1,5 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { FileNode, FileStat, FsWatchEvent, IpcResult, LiteConfig, AIChatMessage, AIChatResponse, AIToolEvent, AIToolDefinition, ChangelogEntry, Skill } from '../shared/types'
+import type { Notebook, NotebookSummary } from '../shared/notebook'
 
 export interface LiteAPI {
   getHome: () => Promise<IpcResult<string>>
@@ -179,6 +180,14 @@ export interface EventsAPI {
   onAppEvent: (callback: (event: { type: string; [k: string]: unknown }) => void) => () => void
 }
 
+export interface NotebookAPI {
+  list: () => Promise<IpcResult<NotebookSummary[]>>
+  get: (id: string) => Promise<IpcResult<Notebook>>
+  create: (name: string) => Promise<IpcResult<Notebook>>
+  save: (notebook: Notebook) => Promise<IpcResult<Notebook>>
+  delete: (id: string) => Promise<IpcResult<boolean>>
+}
+
 export interface AIAPI {
   chat: (
     providerId: string,
@@ -216,6 +225,7 @@ declare global {
       events: EventsAPI
       shell: ShellAPI
       collector: CollectorAPI
+      notebook: NotebookAPI
     }
   }
 }

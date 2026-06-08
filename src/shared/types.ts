@@ -142,6 +142,13 @@ export const IpcChannels = {
   AUTOMATION_RUN_EVENT: 'automation:runEvent',
   AUTOMATION_GET_EXPERIENCE: 'automation:getExperience',
 
+  // Notebook (NotebookLM-style agent mode)
+  NOTEBOOK_LIST: 'notebook:list',
+  NOTEBOOK_GET: 'notebook:get',
+  NOTEBOOK_CREATE: 'notebook:create',
+  NOTEBOOK_SAVE: 'notebook:save',
+  NOTEBOOK_DELETE: 'notebook:delete',
+
   // Collector
   COLLECTOR_LIST: 'collector:list',
   COLLECTOR_COUNT: 'collector:count',

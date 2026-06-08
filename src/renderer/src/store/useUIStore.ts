@@ -197,6 +197,10 @@ interface UIState {
   showCommandPalette: boolean
   showContextPanel: boolean
 
+  // Notebook (agent mode) — id of the currently-open notebook, or null when
+  // the overlay is closed. The overlay is full-screen on top of pane tree.
+  notebookOverlayId: string | null
+
   // Content area layout mode:
   //   'tabs'   — VSCode-style: recursive split panes + tabs per pane
   //   'single' — classic: currentApp fills the content area, no tabs/splits
@@ -290,6 +294,7 @@ interface UIState {
   setShowCommandPalette: (show: boolean) => void
   toggleCommandPalette: () => void
   setShowContextPanel: (show: boolean) => void
+  setNotebookOverlay: (id: string | null) => void
   setTheme: (themeId: string) => void
   toggleTheme: () => void
   setFontFamily: (fontId: FontId) => void
@@ -477,6 +482,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   currentApp: 'notes.app',
   showCommandPalette: false,
   showContextPanel: false,
+  notebookOverlayId: null,
   contentLayoutMode: 'tabs',
   sidebarOpen: true,
   appStates: defaultAppStates(),
@@ -581,6 +587,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   setShowCommandPalette: (show) => set({ showCommandPalette: show }),
   toggleCommandPalette: () => set((s) => ({ showCommandPalette: !s.showCommandPalette })),
   setShowContextPanel: (show) => set({ showContextPanel: show }),
+  setNotebookOverlay: (id) => set({ notebookOverlayId: id }),
 
   setTheme: (themeId) => {
     const theme = builtinThemes[themeId]

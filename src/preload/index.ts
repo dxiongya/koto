@@ -248,6 +248,13 @@ const api = {
       }
     },
   },
+  notebook: {
+    list: () => ipcRenderer.invoke(IpcChannels.NOTEBOOK_LIST),
+    get: (id: string) => ipcRenderer.invoke(IpcChannels.NOTEBOOK_GET, id),
+    create: (name: string) => ipcRenderer.invoke(IpcChannels.NOTEBOOK_CREATE, name),
+    save: (notebook: unknown) => ipcRenderer.invoke(IpcChannels.NOTEBOOK_SAVE, notebook),
+    delete: (id: string) => ipcRenderer.invoke(IpcChannels.NOTEBOOK_DELETE, id),
+  },
   collector: {
     list: (limit?: number, offset?: number, group?: string) => ipcRenderer.invoke(IpcChannels.COLLECTOR_LIST, limit, offset, group),
     count: (group?: string) => ipcRenderer.invoke(IpcChannels.COLLECTOR_COUNT, group),

@@ -16,6 +16,8 @@ import { mcpManager } from './mcp-manager'
 import { getAllToolDefinitions } from './ai-tools'
 import { loadSkills, toggleSkill, createSkill, deleteSkill, importSkillFromUrl } from './skills-loader'
 import { listAutomations, createAutomation, updateAutomation, deleteAutomation } from './automation-store'
+import { listNotebooks, getNotebook, createNotebook, saveNotebook, deleteNotebook } from './notebook-store'
+import type { Notebook } from '../../shared/notebook'
 import { readSnapshots, restoreSnapshot } from './automation-snapshots'
 import { loadExperience } from './automation-runner'
 import { automationScheduler } from './automation-scheduler'
@@ -776,6 +778,36 @@ export function setupIpcHandlers(): void {
   ipcMain.handle(IpcChannels.AUTOMATION_GET_EXPERIENCE, (_, automationId: string) => {
     const exp = loadExperience(automationId)
     return exp ? { ok: true, data: exp } : { ok: true, data: null }
+  })
+
+  // ── Notebook (agent mode) ──
+
+  ipcMain.handle(IpcChannels.NOTEBOOK_LIST, () => {
+    try { return { ok: true, data: listNotebooks() } }
+    catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.NOTEBOOK_GET, (_, id: string) => {
+    try {
+      const nb = getNotebook(id)
+      if (!nb) return { ok: false, error: 'Notebook not found' }
+      return { ok: true, data: nb }
+    } catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.NOTEBOOK_CREATE, (_, name: string) => {
+    try { return { ok: true, data: createNotebook(name) } }
+    catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.NOTEBOOK_SAVE, (_, notebook: Notebook) => {
+    try { return { ok: true, data: saveNotebook(notebook) } }
+    catch (e) { return { ok: false, error: String(e) } }
+  })
+
+  ipcMain.handle(IpcChannels.NOTEBOOK_DELETE, (_, id: string) => {
+    try { return { ok: true, data: deleteNotebook(id) } }
+    catch (e) { return { ok: false, error: String(e) } }
   })
 
   // ── Collector ──
