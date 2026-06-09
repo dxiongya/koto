@@ -10,6 +10,7 @@ import {
   registerSource, removeSource, getPassage, readSourceRaw, readChatLog,
 } from './notebook-storage'
 import { onSourceEvent, processSource } from './notebook-source-pipeline'
+import { onAgentEvent, promptAgent, abortAgent } from './notebook-agent'
 import type { Session, SourceRef } from '../../shared/notebook'
 
 export function setupNotebookIpc(): void {
@@ -88,18 +89,22 @@ export function setupNotebookIpc(): void {
     return { ok: true, data: readChatLog(sessionId) }
   })
 
-  // ── Agent prompt/abort handlers are stubbed until M2 lands. ──────
-  ipcMain.handle(IpcChannels.NOTEBOOK_PROMPT, async () => {
-    return { ok: false, error: 'agent not wired yet — coming in M2' }
+  // ── Agent prompt / abort ─────────────────────────────────────────
+  ipcMain.handle(IpcChannels.NOTEBOOK_PROMPT, async (_, sessionId: string, text: string) => {
+    return promptAgent(sessionId, text)
   })
-  ipcMain.handle(IpcChannels.NOTEBOOK_ABORT, () => ({ ok: true, data: true }))
+  ipcMain.handle(IpcChannels.NOTEBOOK_ABORT, (_, sessionId: string) => {
+    return { ok: true, data: abortAgent(sessionId) }
+  })
 
-  // ── Forward source events to all renderer windows ────────────────
-  onSourceEvent((event) => {
+  // ── Forward source + agent events to all renderer windows ────────
+  const broadcast = (event: unknown): void => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send(IpcChannels.NOTEBOOK_EVENT, event)
       }
     }
-  })
+  }
+  onSourceEvent(broadcast)
+  onAgentEvent(broadcast)
 }
