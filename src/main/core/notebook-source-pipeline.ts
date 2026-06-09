@@ -22,6 +22,7 @@ import {
   getSession, updateSourceMeta, writeSourceRaw, writeSourcePassages,
   writeSourceEmbeddings,
 } from './notebook-storage'
+import { maybeGenerateBriefing } from './notebook-briefing'
 import type { SourceRef, SourceMeta, SourcePassage, SourceStatus } from '../../shared/notebook'
 
 // ─── Event bus for status updates ───────────────────────────────────
@@ -282,6 +283,11 @@ export async function processSource(sessionId: string, sourceKey: string): Promi
     }
 
     setStatus('ready', { embeddingDim: embeddedDim, processedAt: Date.now() })
+
+    // First source to reach ready → kick off Notebook Guide briefing.
+    // `maybeGenerateBriefing` is idempotent so calling on every ready
+    // transition is safe; it bails early if briefing already exists.
+    void maybeGenerateBriefing(sessionId)
   } catch (e) {
     console.error('[NotebookPipeline] failed for', sessionId, sourceKey, e)
     updateSourceMeta(sessionId, sourceKey, {

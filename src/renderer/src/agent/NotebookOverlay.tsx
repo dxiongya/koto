@@ -145,6 +145,12 @@ export const NotebookOverlay: React.FC = () => {
         return
       }
 
+      if (evt.type === 'briefing_ready') {
+        const briefing = (evt as unknown as { briefing: string }).briefing
+        setSession((s) => s ? { ...s, briefing } : s)
+        return
+      }
+
       if (evt.type === 'agent_event') {
         const agentEv = (evt as unknown as { event: unknown }).event
         setMessages((prev) => {
@@ -372,7 +378,17 @@ export const NotebookOverlay: React.FC = () => {
           {/* Chat */}
           <div className="flex flex-col flex-1 min-w-0">
             <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto scroll-thin px-8 py-6">
-              {messages.length === 0 && (
+              {session?.briefing && (
+                <div className="mb-6 rounded-lg border border-accent-main/25 bg-accent-main/5 px-4 py-3 max-w-[92%]">
+                  <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-accent-main mb-1.5">
+                    <Sparkles size={11} /> Notebook Guide
+                  </div>
+                  <div className="text-tx-main text-sm leading-relaxed whitespace-pre-wrap">
+                    {renderWithCitations(session.briefing, sessionId, (t, e) => setCitationPop({ target: t, x: e.clientX, y: e.clientY }))}
+                  </div>
+                </div>
+              )}
+              {messages.length === 0 && !session?.briefing && (
                 <div className="text-tx-faint text-sm leading-relaxed max-w-2xl mx-auto py-12">
                   <Sparkles size={18} className="text-accent-main mb-3" />
                   Ask anything about your selected sources. Responses cite the

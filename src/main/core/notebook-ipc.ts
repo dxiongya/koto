@@ -13,6 +13,7 @@ import { onSourceEvent, processSource } from './notebook-source-pipeline'
 import { onAgentEvent, promptAgent, abortAgent } from './notebook-agent'
 import { discoverWeb, importUrlToSession } from './notebook-discovery'
 import { generateReport, generateSlideDeck, type ReportPreset, type SlidesPreset } from './notebook-studio'
+import { registerBriefingBroadcaster } from './notebook-briefing'
 import type { Session, SourceRef } from '../../shared/notebook'
 
 export function setupNotebookIpc(): void {
@@ -125,4 +126,5 @@ export function setupNotebookIpc(): void {
   }
   onSourceEvent(broadcast)
   onAgentEvent(broadcast)
+  registerBriefingBroadcaster(broadcast)
 }

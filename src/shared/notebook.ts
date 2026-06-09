@@ -131,6 +131,10 @@ export interface Session {
   /** Collector group name owned by this session (for web-discovered sources).
    *  Created lazily on first Discover/Import. */
   collectorGroup?: string
+  /** Auto-generated "Notebook Guide" briefing tying all sources together —
+   *  populated once when the first source reaches `ready`. Persisted so it
+   *  survives reopen without re-running the LLM call. */
+  briefing?: string
   /** Source metas indexed by sourceRefKey — single source of truth for the UI. */
   sources: Record<string, SourceMeta>
   /** Generated outputs the session has produced. */
