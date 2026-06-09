@@ -11,7 +11,8 @@ import { createPortal } from 'react-dom'
 import {
   X, BookOpen, FilePlus2, Plus, Send, Trash2, Loader2, AlertCircle,
   CheckCircle2, Search, Settings, Sparkles, Globe, Link as LinkIcon,
-  Compass, FileEdit, Presentation, FileText, ChevronRight,
+  Compass, FileEdit, Presentation, FileText, ChevronRight, Bookmark,
+  Recycle,
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import type { Session, SourceMeta, SourceStatus, SourceRef } from '../../../shared/notebook'
@@ -229,6 +230,30 @@ export const NotebookOverlay: React.FC = () => {
     if (refresh.ok) setSession(refresh.data)
   }
 
+  const saveAssistantMessage = async (text: string): Promise<void> => {
+    if (!session) return
+    const note = { id: `n${Date.now()}`, text, createdAt: Date.now() }
+    await persistSession({ ...session, savedNotes: [...(session.savedNotes ?? []), note] })
+  }
+
+  const removeSavedNote = async (noteId: string): Promise<void> => {
+    if (!session) return
+    await persistSession({ ...session, savedNotes: (session.savedNotes ?? []).filter((n) => n.id !== noteId) })
+  }
+
+  const convertSavedNotesToSource = async (): Promise<void> => {
+    if (!sessionId || !session || (session.savedNotes ?? []).length === 0) return
+    const stamp = new Date().toLocaleString()
+    const content = (session.savedNotes ?? [])
+      .map((n, i) => `### Saved note ${i + 1}\n\n${n.text}`)
+      .join('\n\n---\n\n')
+    const ref: SourceRef = { kind: 'inline', content }
+    const res = await window.api.notebook.addSource(sessionId, ref, `Saved notes · ${stamp}`, `${session.savedNotes.length} note(s)`)
+    if (!res.ok) { setError(res.error); return }
+    // Clear the buffer so users see a clean slate after conversion.
+    await persistSession({ ...session, savedNotes: [] })
+  }
+
   const openProduct = (notePath: string): void => {
     // Drop into Notes app at the generated file. Closes overlay so the user
     // sees the document immediately.
@@ -402,6 +427,7 @@ export const NotebookOverlay: React.FC = () => {
                   m={m}
                   sessionId={sessionId}
                   onCitationClick={(t, e) => setCitationPop({ target: t, x: e.clientX, y: e.clientY })}
+                  onSave={m.role === 'assistant' && !m.streaming ? () => saveAssistantMessage(m.text) : undefined}
                 />
               ))}
               {sending && messages[messages.length - 1]?.role !== 'assistant' && (
@@ -463,6 +489,31 @@ export const NotebookOverlay: React.FC = () => {
               />
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto scroll-thin px-3 mt-4">
+              {(session?.savedNotes ?? []).length > 0 && (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between px-1 mb-1">
+                    <span className="text-[10px] text-tx-faint uppercase tracking-wider">Saved notes</span>
+                    <button
+                      onClick={() => void convertSavedNotesToSource()}
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-accent-main hover:bg-accent-main/10"
+                      title="Combine all saved notes into a new source"
+                    >
+                      <Recycle size={10} /> Convert to source
+                    </button>
+                  </div>
+                  <ul className="space-y-1">
+                    {(session?.savedNotes ?? []).map((n) => (
+                      <li key={n.id} className="group flex items-start gap-1.5 px-2 py-1.5 rounded hover:bg-bg-hover">
+                        <Bookmark size={10} className="text-accent-main shrink-0 mt-0.5" />
+                        <span className="flex-1 min-w-0 text-[11px] text-tx-muted line-clamp-2">{n.text}</span>
+                        <button onClick={() => void removeSavedNote(n.id)} className="opacity-0 group-hover:opacity-100 w-4 h-4 flex items-center justify-center text-tx-faint hover:text-status-error">
+                          <X size={9} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div className="text-[10px] text-tx-faint uppercase tracking-wider px-1 mb-1">Products</div>
               {(session?.products ?? []).length === 0 ? (
                 <div className="text-[11px] text-tx-faint px-1 py-2">No outputs yet.</div>
@@ -620,7 +671,8 @@ const ChatMessageRow: React.FC<{
   m: RenderedMessage
   sessionId: string
   onCitationClick: (t: CitationTarget, e: React.MouseEvent) => void
-}> = ({ m, sessionId, onCitationClick }) => {
+  onSave?: () => void
+}> = ({ m, sessionId, onCitationClick, onSave }) => {
   if (m.role === 'tool') {
     return (
       <div className="my-2 flex items-center gap-2 text-[11px] text-tx-faint">
@@ -640,11 +692,22 @@ const ChatMessageRow: React.FC<{
     )
   }
   return (
-    <div className="mb-5">
+    <div className="mb-5 group">
       <div className="max-w-[92%] text-tx-main text-sm leading-relaxed whitespace-pre-wrap">
         {renderWithCitations(m.text, sessionId, onCitationClick)}
         {m.streaming && <span className="inline-block w-1.5 h-3 bg-accent-main/60 animate-pulse ml-0.5 align-middle" />}
       </div>
+      {onSave && (
+        <div className="mt-1 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={onSave}
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-tx-muted hover:text-accent-main hover:bg-bg-hover"
+            title="Save to notebook notes"
+          >
+            <Bookmark size={10} /> Save
+          </button>
+        </div>
+      )}
     </div>
   )
 }

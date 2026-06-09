@@ -122,6 +122,13 @@ export interface NotebookProduct {
   createdAt: number
 }
 
+export interface SavedNote {
+  id: string
+  /** Markdown text of the saved assistant reply (with `[src:…]` markers preserved). */
+  text: string
+  createdAt: number
+}
+
 export interface Session {
   id: string
   name: string
@@ -139,6 +146,10 @@ export interface Session {
   sources: Record<string, SourceMeta>
   /** Generated outputs the session has produced. */
   products: NotebookProduct[]
+  /** "Save to notes" buffer — assistant replies the user wanted to keep.
+   *  Used by the "Convert to source" action which folds them into a new
+   *  inline source for grounded recursion. */
+  savedNotes: SavedNote[]
   createdAt: number
   updatedAt: number
 }

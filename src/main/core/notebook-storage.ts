@@ -97,7 +97,10 @@ export function listSessions(): SessionSummary[] {
 export function getSession(id: string): Session | null {
   try {
     const raw = fs.readFileSync(sessionFile(id), 'utf-8')
-    return JSON.parse(raw) as Session
+    const parsed = JSON.parse(raw) as Session
+    // Defensive defaults for fields added in later schema revisions —
+    // older session.json files won't have these.
+    return { ...parsed, savedNotes: parsed.savedNotes ?? [], products: parsed.products ?? [] }
   } catch {
     return null
   }
@@ -111,6 +114,7 @@ export function createSession(name: string): Session {
     name: name.trim() || 'Untitled notebook',
     sources: {},
     products: [],
+    savedNotes: [],
     createdAt: now,
     updatedAt: now,
   }
