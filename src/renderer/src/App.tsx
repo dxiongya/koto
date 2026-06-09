@@ -650,11 +650,19 @@ const ids = collectPaneIds(store.rootLayout)
     }
 
     const onDrop = async (e: DragEvent): Promise<void> => {
-      if (e.defaultPrevented) return  // local handler (Sidebar / editor) won
       if (!e.dataTransfer || e.dataTransfer.files.length === 0) return
       const mdFiles = Array.from(e.dataTransfer.files).filter((f) => f.name.toLowerCase().endsWith('.md'))
       if (mdFiles.length === 0) return
+
+      // ALWAYS preventDefault so Electron doesn't navigate to file://.
       e.preventDefault()
+
+      // If the cursor was over a Sidebar drop zone, let Sidebar's React
+      // handler do the import — it knows the targeted group. We marked
+      // those zones with `data-notebook-drop-zone` precisely so this check
+      // is reliable (event-ordering / defaultPrevented races are flaky).
+      const target = e.target as Element | null
+      if (target?.closest?.('[data-notebook-drop-zone]')) return
 
       const store = useUIStore.getState()
       const liteHome = store.liteHome
@@ -682,11 +690,16 @@ const ids = collectPaneIds(store.rootLayout)
       }
     }
 
-    window.addEventListener('dragover', onDragOver)
-    window.addEventListener('drop', onDrop)
+    // Both registered at CAPTURE phase — we always fire before children, so
+    // Electron's default `file://` navigation is suppressed for every file
+    // drag (any cursor location). Routing between global vs. Sidebar import
+    // is done by `data-notebook-drop-zone` lookup inside `onDrop`, which is
+    // robust to event-ordering quirks.
+    window.addEventListener('dragover', onDragOver, true)
+    window.addEventListener('drop', onDrop, true)
     return () => {
-      window.removeEventListener('dragover', onDragOver)
-      window.removeEventListener('drop', onDrop)
+      window.removeEventListener('dragover', onDragOver, true)
+      window.removeEventListener('drop', onDrop, true)
     }
   }, [])
 

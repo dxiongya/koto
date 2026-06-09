@@ -98,6 +98,15 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
+  // Block any attempt to navigate the renderer to a `file://` URL — which
+  // is what Electron does by default when an external file is dropped onto
+  // the window. The renderer's window-level dragover/drop handler intercepts
+  // most cases, but some Electron releases still try to navigate before JS
+  // sees the event. This guard is the catch-all.
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    if (url.startsWith('file://')) e.preventDefault()
+  })
+
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {

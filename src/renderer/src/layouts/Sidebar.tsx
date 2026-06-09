@@ -641,6 +641,7 @@ const NotesAppSection: React.FC<{
                       tabIndex={0}
                       aria-selected={isSelected}
                       aria-expanded={isExpanded}
+                      data-notebook-drop-zone="group"
                       onClick={() => { toggleNotesGroup(group.path); onGroupSelect(group.path) }}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleNotesGroup(group.path); onGroupSelect(group.path) } }}
                       onContextMenu={(e) => openContextMenu(e, groupContextItems(group))}
@@ -706,6 +707,7 @@ const NotesAppSection: React.FC<{
 
               {/* Root-level notes drop zone */}
               <div
+                data-notebook-drop-zone="root"
                 onDragOver={notesDir ? (e) => handleDragOver(e, notesDir) : undefined}
                 onDragLeave={handleDragLeave}
                 onDrop={notesDir ? (e) => handleDrop(e, notesDir) : undefined}
