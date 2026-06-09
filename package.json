@@ -35,6 +35,8 @@
     "@codemirror/search": "^6.6.0",
     "@codemirror/state": "^6.5.4",
     "@codemirror/view": "^6.39.16",
+    "@earendil-works/pi-agent-core": "^0.79.0",
+    "@earendil-works/pi-ai": "^0.79.0",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@google/genai": "^1.46.0",

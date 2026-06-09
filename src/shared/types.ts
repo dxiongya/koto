@@ -142,6 +142,23 @@ export const IpcChannels = {
   AUTOMATION_RUN_EVENT: 'automation:runEvent',
   AUTOMATION_GET_EXPERIENCE: 'automation:getExperience',
 
+  // Notebook (NotebookLM-style agent mode)
+  NOTEBOOK_LIST_SESSIONS: 'notebook:listSessions',
+  NOTEBOOK_GET_SESSION: 'notebook:getSession',
+  NOTEBOOK_CREATE_SESSION: 'notebook:createSession',
+  NOTEBOOK_UPDATE_SESSION: 'notebook:updateSession',
+  NOTEBOOK_DELETE_SESSION: 'notebook:deleteSession',
+  NOTEBOOK_ADD_SOURCE: 'notebook:addSource',
+  NOTEBOOK_REMOVE_SOURCE: 'notebook:removeSource',
+  NOTEBOOK_REPROCESS_SOURCE: 'notebook:reprocessSource',
+  NOTEBOOK_GET_PASSAGE: 'notebook:getPassage',
+  NOTEBOOK_READ_RAW: 'notebook:readRaw',
+  NOTEBOOK_PROMPT: 'notebook:prompt',
+  NOTEBOOK_ABORT: 'notebook:abort',
+  NOTEBOOK_CHAT_HISTORY: 'notebook:chatHistory',
+  /** main → renderer push: source processing status / chat agent events. */
+  NOTEBOOK_EVENT: 'notebook:event',
+
   // Collector
   COLLECTOR_LIST: 'collector:list',
   COLLECTOR_COUNT: 'collector:count',

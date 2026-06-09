@@ -3,6 +3,7 @@ import { join } from 'path'
 import { electronApp, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { setupIpcHandlers } from './core/ipc'
+import { setupNotebookIpc } from './core/notebook-ipc'
 import { initLiteHome, loadConfig, saveConfig } from './core/lite-home'
 import { setProjectPath } from './core/fs'
 import { fileWatcher } from './core/watcher'
@@ -135,6 +136,7 @@ app.whenReady().then(() => {
   registerAssetProtocol()
   registerAppProtocol()
   setupIpcHandlers()
+  setupNotebookIpc()
   createWindow()
 
   // Initialize MCP servers from config

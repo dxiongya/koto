@@ -1,5 +1,6 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
 import type { FileNode, FileStat, FsWatchEvent, IpcResult, LiteConfig, AIChatMessage, AIChatResponse, AIToolEvent, AIToolDefinition, ChangelogEntry, Skill } from '../shared/types'
+import type { Session, SessionSummary, SourceMeta, SourcePassage, SourceRef } from '../shared/notebook'
 
 export interface LiteAPI {
   getHome: () => Promise<IpcResult<string>>
@@ -179,6 +180,23 @@ export interface EventsAPI {
   onAppEvent: (callback: (event: { type: string; [k: string]: unknown }) => void) => () => void
 }
 
+export interface NotebookAPI {
+  listSessions: () => Promise<IpcResult<SessionSummary[]>>
+  getSession: (id: string) => Promise<IpcResult<Session>>
+  createSession: (name: string) => Promise<IpcResult<Session>>
+  updateSession: (session: Session) => Promise<IpcResult<Session>>
+  deleteSession: (id: string) => Promise<IpcResult<boolean>>
+  addSource: (sessionId: string, ref: SourceRef, title: string, subtitle?: string) => Promise<IpcResult<SourceMeta>>
+  removeSource: (sessionId: string, sourceKey: string) => Promise<IpcResult<boolean>>
+  reprocessSource: (sessionId: string, sourceKey: string) => Promise<IpcResult<boolean>>
+  getPassage: (sessionId: string, sourceKey: string, passageId: string) => Promise<IpcResult<SourcePassage>>
+  readRaw: (sessionId: string, sourceKey: string) => Promise<IpcResult<string>>
+  chatHistory: (sessionId: string) => Promise<IpcResult<unknown[]>>
+  prompt: (sessionId: string, text: string) => Promise<IpcResult<unknown>>
+  abort: (sessionId: string) => Promise<IpcResult<boolean>>
+  onEvent: (callback: (event: { type: string; [k: string]: unknown }) => void) => () => void
+}
+
 export interface AIAPI {
   chat: (
     providerId: string,
@@ -216,6 +234,7 @@ declare global {
       events: EventsAPI
       shell: ShellAPI
       collector: CollectorAPI
+      notebook: NotebookAPI
     }
   }
 }

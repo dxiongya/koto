@@ -74,6 +74,40 @@ const api = {
     fetchMeta: (url: string) =>
       ipcRenderer.invoke(IpcChannels.URL_FETCH_META, url),
   },
+  notebook: {
+    // Sessions
+    listSessions: () => ipcRenderer.invoke(IpcChannels.NOTEBOOK_LIST_SESSIONS),
+    getSession: (id: string) => ipcRenderer.invoke(IpcChannels.NOTEBOOK_GET_SESSION, id),
+    createSession: (name: string) => ipcRenderer.invoke(IpcChannels.NOTEBOOK_CREATE_SESSION, name),
+    updateSession: (session: unknown) => ipcRenderer.invoke(IpcChannels.NOTEBOOK_UPDATE_SESSION, session),
+    deleteSession: (id: string) => ipcRenderer.invoke(IpcChannels.NOTEBOOK_DELETE_SESSION, id),
+    // Sources
+    addSource: (sessionId: string, ref: unknown, title: string, subtitle?: string) =>
+      ipcRenderer.invoke(IpcChannels.NOTEBOOK_ADD_SOURCE, sessionId, ref, title, subtitle),
+    removeSource: (sessionId: string, sourceKey: string) =>
+      ipcRenderer.invoke(IpcChannels.NOTEBOOK_REMOVE_SOURCE, sessionId, sourceKey),
+    reprocessSource: (sessionId: string, sourceKey: string) =>
+      ipcRenderer.invoke(IpcChannels.NOTEBOOK_REPROCESS_SOURCE, sessionId, sourceKey),
+    // Artifacts
+    getPassage: (sessionId: string, sourceKey: string, passageId: string) =>
+      ipcRenderer.invoke(IpcChannels.NOTEBOOK_GET_PASSAGE, sessionId, sourceKey, passageId),
+    readRaw: (sessionId: string, sourceKey: string) =>
+      ipcRenderer.invoke(IpcChannels.NOTEBOOK_READ_RAW, sessionId, sourceKey),
+    chatHistory: (sessionId: string) =>
+      ipcRenderer.invoke(IpcChannels.NOTEBOOK_CHAT_HISTORY, sessionId),
+    // Agent
+    prompt: (sessionId: string, text: string) =>
+      ipcRenderer.invoke(IpcChannels.NOTEBOOK_PROMPT, sessionId, text),
+    abort: (sessionId: string) => ipcRenderer.invoke(IpcChannels.NOTEBOOK_ABORT, sessionId),
+    // Event stream (source status + chat agent events)
+    onEvent: (callback: (event: { type: string; [k: string]: unknown }) => void) => {
+      const handler = (_: unknown, event: { type: string; [k: string]: unknown }): void => callback(event)
+      ipcRenderer.on(IpcChannels.NOTEBOOK_EVENT, handler)
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.NOTEBOOK_EVENT, handler)
+      }
+    },
+  },
   terminal: {
     create: (cwd?: string) => ipcRenderer.invoke(IpcChannels.TERMINAL_CREATE, cwd),
     write: (id: string, data: string) =>
