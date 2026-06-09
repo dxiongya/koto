@@ -11,6 +11,7 @@ import {
 } from './notebook-storage'
 import { onSourceEvent, processSource } from './notebook-source-pipeline'
 import { onAgentEvent, promptAgent, abortAgent } from './notebook-agent'
+import { discoverWeb, importUrlToSession } from './notebook-discovery'
 import type { Session, SourceRef } from '../../shared/notebook'
 
 export function setupNotebookIpc(): void {
@@ -95,6 +96,14 @@ export function setupNotebookIpc(): void {
   })
   ipcMain.handle(IpcChannels.NOTEBOOK_ABORT, (_, sessionId: string) => {
     return { ok: true, data: abortAgent(sessionId) }
+  })
+
+  // ── Discovery / URL import ───────────────────────────────────────
+  ipcMain.handle(IpcChannels.NOTEBOOK_DISCOVER_WEB, async (_, query: string, limit?: number) => {
+    return discoverWeb(query, limit ?? 10)
+  })
+  ipcMain.handle(IpcChannels.NOTEBOOK_IMPORT_URL, async (_, sessionId: string, url: string, title?: string) => {
+    return importUrlToSession(sessionId, url, title)
   })
 
   // ── Forward source + agent events to all renderer windows ────────

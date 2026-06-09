@@ -10,7 +10,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   X, BookOpen, FilePlus2, Plus, Send, Trash2, Loader2, AlertCircle,
-  CheckCircle2, Search, Settings, Sparkles,
+  CheckCircle2, Search, Settings, Sparkles, Globe, Link as LinkIcon,
+  Compass,
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import type { Session, SourceMeta, SourceStatus, SourceRef } from '../../../shared/notebook'
@@ -53,6 +54,8 @@ export const NotebookOverlay: React.FC = () => {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [textPickerOpen, setTextPickerOpen] = useState(false)
+  const [discoverOpen, setDiscoverOpen] = useState(false)
+  const [urlOpen, setUrlOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [showGoals, setShowGoals] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
@@ -135,6 +138,24 @@ export const NotebookOverlay: React.FC = () => {
     const res = await window.api.notebook.addSource(sessionId, ref, title.trim() || 'Inline text', undefined)
     if (!res.ok) setError(res.error)
     setTextPickerOpen(false)
+  }
+
+  const importUrl = async (url: string, title?: string): Promise<void> => {
+    if (!sessionId) return
+    const u = url.trim()
+    if (!/^https?:\/\//i.test(u)) { setError('URL must start with http(s)://'); return }
+    const res = await window.api.notebook.importUrl(sessionId, u, title?.trim() || undefined)
+    if (!res.ok) setError(res.error)
+    setUrlOpen(false)
+  }
+
+  const importDiscoveryPicks = async (picks: Array<{ url: string; title: string }>): Promise<void> => {
+    if (!sessionId) return
+    for (const p of picks) {
+      const res = await window.api.notebook.importUrl(sessionId, p.url, p.title)
+      if (!res.ok) { setError(res.error); return }
+    }
+    setDiscoverOpen(false)
   }
 
   const toggleSource = async (key: string): Promise<void> => {
@@ -231,6 +252,12 @@ export const NotebookOverlay: React.FC = () => {
           <div className="flex flex-col border-r border-border-subtle shrink-0" style={{ width: COL_SOURCES }}>
             <div className="px-4 pt-4 pb-2 text-[11px] text-tx-faint uppercase tracking-wider">来源 · Sources</div>
             <div className="px-3 flex flex-col gap-2">
+              <button onClick={() => setDiscoverOpen(true)} className="flex items-center gap-2 px-3 h-8 rounded bg-accent-main/10 text-accent-main text-xs hover:bg-accent-main/15 transition-colors font-medium">
+                <Compass size={13} /> Discover web sources
+              </button>
+              <button onClick={() => setUrlOpen(true)} className="flex items-center gap-2 px-3 h-8 rounded bg-bg-active text-tx-main text-xs hover:bg-bg-hover transition-colors">
+                <LinkIcon size={13} className="text-accent-main" /> Add a URL
+              </button>
               <button onClick={addNoteSource} className="flex items-center gap-2 px-3 h-8 rounded bg-bg-active text-tx-main text-xs hover:bg-bg-hover transition-colors">
                 <FilePlus2 size={13} className="text-accent-main" /> Add from file…
               </button>
@@ -316,6 +343,8 @@ export const NotebookOverlay: React.FC = () => {
 
         {/* Modals */}
         {textPickerOpen && <InlineTextModal onCancel={() => setTextPickerOpen(false)} onConfirm={addInlineSource} />}
+        {urlOpen && <UrlModal onCancel={() => setUrlOpen(false)} onConfirm={importUrl} />}
+        {discoverOpen && <DiscoverModal onCancel={() => setDiscoverOpen(false)} onImport={importDiscoveryPicks} />}
         {showGoals && session && <GoalsModal value={session.customGoals ?? ''} onCancel={() => setShowGoals(false)} onSave={updateGoals} />}
       </div>
     </Backdrop>,
@@ -440,6 +469,122 @@ const GoalsModal: React.FC<{ value: string; onCancel: () => void; onSave: (v: st
         <div className="px-4 py-3 border-t border-border-subtle flex items-center justify-end gap-2">
           <button onClick={onCancel} className="px-3 h-8 rounded text-xs text-tx-muted hover:text-tx-main">Cancel</button>
           <button onClick={() => onSave(v)} className="px-3 h-8 rounded bg-accent-main text-bg-app text-xs font-medium">Save</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const UrlModal: React.FC<{ onCancel: () => void; onConfirm: (url: string, title?: string) => void }> = ({ onCancel, onConfirm }) => {
+  const [url, setUrl] = useState('')
+  const [title, setTitle] = useState('')
+  return (
+    <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/40" onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} className="w-[520px] rounded-xl bg-bg-popover border border-border-subtle shadow-2xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-border-subtle text-sm font-medium text-tx-main">Add a URL</div>
+        <div className="px-4 py-3 space-y-2">
+          <input autoFocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" className="w-full px-3 h-9 rounded bg-bg-active text-tx-main text-sm font-mono outline-none focus:ring-1 focus:ring-accent-main/40" />
+          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Custom title (optional)" className="w-full px-3 h-9 rounded bg-bg-active text-tx-main text-sm outline-none focus:ring-1 focus:ring-accent-main/40" />
+          <div className="text-[10px] text-tx-faint">We'll fetch the page through Jina Reader and add it to this notebook's Collector group.</div>
+        </div>
+        <div className="px-4 py-3 border-t border-border-subtle flex items-center justify-end gap-2">
+          <button onClick={onCancel} className="px-3 h-8 rounded text-xs text-tx-muted hover:text-tx-main">Cancel</button>
+          <button onClick={() => onConfirm(url, title)} disabled={!url.trim()} className="px-3 h-8 rounded bg-accent-main text-bg-app text-xs font-medium disabled:opacity-40">Import</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+interface DiscoveryResultUI { title: string; url: string; snippet?: string; selected: boolean }
+
+const DiscoverModal: React.FC<{ onCancel: () => void; onImport: (picks: Array<{ url: string; title: string }>) => void }> = ({ onCancel, onImport }) => {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<DiscoveryResultUI[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
+
+  const search = async (): Promise<void> => {
+    if (!query.trim()) return
+    setError(null); setLoading(true); setResults([])
+    const res = await window.api.notebook.discoverWeb(query, 10)
+    if (!res.ok) setError(res.error)
+    else setResults(res.data.map((r) => ({ ...r, selected: true })))
+    setLoading(false)
+  }
+
+  const toggle = (i: number): void => setResults((rs) => rs.map((r, idx) => idx === i ? { ...r, selected: !r.selected } : r))
+  const picked = results.filter((r) => r.selected)
+
+  const doImport = async (): Promise<void> => {
+    if (picked.length === 0) return
+    setImporting(true)
+    await onImport(picked.map((p) => ({ url: p.url, title: p.title })))
+    setImporting(false)
+  }
+
+  return (
+    <div className="fixed inset-0 z-[210] flex items-start justify-center pt-[8vh] bg-black/40" onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} className="w-[680px] max-h-[80vh] rounded-xl bg-bg-popover border border-border-subtle shadow-2xl overflow-hidden flex flex-col">
+        <div className="flex items-center gap-2 px-4 h-12 border-b border-border-subtle shrink-0">
+          <Compass size={14} className="text-accent-main" />
+          <span className="text-sm font-medium text-tx-main">Discover web sources</span>
+          <button onClick={onCancel} className="ml-auto w-6 h-6 flex items-center justify-center rounded text-tx-faint hover:text-tx-main hover:bg-bg-hover"><X size={12} /></button>
+        </div>
+        <div className="px-4 py-3 border-b border-border-subtle shrink-0">
+          <div className="flex items-center gap-2">
+            <Globe size={13} className="text-tx-faint shrink-0" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void search() }}
+              placeholder="Describe what you're researching, e.g. 2026 travel trends Asia"
+              className="flex-1 bg-transparent text-tx-main text-sm outline-none placeholder-tx-faint"
+            />
+            <button onClick={() => void search()} disabled={!query.trim() || loading} className="flex items-center gap-1 px-3 h-7 rounded bg-accent-main text-bg-app text-xs font-medium disabled:opacity-40">
+              {loading ? <Loader2 size={11} className="animate-spin" /> : <Search size={11} />} Search
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto scroll-thin">
+          {error && <div className="px-4 py-3 text-xs text-status-error">{error}</div>}
+          {loading && (
+            <div className="px-4 py-8 text-tx-faint text-xs flex items-center justify-center gap-2">
+              <Loader2 size={12} className="animate-spin text-accent-main" /> Searching the web…
+            </div>
+          )}
+          {!loading && results.length === 0 && !error && (
+            <div className="px-4 py-8 text-tx-faint text-xs text-center">
+              Describe a topic and we'll fetch up to 10 candidate sources via Jina search.
+            </div>
+          )}
+          {results.length > 0 && (
+            <ul className="px-3 py-2 space-y-2">
+              {results.map((r, i) => (
+                <li key={r.url} className={`group rounded border transition-colors cursor-pointer ${r.selected ? 'border-accent-main/40 bg-accent-main/5' : 'border-border-subtle hover:border-tx-faint'}`} onClick={() => toggle(i)}>
+                  <div className="flex items-start gap-2 p-2.5">
+                    <input type="checkbox" checked={r.selected} onChange={() => toggle(i)} className="mt-0.5 w-3.5 h-3.5 accent-accent-main shrink-0" onClick={(e) => e.stopPropagation()} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs text-tx-main font-medium truncate">{r.title}</div>
+                      <div className="text-[10px] text-tx-faint font-mono truncate mt-0.5">{r.url}</div>
+                      {r.snippet && <div className="text-[11px] text-tx-muted mt-1.5 leading-snug line-clamp-2">{r.snippet}</div>}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="px-4 py-3 border-t border-border-subtle flex items-center justify-between shrink-0">
+          <div className="text-[11px] text-tx-faint">{picked.length} / {results.length} selected</div>
+          <div className="flex items-center gap-2">
+            <button onClick={onCancel} className="px-3 h-8 rounded text-xs text-tx-muted hover:text-tx-main">Cancel</button>
+            <button onClick={() => void doImport()} disabled={picked.length === 0 || importing} className="flex items-center gap-1 px-3 h-8 rounded bg-accent-main text-bg-app text-xs font-medium disabled:opacity-40">
+              {importing ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Import {picked.length || ''}
+            </button>
+          </div>
         </div>
       </div>
     </div>

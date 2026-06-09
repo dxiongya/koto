@@ -194,6 +194,8 @@ export interface NotebookAPI {
   chatHistory: (sessionId: string) => Promise<IpcResult<unknown[]>>
   prompt: (sessionId: string, text: string) => Promise<IpcResult<unknown>>
   abort: (sessionId: string) => Promise<IpcResult<boolean>>
+  discoverWeb: (query: string, limit?: number) => Promise<IpcResult<Array<{ title: string; url: string; snippet?: string }>>>
+  importUrl: (sessionId: string, url: string, title?: string) => Promise<IpcResult<{ itemId: string; sourceKey: string }>>
   onEvent: (callback: (event: { type: string; [k: string]: unknown }) => void) => () => void
 }
 

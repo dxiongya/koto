@@ -99,6 +99,10 @@ const api = {
     prompt: (sessionId: string, text: string) =>
       ipcRenderer.invoke(IpcChannels.NOTEBOOK_PROMPT, sessionId, text),
     abort: (sessionId: string) => ipcRenderer.invoke(IpcChannels.NOTEBOOK_ABORT, sessionId),
+    discoverWeb: (query: string, limit?: number) =>
+      ipcRenderer.invoke(IpcChannels.NOTEBOOK_DISCOVER_WEB, query, limit),
+    importUrl: (sessionId: string, url: string, title?: string) =>
+      ipcRenderer.invoke(IpcChannels.NOTEBOOK_IMPORT_URL, sessionId, url, title),
     // Event stream (source status + chat agent events)
     onEvent: (callback: (event: { type: string; [k: string]: unknown }) => void) => {
       const handler = (_: unknown, event: { type: string; [k: string]: unknown }): void => callback(event)

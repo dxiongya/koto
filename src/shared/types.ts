@@ -155,6 +155,8 @@ export const IpcChannels = {
   NOTEBOOK_READ_RAW: 'notebook:readRaw',
   NOTEBOOK_PROMPT: 'notebook:prompt',
   NOTEBOOK_ABORT: 'notebook:abort',
+  NOTEBOOK_DISCOVER_WEB: 'notebook:discoverWeb',
+  NOTEBOOK_IMPORT_URL: 'notebook:importUrl',
   NOTEBOOK_CHAT_HISTORY: 'notebook:chatHistory',
   /** main → renderer push: source processing status / chat agent events. */
   NOTEBOOK_EVENT: 'notebook:event',
