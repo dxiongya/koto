@@ -617,10 +617,16 @@ const ids = collectPaneIds(store.rootLayout)
   // falls through is the "drop anywhere outside an existing target" case —
   // we copy the file under `{liteHome}/notes/` and open it.
   useEffect(() => {
-    const hasMdFile = (dt: DataTransfer | null): boolean => {
+    // Chromium hides `dataTransfer.files` during dragenter/dragover for
+    // security — only `types` is populated. Filename extensions also aren't
+    // exposed until `drop`, so during dragover we can only know there ARE
+    // files coming, not whether they're .md. We accept ALL file drops at the
+    // window level, then filter at drop time. (Without this, Electron's
+    // default `file://` navigation kicks in and unloads the app.)
+    const isFilesDrag = (dt: DataTransfer | null): boolean => {
       if (!dt) return false
-      for (const f of Array.from(dt.files)) {
-        if (f.name.toLowerCase().endsWith('.md')) return true
+      for (let i = 0; i < dt.types.length; i++) {
+        if (dt.types[i] === 'Files') return true
       }
       return false
     }
@@ -638,16 +644,16 @@ const ids = collectPaneIds(store.rootLayout)
     }
 
     const onDragOver = (e: DragEvent): void => {
-      // Allow drop everywhere. Local zones that want a different cursor (move
-      // vs copy) preventDefault themselves; we only kick in for raw OS files.
-      if (!hasMdFile(e.dataTransfer)) return
+      if (!isFilesDrag(e.dataTransfer)) return
       e.preventDefault()
       if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
     }
 
     const onDrop = async (e: DragEvent): Promise<void> => {
-      if (e.defaultPrevented) return  // a local handler claimed it
-      if (!hasMdFile(e.dataTransfer)) return
+      if (e.defaultPrevented) return  // local handler (Sidebar / editor) won
+      if (!e.dataTransfer || e.dataTransfer.files.length === 0) return
+      const mdFiles = Array.from(e.dataTransfer.files).filter((f) => f.name.toLowerCase().endsWith('.md'))
+      if (mdFiles.length === 0) return
       e.preventDefault()
 
       const store = useUIStore.getState()
@@ -655,20 +661,18 @@ const ids = collectPaneIds(store.rootLayout)
       if (!liteHome) return
       const notesDir = `${liteHome}/notes`
 
-      // Snapshot existing names once so multiple drops in the same gesture
-      // don't pick the same suffix.
       const dirRes = await window.api.fs.readDir(notesDir)
       const used = new Set(dirRes.ok ? dirRes.data.map((n) => n.name) : [])
 
       let lastPath: string | null = null
-      for (const f of Array.from(e.dataTransfer?.files ?? [])) {
-        if (!f.name.toLowerCase().endsWith('.md')) continue
-        const target = `${notesDir}/${pickAvailable(f.name, used)}`
+      for (const f of mdFiles) {
+        const targetName = pickAvailable(f.name, used)
+        const target = `${notesDir}/${targetName}`
         const content = await f.text()
         const createRes = await window.api.fs.createFile(target)
         if (!createRes.ok) continue
         await window.api.fs.writeFile(target, content)
-        used.add(target.split('/').pop()!)
+        used.add(targetName)
         lastPath = target
       }
 
