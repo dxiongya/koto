@@ -174,6 +174,20 @@ const AppSectionHeader: React.FC<{
 
 // ── Notes App Section ──
 
+/** Pick a filename that doesn't collide with anything in `existing` —
+ *  appends ` (2)`, ` (3)`, … to the stem until free. Used when an external
+ *  .md is dropped into a notes folder so we never silently overwrite. */
+function pickAvailableName(originalName: string, existing: Set<string>): string {
+  if (!existing.has(originalName)) return originalName
+  const ext = originalName.match(/\.(md|markdown|txt)$/i)?.[0] ?? ''
+  const stem = ext ? originalName.slice(0, -ext.length) : originalName
+  for (let i = 2; i < 10_000; i++) {
+    const candidate = `${stem} (${i})${ext}`
+    if (!existing.has(candidate)) return candidate
+  }
+  return `${stem}-${Date.now()}${ext}`
+}
+
 const NotesAppSection: React.FC<{
   currentApp: AppType
   expanded: boolean
@@ -493,29 +507,30 @@ const NotesAppSection: React.FC<{
     setDropTargetPath(null)
     setDragNotePath(null)
 
-    // Handle external file drops
+    // Handle external file drops — copy in, with collision-safe naming,
+    // then auto-open the freshly imported file so the user lands on it.
     if (e.dataTransfer.files.length > 0) {
+      let lastOpenedPath: string | null = null
       for (const file of Array.from(e.dataTransfer.files)) {
-        if (file.name.endsWith('.md')) {
-          // Read external file content and create copy
-          const reader = new FileReader()
-          reader.onload = async () => {
-            const content = reader.result as string
-            const filePath = `${targetDir}/${file.name}`
-            await window.api.fs.createFile(filePath)
-            await window.api.fs.writeFile(filePath, content)
-            setRefreshCounter((c) => c + 1)
-          }
-          reader.readAsText(file)
-        }
+        if (!file.name.toLowerCase().endsWith('.md')) continue
+        const content = await file.text()
+        const dirRes = await window.api.fs.readDir(targetDir)
+        const existing = new Set(dirRes.ok ? dirRes.data.map((n) => n.name) : [])
+        const filePath = `${targetDir}/${pickAvailableName(file.name, existing)}`
+        const createRes = await window.api.fs.createFile(filePath)
+        if (!createRes.ok) continue
+        await window.api.fs.writeFile(filePath, content)
+        lastOpenedPath = filePath
       }
+      setRefreshCounter((c) => c + 1)
+      if (lastOpenedPath) onFileClick(lastOpenedPath)
       return
     }
 
     // Handle internal note move
     const sourcePath = e.dataTransfer.getData('text/plain')
     if (sourcePath) await moveNote(sourcePath, targetDir)
-  }, [moveNote])
+  }, [moveNote, onFileClick])
 
   // ── Inline input component ──
 

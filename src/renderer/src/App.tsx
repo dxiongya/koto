@@ -610,6 +610,82 @@ const ids = collectPaneIds(store.rootLayout)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  // ── Global file drop (.md anywhere in the window → import + open) ──
+  // Local handlers in the Notes sidebar / editor get first dibs by virtue of
+  // bubbling order: React's synthetic events run before this window-level
+  // bubble listener, so anything they preventDefault'd we leave alone. What
+  // falls through is the "drop anywhere outside an existing target" case —
+  // we copy the file under `{liteHome}/notes/` and open it.
+  useEffect(() => {
+    const hasMdFile = (dt: DataTransfer | null): boolean => {
+      if (!dt) return false
+      for (const f of Array.from(dt.files)) {
+        if (f.name.toLowerCase().endsWith('.md')) return true
+      }
+      return false
+    }
+
+    const pickAvailable = (name: string, used: Set<string>): string => {
+      if (!used.has(name)) return name
+      const m = name.match(/\.(md|markdown|txt)$/i)
+      const ext = m ? m[0] : ''
+      const stem = ext ? name.slice(0, -ext.length) : name
+      for (let i = 2; i < 10_000; i++) {
+        const c = `${stem} (${i})${ext}`
+        if (!used.has(c)) return c
+      }
+      return `${stem}-${Date.now()}${ext}`
+    }
+
+    const onDragOver = (e: DragEvent): void => {
+      // Allow drop everywhere. Local zones that want a different cursor (move
+      // vs copy) preventDefault themselves; we only kick in for raw OS files.
+      if (!hasMdFile(e.dataTransfer)) return
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+    }
+
+    const onDrop = async (e: DragEvent): Promise<void> => {
+      if (e.defaultPrevented) return  // a local handler claimed it
+      if (!hasMdFile(e.dataTransfer)) return
+      e.preventDefault()
+
+      const store = useUIStore.getState()
+      const liteHome = store.liteHome
+      if (!liteHome) return
+      const notesDir = `${liteHome}/notes`
+
+      // Snapshot existing names once so multiple drops in the same gesture
+      // don't pick the same suffix.
+      const dirRes = await window.api.fs.readDir(notesDir)
+      const used = new Set(dirRes.ok ? dirRes.data.map((n) => n.name) : [])
+
+      let lastPath: string | null = null
+      for (const f of Array.from(e.dataTransfer?.files ?? [])) {
+        if (!f.name.toLowerCase().endsWith('.md')) continue
+        const target = `${notesDir}/${pickAvailable(f.name, used)}`
+        const content = await f.text()
+        const createRes = await window.api.fs.createFile(target)
+        if (!createRes.ok) continue
+        await window.api.fs.writeFile(target, content)
+        used.add(target.split('/').pop()!)
+        lastPath = target
+      }
+
+      if (lastPath) {
+        store.setCurrentApp('notes.app')
+        store.setActiveFilePath(lastPath)
+      }
+    }
+
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [])
+
   // ── Shortcuts forwarded from main process (Ctrl+Tab, Ctrl+-, etc.) ──
   useEffect(() => {
     // Debounce Ctrl+Tab to prevent double-fire (no preventDefault in main process)
