@@ -32,6 +32,53 @@ interface RenderedMessage {
   ts: number
 }
 
+interface CitationTarget { sourceKey: string; passageId: string }
+
+const CITATION_RE = /\[src:([A-Za-z0-9_-]+)#([A-Za-z0-9]+)\]/g
+
+/** Walk a piece of assistant text and produce React nodes where every
+ *  `[src:key#pId]` marker is replaced by a clickable numbered badge.
+ *  Numbers are assigned per-(key, passageId) first-appearance order. */
+function renderWithCitations(
+  text: string,
+  sessionId: string,
+  onOpen: (t: CitationTarget, ev: React.MouseEvent) => void,
+): React.ReactNode {
+  const order: CitationTarget[] = []
+  const numFor = (key: string, pid: string): number => {
+    const idx = order.findIndex((t) => t.sourceKey === key && t.passageId === pid)
+    if (idx >= 0) return idx + 1
+    order.push({ sourceKey: key, passageId: pid })
+    return order.length
+  }
+
+  const parts: React.ReactNode[] = []
+  let lastIdx = 0
+  let m: RegExpExecArray | null
+  let key = 0
+  CITATION_RE.lastIndex = 0
+  while ((m = CITATION_RE.exec(text)) !== null) {
+    const sourceKey = m[1]
+    const passageId = m[2]
+    const n = numFor(sourceKey, passageId)
+    parts.push(text.slice(lastIdx, m.index))
+    parts.push(
+      <button
+        key={`c-${key++}-${n}`}
+        onClick={(e) => onOpen({ sourceKey, passageId }, e)}
+        className="inline-flex items-center justify-center mx-0.5 px-1.5 h-4 rounded bg-accent-main/15 text-accent-main text-[10px] font-mono align-middle hover:bg-accent-main/25 transition-colors"
+        title={`${sourceKey} · ${passageId}`}
+      >
+        {n}
+      </button>,
+    )
+    lastIdx = m.index + m[0].length
+  }
+  parts.push(text.slice(lastIdx))
+  void sessionId
+  return parts
+}
+
 /** Pull plain text out of a pi-ai AssistantMessage content array. */
 function extractText(content: unknown): string {
   if (typeof content === 'string') return content
@@ -58,6 +105,7 @@ export const NotebookOverlay: React.FC = () => {
   const [urlOpen, setUrlOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [showGoals, setShowGoals] = useState(false)
+  const [citationPop, setCitationPop] = useState<{ target: CitationTarget; x: number; y: number } | null>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
 
   // ── Load session on open ────────────────────────────────────────
@@ -294,7 +342,14 @@ export const NotebookOverlay: React.FC = () => {
                   to peek at the original passage.
                 </div>
               )}
-              {messages.map((m) => <ChatMessageRow key={m.id} m={m} />)}
+              {messages.map((m) => (
+                <ChatMessageRow
+                  key={m.id}
+                  m={m}
+                  sessionId={sessionId}
+                  onCitationClick={(t, e) => setCitationPop({ target: t, x: e.clientX, y: e.clientY })}
+                />
+              ))}
               {sending && messages[messages.length - 1]?.role !== 'assistant' && (
                 <div className="flex items-center gap-2 text-tx-faint text-xs my-3">
                   <Loader2 size={12} className="animate-spin text-accent-main" /> Agent is thinking…
@@ -346,6 +401,7 @@ export const NotebookOverlay: React.FC = () => {
         {urlOpen && <UrlModal onCancel={() => setUrlOpen(false)} onConfirm={importUrl} />}
         {discoverOpen && <DiscoverModal onCancel={() => setDiscoverOpen(false)} onImport={importDiscoveryPicks} />}
         {showGoals && session && <GoalsModal value={session.customGoals ?? ''} onCancel={() => setShowGoals(false)} onSave={updateGoals} />}
+        {citationPop && <CitationPopover sessionId={sessionId} target={citationPop.target} x={citationPop.x} y={citationPop.y} sources={session?.sources ?? {}} onClose={() => setCitationPop(null)} />}
       </div>
     </Backdrop>,
     document.body,
@@ -406,7 +462,11 @@ const SourceRow: React.FC<{ m: SourceMeta; onToggle: () => void; onDelete: () =>
   )
 }
 
-const ChatMessageRow: React.FC<{ m: RenderedMessage }> = ({ m }) => {
+const ChatMessageRow: React.FC<{
+  m: RenderedMessage
+  sessionId: string
+  onCitationClick: (t: CitationTarget, e: React.MouseEvent) => void
+}> = ({ m, sessionId, onCitationClick }) => {
   if (m.role === 'tool') {
     return (
       <div className="my-2 flex items-center gap-2 text-[11px] text-tx-faint">
@@ -425,13 +485,67 @@ const ChatMessageRow: React.FC<{ m: RenderedMessage }> = ({ m }) => {
       </div>
     )
   }
-  // assistant — render plain text for V2 (citation-aware renderer arrives in M7).
   return (
     <div className="mb-5">
       <div className="max-w-[92%] text-tx-main text-sm leading-relaxed whitespace-pre-wrap">
-        {m.text}
+        {renderWithCitations(m.text, sessionId, onCitationClick)}
         {m.streaming && <span className="inline-block w-1.5 h-3 bg-accent-main/60 animate-pulse ml-0.5 align-middle" />}
       </div>
+    </div>
+  )
+}
+
+const CitationPopover: React.FC<{
+  sessionId: string
+  target: CitationTarget
+  x: number; y: number
+  sources: Record<string, SourceMeta>
+  onClose: () => void
+}> = ({ sessionId, target, x, y, sources, onClose }) => {
+  const [passage, setPassage] = useState<{ text: string; start: number; end: number } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const source = sources[target.sourceKey]
+
+  useEffect(() => {
+    let cancelled = false
+    void window.api.notebook.getPassage(sessionId, target.sourceKey, target.passageId).then((res) => {
+      if (cancelled) return
+      if (res.ok) setPassage({ text: res.data.text, start: res.data.start, end: res.data.end })
+      else setError(res.error)
+    })
+    const onAny = (e: MouseEvent): void => {
+      // Close when clicking outside the popover element.
+      const el = (e.target as HTMLElement | null)?.closest('[data-citation-popover]')
+      if (!el) onClose()
+    }
+    window.addEventListener('mousedown', onAny)
+    return () => { cancelled = true; window.removeEventListener('mousedown', onAny) }
+  }, [sessionId, target.sourceKey, target.passageId, onClose])
+
+  const left = Math.min(x, window.innerWidth - 440)
+  const top = Math.min(y + 14, window.innerHeight - 320)
+
+  return (
+    <div
+      data-citation-popover
+      className="fixed z-[230] w-[420px] max-h-[320px] rounded-lg bg-bg-popover border border-border-subtle shadow-2xl overflow-hidden flex flex-col"
+      style={{ left, top }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border-subtle">
+        <span className="text-[10px] font-mono text-accent-main">{target.sourceKey}#{target.passageId}</span>
+        <span className="flex-1 text-xs text-tx-main truncate">{source?.title ?? 'Unknown source'}</span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 text-[12px] text-tx-muted whitespace-pre-wrap leading-relaxed">
+        {error ? <span className="text-status-error">{error}</span>
+          : passage ? passage.text
+          : <span className="text-tx-faint">Loading…</span>}
+      </div>
+      {passage && (
+        <div className="px-3 py-1.5 text-[10px] text-tx-faint border-t border-border-subtle font-mono">
+          chars {passage.start}–{passage.end}
+        </div>
+      )}
     </div>
   )
 }
