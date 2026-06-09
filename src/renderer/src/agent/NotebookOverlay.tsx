@@ -108,6 +108,7 @@ export const NotebookOverlay: React.FC = () => {
   const [citationPop, setCitationPop] = useState<{ target: CitationTarget; x: number; y: number } | null>(null)
   const [studioOpen, setStudioOpen] = useState<null | { kind: 'report' | 'slides' }>(null)
   const [studioRunning, setStudioRunning] = useState<null | 'report' | 'slides'>(null)
+  const [expandedSource, setExpandedSource] = useState<string | null>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
 
   // ── Load session on open ────────────────────────────────────────
@@ -349,7 +350,16 @@ export const NotebookOverlay: React.FC = () => {
               ) : (
                 <ul className="space-y-1 pb-3">
                   {sources.map((m) => (
-                    <SourceRow key={m.key} m={m} onToggle={() => toggleSource(m.key)} onDelete={() => deleteSource(m.key)} />
+                    <SourceRow
+                      key={m.key}
+                      m={m}
+                      expanded={expandedSource === m.key}
+                      onToggle={() => toggleSource(m.key)}
+                      onDelete={() => deleteSource(m.key)}
+                      onClickRow={() => setExpandedSource((cur) => cur === m.key ? null : m.key)}
+                      onAskQuestion={(q) => { setInput(q); setExpandedSource(null) }}
+                      onReprocess={() => sessionId && window.api.notebook.reprocessSource(sessionId, m.key)}
+                    />
                   ))}
                 </ul>
               )}
@@ -493,33 +503,99 @@ const STATUS_LABEL: Record<SourceStatus, string> = {
   error: 'error',
 }
 
-const SourceRow: React.FC<{ m: SourceMeta; onToggle: () => void; onDelete: () => void }> = ({ m, onToggle, onDelete }) => {
+const SourceRow: React.FC<{
+  m: SourceMeta
+  expanded: boolean
+  onToggle: () => void
+  onDelete: () => void
+  onClickRow: () => void
+  onAskQuestion: (q: string) => void
+  onReprocess: () => void
+}> = ({ m, expanded, onToggle, onDelete, onClickRow, onAskQuestion, onReprocess }) => {
   const isReady = m.status === 'ready'
   const isError = m.status === 'error'
   return (
-    <li className="group flex items-center gap-2 px-2 py-1.5 rounded hover:bg-bg-hover transition-colors">
-      <input
-        type="checkbox"
-        checked={m.selected}
-        onChange={onToggle}
-        disabled={!isReady}
-        className="w-3.5 h-3.5 accent-accent-main shrink-0 cursor-pointer disabled:opacity-40"
-      />
-      <span className="text-[10px] uppercase tracking-wider text-accent-main/70 font-mono shrink-0" title={m.key}>{m.key.slice(0, 8)}</span>
-      <span className="flex-1 min-w-0 text-xs text-tx-main truncate" title={m.subtitle || m.title}>
-        {m.title}
-        {!isReady && (
-          <span className={`ml-1.5 text-[9px] uppercase tracking-wider ${isError ? 'text-status-error' : 'text-tx-faint'}`}>
-            {isError ? 'error' : STATUS_LABEL[m.status]}
-          </span>
-        )}
-      </span>
-      {!isReady && !isError && <Loader2 size={11} className="animate-spin text-accent-main shrink-0" />}
-      {isError && <span title={m.error || 'failed'}><AlertCircle size={11} className="text-status-error shrink-0" /></span>}
-      {isReady && <CheckCircle2 size={11} className="text-status-success shrink-0" />}
-      <button onClick={onDelete} className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-tx-faint hover:text-status-error transition-all" title="Remove">
-        <Trash2 size={11} />
-      </button>
+    <li>
+      <div
+        onClick={onClickRow}
+        className={`group flex items-center gap-2 px-2 py-1.5 rounded transition-colors cursor-pointer ${expanded ? 'bg-bg-active' : 'hover:bg-bg-hover'}`}
+      >
+        <input
+          type="checkbox"
+          checked={m.selected}
+          onChange={onToggle}
+          disabled={!isReady}
+          onClick={(e) => e.stopPropagation()}
+          className="w-3.5 h-3.5 accent-accent-main shrink-0 cursor-pointer disabled:opacity-40"
+        />
+        <span className="text-[10px] uppercase tracking-wider text-accent-main/70 font-mono shrink-0" title={m.key}>{m.key.slice(0, 8)}</span>
+        <span className="flex-1 min-w-0 text-xs text-tx-main truncate" title={m.subtitle || m.title}>
+          {m.title}
+          {!isReady && (
+            <span className={`ml-1.5 text-[9px] uppercase tracking-wider ${isError ? 'text-status-error' : 'text-tx-faint'}`}>
+              {isError ? 'error' : STATUS_LABEL[m.status]}
+            </span>
+          )}
+        </span>
+        {!isReady && !isError && <Loader2 size={11} className="animate-spin text-accent-main shrink-0" />}
+        {isError && <span title={m.error || 'failed'}><AlertCircle size={11} className="text-status-error shrink-0" /></span>}
+        {isReady && <CheckCircle2 size={11} className="text-status-success shrink-0" />}
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete() }}
+          className="opacity-0 group-hover:opacity-100 w-5 h-5 flex items-center justify-center text-tx-faint hover:text-status-error transition-all"
+          title="Remove"
+        >
+          <Trash2 size={11} />
+        </button>
+      </div>
+      {expanded && (
+        <div className="mx-2 mb-1.5 mt-0.5 px-3 py-2.5 rounded bg-bg-popover border border-border-subtle text-[11px] leading-relaxed">
+          {m.subtitle && (
+            <div className="font-mono text-[10px] text-tx-faint break-all mb-1.5">{m.subtitle}</div>
+          )}
+          {isError && (
+            <div className="text-status-error mb-2">Failed: {m.error || 'unknown'}</div>
+          )}
+          {m.summary ? (
+            <div className="text-tx-muted mb-2">{m.summary}</div>
+          ) : isReady ? (
+            <div className="text-tx-faint italic mb-2">No summary generated. Reprocess to retry.</div>
+          ) : (
+            <div className="text-tx-faint italic mb-2">Summary will appear when processing completes.</div>
+          )}
+          {m.topics && m.topics.length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-2">
+              {m.topics.map((t, i) => (
+                <span key={i} className="px-1.5 py-0.5 rounded bg-bg-active text-[10px] text-tx-muted">{t}</span>
+              ))}
+            </div>
+          )}
+          {m.suggestedQuestions && m.suggestedQuestions.length > 0 && (
+            <div className="mt-2">
+              <div className="text-[10px] text-tx-faint uppercase tracking-wider mb-1">Suggested questions</div>
+              <div className="flex flex-col gap-1">
+                {m.suggestedQuestions.map((q, i) => (
+                  <button
+                    key={i}
+                    onClick={() => onAskQuestion(q)}
+                    className="text-left text-[11px] text-tx-main hover:text-accent-main px-2 py-1 rounded hover:bg-bg-hover transition-colors"
+                  >
+                    → {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="flex items-center gap-2 mt-2.5 pt-2 border-t border-border-subtle">
+            <span className="text-[10px] text-tx-faint">
+              {m.passageCount ?? 0} passages
+              {m.embeddingDim ? ` · ${m.embeddingDim}d embeddings` : ' · keyword only'}
+              {m.rawBytes ? ` · ${Math.round(m.rawBytes / 1024)}KB` : ''}
+            </span>
+            <button onClick={onReprocess} className="ml-auto text-[10px] text-tx-muted hover:text-tx-main">Reprocess</button>
+          </div>
+        </div>
+      )}
     </li>
   )
 }
