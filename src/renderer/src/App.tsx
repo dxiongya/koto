@@ -16,6 +16,7 @@ import { FileSwitcher } from './components/FileSwitcher'
 import { ContextPanel } from './components/ContextPanel'
 import { WelcomeDialog } from './components/WelcomeDialog'
 import { AppToast } from './components/AppToast'
+import { NotebookOverlay } from './agent/NotebookOverlay'
 import { builtinThemes, applyTheme, applyFont } from './themes'
 import type { FontId } from './themes'
 import { getAppRegistry, getAppBus } from './core/AppContext'
@@ -518,6 +519,24 @@ export default function App() {
         return
       }
 
+      // Cmd+Shift+N — Notebook agent overlay. Toggle: open most-recent
+      // session or auto-create "Untitled"; close if already open.
+      if (e.metaKey && e.key === 'n' && e.shiftKey) {
+        e.preventDefault()
+        if (store.notebookSessionId) { store.setNotebookSession(null); return }
+        void (async () => {
+          const listRes = await window.api.notebook.listSessions()
+          const list = listRes.ok ? listRes.data : []
+          if (list.length > 0) {
+            store.setNotebookSession(list[0].id)
+          } else {
+            const c = await window.api.notebook.createSession('Untitled notebook')
+            if (c.ok) store.setNotebookSession(c.data.id)
+          }
+        })()
+        return
+      }
+
       // Cmd+P — Command Palette (file/app/action search). Cmd+K used to
       // duplicate this; removed so it can be reclaimed (and so the binding
       // table doesn't list two keys for the same action).
@@ -672,6 +691,7 @@ const ids = collectPaneIds(store.rootLayout)
       <ContextPanel />
       <WelcomeDialog />
       <AppToast />
+      <NotebookOverlay />
     </>
   )
 }
