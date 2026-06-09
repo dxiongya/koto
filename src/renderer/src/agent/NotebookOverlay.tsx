@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom'
 import {
   X, BookOpen, FilePlus2, Plus, Send, Trash2, Loader2, AlertCircle,
   CheckCircle2, Search, Settings, Sparkles, Globe, Link as LinkIcon,
-  Compass,
+  Compass, FileEdit, Presentation, FileText, ChevronRight,
 } from 'lucide-react'
 import { useUIStore } from '../store/useUIStore'
 import type { Session, SourceMeta, SourceStatus, SourceRef } from '../../../shared/notebook'
@@ -106,6 +106,8 @@ export const NotebookOverlay: React.FC = () => {
   const [renaming, setRenaming] = useState(false)
   const [showGoals, setShowGoals] = useState(false)
   const [citationPop, setCitationPop] = useState<{ target: CitationTarget; x: number; y: number } | null>(null)
+  const [studioOpen, setStudioOpen] = useState<null | { kind: 'report' | 'slides' }>(null)
+  const [studioRunning, setStudioRunning] = useState<null | 'report' | 'slides'>(null)
   const chatScrollRef = useRef<HTMLDivElement>(null)
 
   // ── Load session on open ────────────────────────────────────────
@@ -204,6 +206,32 @@ export const NotebookOverlay: React.FC = () => {
       if (!res.ok) { setError(res.error); return }
     }
     setDiscoverOpen(false)
+  }
+
+  const runStudio = async (kind: 'report' | 'slides', preset: string, brief: string): Promise<void> => {
+    if (!sessionId) return
+    const ready = Object.values(session?.sources ?? {}).filter((m) => m.selected && m.status === 'ready')
+    if (ready.length === 0) { setError('Add and select at least one ready source first.'); return }
+    setError(null); setStudioRunning(kind); setStudioOpen(null)
+    const fn = kind === 'report' ? window.api.notebook.generateReport : window.api.notebook.generateSlides
+    const res = await fn(sessionId, preset, brief || undefined)
+    setStudioRunning(null)
+    if (!res.ok) { setError(res.error); return }
+    // Refresh session to pick up products[] update.
+    const refresh = await window.api.notebook.getSession(sessionId)
+    if (refresh.ok) setSession(refresh.data)
+  }
+
+  const openProduct = (notePath: string): void => {
+    // Drop into Notes app at the generated file. Closes overlay so the user
+    // sees the document immediately.
+    useUIStore.getState().setCurrentApp('notes.app')
+    const store = useUIStore.getState()
+    const apps = store.appStates as Record<string, { activeFilePath: string | null; expandedPaths: string[] }>
+    useUIStore.setState({
+      appStates: { ...apps, 'notes.app': { ...(apps['notes.app'] ?? { expandedPaths: [] }), activeFilePath: notePath } } as never,
+    })
+    setSessionId(null)
   }
 
   const toggleSource = async (key: string): Promise<void> => {
@@ -387,11 +415,44 @@ export const NotebookOverlay: React.FC = () => {
             </div>
           </div>
 
-          {/* Studio (placeholder until M9+) */}
+          {/* Studio */}
           <div className="flex flex-col border-l border-border-subtle shrink-0" style={{ width: COL_STUDIO }}>
             <div className="px-4 pt-4 pb-2 text-[11px] text-tx-faint uppercase tracking-wider">Studio</div>
-            <div className="px-3 text-[11px] text-tx-faint leading-relaxed">
-              Report / Mind Map / Quiz arrive in M9+.
+            <div className="px-3 grid grid-cols-1 gap-2">
+              <StudioCard
+                icon={<FileEdit size={14} />}
+                title="Report / article"
+                subtitle="Briefing · academic · FAQ · study guide · blog"
+                running={studioRunning === 'report'}
+                disabled={readyCount === 0 || studioRunning != null}
+                onClick={() => setStudioOpen({ kind: 'report' })}
+              />
+              <StudioCard
+                icon={<Presentation size={14} />}
+                title="Slide deck (PPT)"
+                subtitle="Markdown slides, opens in Notes"
+                running={studioRunning === 'slides'}
+                disabled={readyCount === 0 || studioRunning != null}
+                onClick={() => setStudioOpen({ kind: 'slides' })}
+              />
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto scroll-thin px-3 mt-4">
+              <div className="text-[10px] text-tx-faint uppercase tracking-wider px-1 mb-1">Products</div>
+              {(session?.products ?? []).length === 0 ? (
+                <div className="text-[11px] text-tx-faint px-1 py-2">No outputs yet.</div>
+              ) : (
+                <ul className="space-y-1 pb-3">
+                  {[...(session?.products ?? [])].reverse().map((p) => (
+                    <li key={p.id}>
+                      <button onClick={() => openProduct(p.targetPath)} className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-bg-hover text-left text-xs text-tx-main transition-colors">
+                        {p.type === 'slide-deck' ? <Presentation size={12} className="text-accent-main shrink-0" /> : <FileText size={12} className="text-accent-main shrink-0" />}
+                        <span className="truncate flex-1">{p.label}</span>
+                        <ChevronRight size={11} className="text-tx-faint shrink-0" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
         </div>
@@ -402,6 +463,7 @@ export const NotebookOverlay: React.FC = () => {
         {discoverOpen && <DiscoverModal onCancel={() => setDiscoverOpen(false)} onImport={importDiscoveryPicks} />}
         {showGoals && session && <GoalsModal value={session.customGoals ?? ''} onCancel={() => setShowGoals(false)} onSave={updateGoals} />}
         {citationPop && <CitationPopover sessionId={sessionId} target={citationPop.target} x={citationPop.x} y={citationPop.y} sources={session?.sources ?? {}} onClose={() => setCitationPop(null)} />}
+        {studioOpen && <StudioModal kind={studioOpen.kind} onCancel={() => setStudioOpen(null)} onRun={(preset, brief) => runStudio(studioOpen.kind, preset, brief)} />}
       </div>
     </Backdrop>,
     document.body,
@@ -699,6 +761,99 @@ const DiscoverModal: React.FC<{ onCancel: () => void; onImport: (picks: Array<{ 
               {importing ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />} Import {picked.length || ''}
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const StudioCard: React.FC<{
+  icon: React.ReactNode; title: string; subtitle: string
+  running?: boolean; disabled?: boolean; onClick: () => void
+}> = ({ icon, title, subtitle, running, disabled, onClick }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-colors
+      ${disabled
+        ? 'border-border-subtle bg-bg-active/40 cursor-default'
+        : 'border-border-subtle bg-bg-active hover:border-accent-main/40 hover:bg-bg-hover'}`}
+  >
+    <span className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 ${disabled ? 'bg-bg-hover text-tx-faint' : 'bg-accent-main/15 text-accent-main'}`}>
+      {running ? <Loader2 size={14} className="animate-spin" /> : icon}
+    </span>
+    <span className="flex flex-col min-w-0">
+      <span className={`text-xs font-medium ${disabled ? 'text-tx-muted' : 'text-tx-main'}`}>{title}</span>
+      <span className="text-[10px] text-tx-faint truncate">{subtitle}</span>
+    </span>
+  </button>
+)
+
+const REPORT_PRESETS: Array<{ key: string; label: string; hint: string }> = [
+  { key: 'briefing', label: 'Briefing doc', hint: 'Executive overview — punchy, scannable' },
+  { key: 'academic', label: 'Academic article', hint: 'Paper-style with abstract + findings' },
+  { key: 'faq', label: 'FAQ', hint: 'Question-answer format' },
+  { key: 'study-guide', label: 'Study guide', hint: 'Glossary + core ideas + self-test' },
+  { key: 'blog', label: 'Blog post', hint: 'Conversational long-form' },
+]
+
+const SLIDES_PRESETS: Array<{ key: string; label: string; hint: string }> = [
+  { key: 'short', label: 'Short', hint: '5-7 slides' },
+  { key: 'standard', label: 'Standard', hint: '8-12 slides' },
+  { key: 'long', label: 'Long', hint: '14-18 slides' },
+]
+
+const StudioModal: React.FC<{
+  kind: 'report' | 'slides'
+  onCancel: () => void
+  onRun: (preset: string, brief: string) => void
+}> = ({ kind, onCancel, onRun }) => {
+  const presets = kind === 'report' ? REPORT_PRESETS : SLIDES_PRESETS
+  const [preset, setPreset] = useState(presets[0].key)
+  const [brief, setBrief] = useState('')
+
+  return (
+    <div className="fixed inset-0 z-[210] flex items-center justify-center bg-black/40" onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} className="w-[600px] rounded-xl bg-bg-popover border border-border-subtle shadow-2xl overflow-hidden">
+        <div className="flex items-center gap-2 px-4 h-12 border-b border-border-subtle">
+          {kind === 'report' ? <FileEdit size={14} className="text-accent-main" /> : <Presentation size={14} className="text-accent-main" />}
+          <span className="text-sm font-medium text-tx-main">{kind === 'report' ? 'Generate report' : 'Generate slide deck'}</span>
+        </div>
+        <div className="px-4 py-3 space-y-3">
+          <div>
+            <div className="text-[10px] text-tx-faint uppercase tracking-wider mb-1.5">Preset</div>
+            <div className="grid grid-cols-1 gap-1">
+              {presets.map((p) => (
+                <button
+                  key={p.key}
+                  onClick={() => setPreset(p.key)}
+                  className={`flex items-center justify-between text-left px-3 py-2 rounded border transition-colors ${preset === p.key ? 'border-accent-main/50 bg-accent-main/5' : 'border-border-subtle bg-bg-active hover:border-tx-faint'}`}
+                >
+                  <span className="flex flex-col">
+                    <span className="text-xs text-tx-main">{p.label}</span>
+                    <span className="text-[10px] text-tx-faint">{p.hint}</span>
+                  </span>
+                  {preset === p.key && <CheckCircle2 size={12} className="text-accent-main shrink-0" />}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] text-tx-faint uppercase tracking-wider mb-1.5">Focus brief (optional)</div>
+            <textarea
+              value={brief}
+              onChange={(e) => setBrief(e.target.value)}
+              placeholder="What angle, audience, or specific questions should this cover?"
+              rows={3}
+              className="w-full px-3 py-2 rounded bg-bg-active text-tx-main text-sm outline-none focus:ring-1 focus:ring-accent-main/40 resize-none"
+            />
+          </div>
+        </div>
+        <div className="px-4 py-3 border-t border-border-subtle flex items-center justify-end gap-2">
+          <button onClick={onCancel} className="px-3 h-8 rounded text-xs text-tx-muted hover:text-tx-main">Cancel</button>
+          <button onClick={() => onRun(preset, brief)} className="flex items-center gap-1.5 px-3 h-8 rounded bg-accent-main text-bg-app text-xs font-medium">
+            <Sparkles size={11} /> Generate
+          </button>
         </div>
       </div>
     </div>

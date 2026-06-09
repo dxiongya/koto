@@ -103,6 +103,10 @@ const api = {
       ipcRenderer.invoke(IpcChannels.NOTEBOOK_DISCOVER_WEB, query, limit),
     importUrl: (sessionId: string, url: string, title?: string) =>
       ipcRenderer.invoke(IpcChannels.NOTEBOOK_IMPORT_URL, sessionId, url, title),
+    generateReport: (sessionId: string, preset: string, brief?: string) =>
+      ipcRenderer.invoke(IpcChannels.NOTEBOOK_GENERATE_REPORT, sessionId, preset, brief),
+    generateSlides: (sessionId: string, preset: string, brief?: string) =>
+      ipcRenderer.invoke(IpcChannels.NOTEBOOK_GENERATE_SLIDES, sessionId, preset, brief),
     // Event stream (source status + chat agent events)
     onEvent: (callback: (event: { type: string; [k: string]: unknown }) => void) => {
       const handler = (_: unknown, event: { type: string; [k: string]: unknown }): void => callback(event)

@@ -196,6 +196,10 @@ export interface NotebookAPI {
   abort: (sessionId: string) => Promise<IpcResult<boolean>>
   discoverWeb: (query: string, limit?: number) => Promise<IpcResult<Array<{ title: string; url: string; snippet?: string }>>>
   importUrl: (sessionId: string, url: string, title?: string) => Promise<IpcResult<{ itemId: string; sourceKey: string }>>
+  generateReport: (sessionId: string, preset: string, brief?: string) =>
+    Promise<{ ok: true; markdown: string; notePath: string; product: unknown } | { ok: false; error: string }>
+  generateSlides: (sessionId: string, preset: string, brief?: string) =>
+    Promise<{ ok: true; markdown: string; notePath: string; product: unknown } | { ok: false; error: string }>
   onEvent: (callback: (event: { type: string; [k: string]: unknown }) => void) => () => void
 }
 

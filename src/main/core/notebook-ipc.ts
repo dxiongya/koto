@@ -12,6 +12,7 @@ import {
 import { onSourceEvent, processSource } from './notebook-source-pipeline'
 import { onAgentEvent, promptAgent, abortAgent } from './notebook-agent'
 import { discoverWeb, importUrlToSession } from './notebook-discovery'
+import { generateReport, generateSlideDeck, type ReportPreset, type SlidesPreset } from './notebook-studio'
 import type { Session, SourceRef } from '../../shared/notebook'
 
 export function setupNotebookIpc(): void {
@@ -104,6 +105,14 @@ export function setupNotebookIpc(): void {
   })
   ipcMain.handle(IpcChannels.NOTEBOOK_IMPORT_URL, async (_, sessionId: string, url: string, title?: string) => {
     return importUrlToSession(sessionId, url, title)
+  })
+
+  // ── Studio: report + slides ──────────────────────────────────────
+  ipcMain.handle(IpcChannels.NOTEBOOK_GENERATE_REPORT, async (_, sessionId: string, preset: ReportPreset, brief?: string) => {
+    return generateReport(sessionId, preset, brief)
+  })
+  ipcMain.handle(IpcChannels.NOTEBOOK_GENERATE_SLIDES, async (_, sessionId: string, preset: SlidesPreset, brief?: string) => {
+    return generateSlideDeck(sessionId, preset, brief)
   })
 
   // ── Forward source + agent events to all renderer windows ────────
