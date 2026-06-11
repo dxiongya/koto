@@ -20,17 +20,25 @@ import {
   $createParagraphNode,
   $createTextNode,
   $getNodeByKey,
+  createEditor,
   PASTE_COMMAND,
   COMMAND_PRIORITY_LOW,
-  type LexicalNode,
-  type RangeSelection
+  type RangeSelection,
+  type SerializedLexicalNode,
 } from 'lexical'
-import { $createLinkNode, $isLinkNode } from '@lexical/link'
+import { $createLinkNode, $isLinkNode, LinkNode, AutoLinkNode } from '@lexical/link'
 import {
   $convertFromMarkdownString,
   TRANSFORMERS,
   CHECK_LIST
 } from '@lexical/markdown'
+import { $generateNodesFromSerializedNodes } from '@lexical/clipboard'
+import { HeadingNode, QuoteNode } from '@lexical/rich-text'
+import { ListNode, ListItemNode } from '@lexical/list'
+import { CodeNode, CodeHighlightNode } from '@lexical/code'
+import { HashtagNode } from '@lexical/hashtag'
+import { TableNode, TableCellNode, TableRowNode } from '@lexical/table'
+import { HorizontalRuleNode } from '../nodes/HorizontalRuleNode'
 import { $createImageNode } from '../nodes/ImageNode'
 import { $createVideoNode, isVideoEmbedUrl } from '../nodes/VideoNode'
 import { parseMarkdownTable, buildTableNodeFromParsed } from '../utils/markdownTable'
@@ -260,66 +268,77 @@ export function PastePlugin(): JSX.Element | null {
     }
 
     // ── 4. Markdown text → convert and insert ──
+    //
+    // Previous implementation cleared the editor root, ran the markdown
+    // converter (which appends to root), then "restored" the saved children.
+    // Bug: Lexical's `root.clear()` DESTROYS its child nodes from the editor's
+    // node map — it's not a soft detach. The saved references became dead
+    // and re-appending them silently wiped the document. Anyone pasting
+    // markdown into a non-empty doc lost everything they had written.
+    //
+    // Safe approach: spin up a throwaway headless editor whose only job is
+    // to run the markdown→nodes conversion. Serialize its output to JSON,
+    // then materialize it in the main editor via `$generateNodesFromSerialized
+    // Nodes` and splice in at the cursor. The main editor's root is never
+    // touched until that final splice.
     function handleMarkdownText(data: DataTransfer): boolean {
       const text = data.getData('text/plain')
       if (!text || !looksLikeMarkdown(text)) return false
 
+      const ALL_PASTE_TRANSFORMERS = [
+        HR_TRANSFORMER,
+        CHECK_LIST,
+        ...TRANSFORMERS,
+      ]
+
+      // Headless editor — must register the same node classes that the
+      // converter (and any of its transformers) might emit. If the JSON
+      // ends up containing a node type the main editor knows about but
+      // this one didn't register, `$convertFromMarkdownString` will throw.
+      const tempEditor = createEditor({
+        namespace: 'PasteMarkdownTemp',
+        nodes: [
+          HeadingNode, QuoteNode,
+          ListNode, ListItemNode,
+          CodeNode, CodeHighlightNode,
+          LinkNode, AutoLinkNode,
+          TableNode, TableCellNode, TableRowNode,
+          HashtagNode,
+          HorizontalRuleNode,
+        ],
+        onError: (e) => console.warn('[Paste] temp editor:', e),
+      })
+
+      let serialized: SerializedLexicalNode[] = []
+      tempEditor.update(() => {
+        $convertFromMarkdownString(text, ALL_PASTE_TRANSFORMERS)
+      }, { discrete: true })
+      tempEditor.getEditorState().read(() => {
+        serialized = $getRoot().getChildren().map((n) => n.exportJSON())
+      })
+
+      if (serialized.length === 0) return false
+
       editor.update(() => {
-        ensureSelection(() => {
-          // Create a temporary root to hold converted nodes
-          // We use a trick: create nodes by converting markdown in a detached context,
-          // then extract and insert them at the current selection.
-          const ALL_PASTE_TRANSFORMERS = [
-            HR_TRANSFORMER,
-            CHECK_LIST,
-            ...TRANSFORMERS
-          ]
+        // Replace any range-selected content first so paste-over-selection
+        // works like a normal editor.
+        const sel = $getSelection()
+        if ($isRangeSelection(sel) && !sel.isCollapsed()) {
+          sel.removeText()
+        }
 
-          // Convert markdown to nodes by temporarily manipulating the root
-          // We'll build nodes in a fresh paragraph container
-          const nodesToInsert: LexicalNode[] = []
+        const fresh = $generateNodesFromSerializedNodes(serialized)
+        if (fresh.length === 0) return
 
-          // Use $convertFromMarkdownString in a temporary root approach:
-          // 1. Save current root children
+        const selection = $getSelection()
+        if ($isRangeSelection(selection)) {
+          $insertNodes(fresh)
+        } else {
+          // No live selection (rare — only when document is empty) → append.
           const root = $getRoot()
-          const savedChildren = root.getChildren()
-
-          // 2. Clear root and convert markdown
-          root.clear()
-          $convertFromMarkdownString(text, ALL_PASTE_TRANSFORMERS)
-
-          // 3. Extract the new nodes
-          const newChildren = root.getChildren()
-          for (const child of newChildren) {
-            nodesToInsert.push(child)
-          }
-
-          // 4. Restore original children
-          root.clear()
-          for (const child of savedChildren) {
-            root.append(child)
-          }
-
-          // 5. Insert the converted nodes at selection
-          if (nodesToInsert.length > 0) {
-            const sel = $getSelection()
-            if ($isRangeSelection(sel)) {
-              // Delete selected content first
-              sel.removeText()
-            }
-            // Find insertion point
-            const selection = $getSelection()
-            if ($isRangeSelection(selection)) {
-              $insertNodes(nodesToInsert)
-            } else {
-              for (const node of nodesToInsert) {
-                root.append(node)
-              }
-            }
-            // Safety net: fix any headings that weren't converted from markdown
-            $fixUnconvertedHeadings()
-          }
-        })
+          for (const node of fresh) root.append(node)
+        }
+        $fixUnconvertedHeadings()
       })
 
       return true
