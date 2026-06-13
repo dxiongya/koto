@@ -629,6 +629,99 @@ const ids = collectPaneIds(store.rootLayout)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  // ── Global file drop (.md anywhere in the window → import + open) ──
+  // Local handlers in the Notes sidebar / editor get first dibs by virtue of
+  // bubbling order: React's synthetic events run before this window-level
+  // bubble listener, so anything they preventDefault'd we leave alone. What
+  // falls through is the "drop anywhere outside an existing target" case —
+  // we copy the file under `{liteHome}/notes/` and open it.
+  useEffect(() => {
+    // Chromium hides `dataTransfer.files` during dragenter/dragover for
+    // security — only `types` is populated. Filename extensions also aren't
+    // exposed until `drop`, so during dragover we can only know there ARE
+    // files coming, not whether they're .md. We accept ALL file drops at the
+    // window level, then filter at drop time. (Without this, Electron's
+    // default `file://` navigation kicks in and unloads the app.)
+    const isFilesDrag = (dt: DataTransfer | null): boolean => {
+      if (!dt) return false
+      for (let i = 0; i < dt.types.length; i++) {
+        if (dt.types[i] === 'Files') return true
+      }
+      return false
+    }
+
+    const pickAvailable = (name: string, used: Set<string>): string => {
+      if (!used.has(name)) return name
+      const m = name.match(/\.(md|markdown|txt)$/i)
+      const ext = m ? m[0] : ''
+      const stem = ext ? name.slice(0, -ext.length) : name
+      for (let i = 2; i < 10_000; i++) {
+        const c = `${stem} (${i})${ext}`
+        if (!used.has(c)) return c
+      }
+      return `${stem}-${Date.now()}${ext}`
+    }
+
+    const onDragOver = (e: DragEvent): void => {
+      if (!isFilesDrag(e.dataTransfer)) return
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+    }
+
+    const onDrop = async (e: DragEvent): Promise<void> => {
+      if (!e.dataTransfer || e.dataTransfer.files.length === 0) return
+      const mdFiles = Array.from(e.dataTransfer.files).filter((f) => f.name.toLowerCase().endsWith('.md'))
+      if (mdFiles.length === 0) return
+
+      // ALWAYS preventDefault so Electron doesn't navigate to file://.
+      e.preventDefault()
+
+      // If the cursor was over a Sidebar drop zone, let Sidebar's React
+      // handler do the import — it knows the targeted group. We marked
+      // those zones with `data-notebook-drop-zone` precisely so this check
+      // is reliable (event-ordering / defaultPrevented races are flaky).
+      const target = e.target as Element | null
+      if (target?.closest?.('[data-notebook-drop-zone]')) return
+
+      const store = useUIStore.getState()
+      const liteHome = store.liteHome
+      if (!liteHome) return
+      const notesDir = `${liteHome}/notes`
+
+      const dirRes = await window.api.fs.readDir(notesDir)
+      const used = new Set(dirRes.ok ? dirRes.data.map((n) => n.name) : [])
+
+      let lastPath: string | null = null
+      for (const f of mdFiles) {
+        const targetName = pickAvailable(f.name, used)
+        const target = `${notesDir}/${targetName}`
+        const content = await f.text()
+        const createRes = await window.api.fs.createFile(target)
+        if (!createRes.ok) continue
+        await window.api.fs.writeFile(target, content)
+        used.add(targetName)
+        lastPath = target
+      }
+
+      if (lastPath) {
+        store.setCurrentApp('notes.app')
+        store.setActiveFilePath(lastPath)
+      }
+    }
+
+    // Both registered at CAPTURE phase — we always fire before children, so
+    // Electron's default `file://` navigation is suppressed for every file
+    // drag (any cursor location). Routing between global vs. Sidebar import
+    // is done by `data-notebook-drop-zone` lookup inside `onDrop`, which is
+    // robust to event-ordering quirks.
+    window.addEventListener('dragover', onDragOver, true)
+    window.addEventListener('drop', onDrop, true)
+    return () => {
+      window.removeEventListener('dragover', onDragOver, true)
+      window.removeEventListener('drop', onDrop, true)
+    }
+  }, [])
+
   // ── Shortcuts forwarded from main process (Ctrl+Tab, Ctrl+-, etc.) ──
   useEffect(() => {
     // Debounce Ctrl+Tab to prevent double-fire (no preventDefault in main process)
