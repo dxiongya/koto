@@ -566,15 +566,31 @@ export const NotebookOverlay: React.FC = () => {
 // Sub-components
 // ─────────────────────────────────────────────────────────────────────
 
+// Notebook-mode palette overrides — applied as inline CSS variables on the
+// overlay root, so every Tailwind `bg-bg-*` / `text-tx-*` utility inside the
+// subtree resolves to these values instead of Koto's editor-quiet defaults.
+// Goal: warmer + a couple of stops brighter than `#111`, more contrast on
+// text, and stronger surface tiers so the 3-pane structure reads at a glance.
+const NOTEBOOK_PALETTE = {
+  '--bg-app': '#1a1d22',        // canvas (was #111)
+  '--bg-sidebar': '#22262d',    // raised side columns
+  '--bg-popover': '#2a2f37',    // cards, inputs, buttons
+  '--bg-hover': '#2f343d',      // hover state
+  '--bg-active': '#363b46',     // pressed / selected
+  '--tx-main': '#f1f3f5',       // near-white primary (was #e0e0e0)
+  '--tx-muted': '#b8bdc7',      // secondary (was #999)
+  '--tx-faint': '#8389938f',    // tertiary labels (was #666)
+  '--border-subtle': 'rgba(255, 255, 255, 0.10)',
+  '--border-strong': '#454a55',
+} as React.CSSProperties
+
 const Backdrop: React.FC<{ children: React.ReactNode; onClose: () => void }> = ({ children, onClose }) => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [onClose])
-  // Solid bg-bg-app — 95% opacity bled the underlying app through and made
-  // text look ghosted on top of competing content.
-  return <div className="fixed inset-0 z-[200] bg-bg-app" role="dialog">{children}</div>
+  return <div className="fixed inset-0 z-[200] bg-bg-app" role="dialog" style={NOTEBOOK_PALETTE}>{children}</div>
 }
 
 const STATUS_LABEL: Record<SourceStatus, string> = {
