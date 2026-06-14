@@ -329,7 +329,7 @@ export const NotebookOverlay: React.FC = () => {
          * sit at the top-left because the BrowserWindow uses `hiddenInset`. */}
         <div
           className="flex items-center gap-3 pl-[80px] pr-5 h-12 border-b border-border-subtle shrink-0"
-          style={{ ['WebkitAppRegion' as 'appRegion']: 'drag' }}
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           <BookOpen size={16} className="text-accent-main shrink-0" />
           {renaming ? (
@@ -339,13 +339,13 @@ export const NotebookOverlay: React.FC = () => {
               onBlur={(e) => updateName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setRenaming(false) }}
               className="flex-1 bg-transparent text-tx-main text-sm font-medium outline-none"
-              style={{ ['WebkitAppRegion' as 'appRegion']: 'no-drag' }}
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             />
           ) : (
             <button
               onClick={() => setRenaming(true)}
               className="flex-1 text-left text-tx-main text-sm font-medium hover:text-accent-main transition-colors"
-              style={{ ['WebkitAppRegion' as 'appRegion']: 'no-drag' }}
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             >
               {session?.name ?? 'Loading…'}
             </button>
@@ -354,7 +354,7 @@ export const NotebookOverlay: React.FC = () => {
             onClick={() => setShowGoals(true)}
             className="flex items-center gap-1.5 px-2 h-7 rounded text-tx-muted hover:text-tx-main hover:bg-bg-hover text-[11px] transition-colors"
             title="Custom Goals / Persona"
-            style={{ ['WebkitAppRegion' as 'appRegion']: 'no-drag' }}
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             <Settings size={11} /> Goals
           </button>
@@ -363,7 +363,7 @@ export const NotebookOverlay: React.FC = () => {
             onClick={() => setSessionId(null)}
             className="w-7 h-7 flex items-center justify-center rounded text-tx-muted hover:text-tx-main hover:bg-bg-hover"
             title="Close (Esc)"
-            style={{ ['WebkitAppRegion' as 'appRegion']: 'no-drag' }}
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             <X size={14} />
           </button>
@@ -372,25 +372,25 @@ export const NotebookOverlay: React.FC = () => {
         {/* 3-column body */}
         <div className="flex flex-1 min-h-0">
           {/* Sources */}
-          <div className="flex flex-col border-r border-border-subtle shrink-0" style={{ width: COL_SOURCES }}>
+          <div className="flex flex-col border-r border-border-subtle shrink-0 bg-bg-sidebar" style={{ width: COL_SOURCES }}>
             <div className="px-4 pt-4 pb-2 text-[11px] text-tx-faint uppercase tracking-wider">来源 · Sources</div>
             <div className="px-3 flex flex-col gap-2">
-              <button onClick={() => setDiscoverOpen(true)} className="flex items-center gap-2 px-3 h-8 rounded bg-accent-main/10 text-accent-main text-xs hover:bg-accent-main/15 transition-colors font-medium">
+              <button onClick={() => setDiscoverOpen(true)} className="flex items-center gap-2 px-3 h-9 rounded-md bg-accent-main/15 text-accent-main text-[12px] hover:bg-accent-main/25 transition-colors font-medium border border-accent-main/30">
                 <Compass size={13} /> Discover web sources
               </button>
-              <button onClick={() => setUrlOpen(true)} className="flex items-center gap-2 px-3 h-8 rounded bg-bg-active text-tx-main text-xs hover:bg-bg-hover transition-colors">
+              <button onClick={() => setUrlOpen(true)} className="flex items-center gap-2 px-3 h-9 rounded-md bg-bg-popover text-tx-main text-[12px] border border-border-subtle hover:border-accent-main/40 hover:bg-bg-hover transition-colors">
                 <LinkIcon size={13} className="text-accent-main" /> Add a URL
               </button>
-              <button onClick={addNoteSource} className="flex items-center gap-2 px-3 h-8 rounded bg-bg-active text-tx-main text-xs hover:bg-bg-hover transition-colors">
+              <button onClick={addNoteSource} className="flex items-center gap-2 px-3 h-9 rounded-md bg-bg-popover text-tx-main text-[12px] border border-border-subtle hover:border-accent-main/40 hover:bg-bg-hover transition-colors">
                 <FilePlus2 size={13} className="text-accent-main" /> Add from file…
               </button>
-              <button onClick={() => setTextPickerOpen(true)} className="flex items-center gap-2 px-3 h-8 rounded bg-bg-active text-tx-main text-xs hover:bg-bg-hover transition-colors">
+              <button onClick={() => setTextPickerOpen(true)} className="flex items-center gap-2 px-3 h-9 rounded-md bg-bg-popover text-tx-main text-[12px] border border-border-subtle hover:border-accent-main/40 hover:bg-bg-hover transition-colors">
                 <Plus size={13} className="text-accent-main" /> Paste text
               </button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto px-3 mt-3 scroll-thin">
               {sources.length === 0 ? (
-                <div className="text-[11px] text-tx-muted px-1 py-4 leading-relaxed">
+                <div className="text-[12px] text-tx-main px-1 py-4 leading-relaxed">
                   No sources yet. The agent stays silent until you add and process at least one.
                 </div>
               ) : (
@@ -429,7 +429,7 @@ export const NotebookOverlay: React.FC = () => {
                 </div>
               )}
               {messages.length === 0 && !session?.briefing && (
-                <div className="text-tx-muted text-sm leading-relaxed max-w-2xl mx-auto py-12">
+                <div className="text-tx-main text-sm leading-relaxed max-w-2xl mx-auto py-12">
                   <Sparkles size={18} className="text-accent-main mb-3" />
                   Ask anything about your selected sources. Responses cite the
                   source they came from — click any <span className="inline-flex items-center justify-center px-1.5 h-4 rounded bg-accent-main/15 text-accent-main text-[10px] font-mono">key#p</span> badge
@@ -457,7 +457,7 @@ export const NotebookOverlay: React.FC = () => {
               )}
             </div>
             <div className="border-t border-border-subtle px-6 py-3 shrink-0">
-              <div className="relative rounded-xl bg-bg-active focus-within:ring-1 focus-within:ring-accent-main/40 transition">
+              <div className="relative rounded-xl bg-bg-active border border-border-subtle focus-within:border-accent-main/40 focus-within:ring-1 focus-within:ring-accent-main/40 transition">
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -483,7 +483,7 @@ export const NotebookOverlay: React.FC = () => {
           </div>
 
           {/* Studio */}
-          <div className="flex flex-col border-l border-border-subtle shrink-0" style={{ width: COL_STUDIO }}>
+          <div className="flex flex-col border-l border-border-subtle shrink-0 bg-bg-sidebar" style={{ width: COL_STUDIO }}>
             <div className="px-4 pt-4 pb-2 text-[11px] text-tx-faint uppercase tracking-wider">Studio</div>
             <div className="px-3 grid grid-cols-1 gap-2">
               <StudioCard
