@@ -528,6 +528,10 @@ export interface LiteConfig {
   recentFiles: RecentFileEntry[]
   // Embedding (Gemini)
   embeddingGeminiApiKey: string
+  // xapi.to — multi-API gateway used for web search (replaces Jina) and
+  // potentially other Discover-style sources. Key is stored verbatim,
+  // sent only to action.xapi.to as a Bearer token.
+  xapiApiKey?: string
   // AI
   ai: AISettings
   // MCP Servers

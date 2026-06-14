@@ -1,12 +1,11 @@
 /**
- * Web discovery — searches the web and turns the results into Koto Collector
- * items that can then be wired in as notebook sources.
+ * Web discovery — searches the web (via xapi.to's `web.search` capability)
+ * and turns selected results into Koto Collector items that can then be
+ * wired in as notebook sources. Content fetching for individual URLs still
+ * goes through Jina Reader inside Collector, which is unauthed.
  *
- *   discoverWeb(query)    → up to N {title, url, snippet} candidates
+ *   discoverWeb(query)    → up to N {title, url, snippet} candidates (xapi)
  *   importUrlToSession()  → Collector item registered as a source
- *
- * Both paths go through Jina (s.jina.ai for search, r.jina.ai for content),
- * which matches Collector's existing fetcher and needs zero configuration.
  *
  * Each session lazily owns a Collector group named after the session — so
  * "delete session" also deletes its imported web sources by group, without
@@ -21,6 +20,7 @@ import {
 } from './collector-store'
 import { getSession, saveSession, registerSource } from './notebook-storage'
 import { processSource } from './notebook-source-pipeline'
+import { loadConfig } from './lite-home'
 
 export interface DiscoveryResult {
   title: string
@@ -28,35 +28,62 @@ export interface DiscoveryResult {
   snippet?: string
 }
 
-const SEARCH_ENDPOINT = 'https://s.jina.ai/'
+const XAPI_EXECUTE_URL = 'https://action.xapi.to/v1/actions/execute'
 
-/** Issue a web search via Jina and return up to `limit` candidates. */
+/** Issue a web search via xapi's `web.search` capability and return up to
+ *  `limit` candidates. Requires `xapiApiKey` in LiteConfig — without it we
+ *  return a clear error so the UI can point the user at Settings. */
 export async function discoverWeb(query: string, limit = 10): Promise<{ ok: true; data: DiscoveryResult[] } | { ok: false; error: string }> {
   const q = query.trim()
   if (!q) return { ok: false, error: 'empty query' }
 
+  const apiKey = loadConfig().xapiApiKey?.trim()
+  if (!apiKey) {
+    return { ok: false, error: 'xapi API key not configured. Open Settings → Integrations → xapi to add one.' }
+  }
+
   try {
-    const res = await fetch(SEARCH_ENDPOINT, {
+    const res = await fetch(XAPI_EXECUTE_URL, {
       method: 'POST',
       headers: {
-        'Accept': 'application/json',
         'Content-Type': 'application/json',
-        'X-Respond-With': 'no-content',
+        'Authorization': `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ q }),
+      body: JSON.stringify({
+        action_id: 'web.search',
+        input: { q, num: limit, autocorrect: true },
+      }),
       signal: AbortSignal.timeout(30_000),
     })
     if (!res.ok) {
-      return { ok: false, error: `Jina returned ${res.status}` }
+      const text = await res.text().catch(() => '')
+      return { ok: false, error: `xapi returned ${res.status}${text ? ` — ${text.slice(0, 200)}` : ''}` }
     }
-    const json = (await res.json()) as { data?: Array<{ title?: string; url?: string; description?: string; content?: string }> }
+    const json = (await res.json()) as {
+      success?: boolean
+      error?: string
+      data?: {
+        organic?: Array<{ title?: string; link?: string; snippet?: string; position?: number }>
+        answerBox?: { title?: string; link?: string; snippet?: string }
+      }
+    }
+    if (!json.success) {
+      return { ok: false, error: json.error || 'xapi returned success=false' }
+    }
+
     const out: DiscoveryResult[] = []
-    for (const item of json.data ?? []) {
-      if (!item.url) continue
+    // AnswerBox first (often the highest-quality hit) then organic results.
+    const ab = json.data?.answerBox
+    if (ab?.link) {
+      out.push({ title: ab.title?.trim() || ab.link, url: ab.link, snippet: (ab.snippet || '').slice(0, 280) })
+    }
+    for (const item of json.data?.organic ?? []) {
+      if (!item.link) continue
+      if (out.find((o) => o.url === item.link)) continue
       out.push({
-        title: item.title?.trim() || item.url,
-        url: item.url,
-        snippet: (item.description || item.content || '').slice(0, 280),
+        title: item.title?.trim() || item.link,
+        url: item.link,
+        snippet: (item.snippet || '').slice(0, 280),
       })
       if (out.length >= limit) break
     }

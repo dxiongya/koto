@@ -9,6 +9,7 @@ import {
   Radio, Loader2, BarChart3, RotateCcw, Server, BookOpen,
   Power, PowerOff, RefreshCw, ChevronDown, ChevronRight, Wrench,
   FolderOpen, Keyboard, Info, Copy, X, Columns2, Square,
+  AlertCircle,
 } from 'lucide-react'
 import { ScheduledTasksSection } from '../../components/ScheduledTasksSection'
 import { getAppRegistry } from '../../core/AppContext'
@@ -1194,6 +1195,179 @@ function parseServersJson(text: string): { ok: true; data: MCPServerConfig[] } |
   } catch (e) {
     return { ok: false, error: `Invalid JSON: ${e instanceof Error ? e.message : String(e)}` }
   }
+}
+
+// ── xapi Section ─────────────────────────────────────────────────────
+//
+// xapi.to is a multi-API gateway (one API key, dozens of services).
+// Currently used by the Notebook agent's "Discover web sources" panel
+// for web search; planned for other Discover-style flows later.
+const XapiSection: React.FC = () => {
+  const [savedKey, setSavedKey] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [formKey, setFormKey] = useState('')
+  const [showKey, setShowKey] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  useEffect(() => {
+    window.api.state.get().then((res) => {
+      if (res.ok && (res.data as { xapiApiKey?: string }).xapiApiKey) {
+        setSavedKey((res.data as { xapiApiKey: string }).xapiApiKey)
+      }
+    })
+  }, [])
+
+  const maskedKey = savedKey ? `${savedKey.slice(0, 6)}${'•'.repeat(16)}${savedKey.slice(-4)}` : ''
+
+  const handleTest = useCallback(async () => {
+    const key = formKey.trim() || savedKey
+    if (!key) return
+    setTesting(true); setTestResult(null)
+    try {
+      // Direct probe of the xapi gateway with a tiny query — confirms key + connectivity in one shot.
+      const res = await fetch('https://action.xapi.to/v1/actions/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ action_id: 'web.search', input: { q: 'koto.app', num: 1 } }),
+      })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        setTestResult({ ok: false, msg: `HTTP ${res.status}${text ? ` — ${text.slice(0, 120)}` : ''}` })
+      } else {
+        const json = (await res.json()) as { success?: boolean; error?: string }
+        setTestResult(json.success ? { ok: true, msg: 'Connected. web.search responded.' } : { ok: false, msg: json.error || 'success=false' })
+      }
+    } catch (e) {
+      setTestResult({ ok: false, msg: String(e instanceof Error ? e.message : e) })
+    }
+    setTesting(false)
+  }, [formKey, savedKey])
+
+  const handleSave = useCallback(async () => {
+    const key = formKey.trim()
+    if (!key) return
+    setSaving(true)
+    await window.api.state.update({ xapiApiKey: key })
+    setSavedKey(key)
+    setFormKey('')
+    setEditing(false)
+    setSaving(false)
+    setTestResult(null)
+  }, [formKey])
+
+  const handleClear = useCallback(async () => {
+    await window.api.state.update({ xapiApiKey: '' })
+    setSavedKey('')
+    setFormKey('')
+    setEditing(false)
+    setTestResult(null)
+  }, [])
+
+  const handleStartEdit = useCallback(() => {
+    setEditing(true); setFormKey(savedKey); setTestResult(null)
+  }, [savedKey])
+
+  return (
+    <section className="mb-10">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-tx-muted text-xs font-medium uppercase tracking-wider">xapi</h2>
+        {!editing && savedKey && (
+          <button onClick={handleStartEdit} className="flex items-center gap-1 text-xs text-tx-muted hover:text-accent-main transition-colors">
+            <Pencil size={12} /> Edit
+          </button>
+        )}
+      </div>
+
+      {savedKey && !editing && (
+        <div className="bg-bg-hover rounded-lg p-4 border border-border-subtle space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Zap size={14} className="text-accent-main" />
+              <span className="text-[13px] text-tx-main font-medium">xapi gateway</span>
+            </div>
+            <span className="text-[10px] text-status-success flex items-center gap-1"><Check size={10} /> Active</span>
+          </div>
+          <div className="text-[11px] text-tx-muted font-mono">{maskedKey}</div>
+          <div className="text-[11px] text-tx-muted">Powers Notebook agent web search (web.search). Discover-style flows go here.</div>
+          <div className="pt-1">
+            <button onClick={handleClear} className="text-[11px] text-status-error hover:underline">Disconnect</button>
+          </div>
+        </div>
+      )}
+
+      {!savedKey && !editing && (
+        <div className="bg-bg-hover rounded-lg p-4 border border-border-subtle space-y-3">
+          <p className="text-[12px] text-tx-muted leading-relaxed">
+            xapi.to gives the agent access to <span className="text-tx-main">web search</span> (used by Notebook's "Discover sources"),
+            crypto / news / AI APIs, and dozens of third-party services through one key.
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setEditing(true); setFormKey('') }}
+              className="px-3 py-1.5 text-[11px] text-bg-app font-medium bg-accent-main rounded-md hover:opacity-90"
+            >
+              Configure
+            </button>
+            <a href="#" onClick={(e) => { e.preventDefault(); window.open('https://www.xapi.to') }} className="text-[11px] text-accent-main hover:underline">
+              Get API key →
+            </a>
+          </div>
+        </div>
+      )}
+
+      {editing && (
+        <div className="bg-bg-hover rounded-lg p-4 border border-border-subtle space-y-4">
+          <div>
+            <label className="block text-xs text-tx-muted mb-1.5">xapi API Key</label>
+            <div className="flex items-center gap-2">
+              <input
+                type={showKey ? 'text' : 'password'}
+                value={formKey}
+                onChange={(e) => { setFormKey(e.target.value); setTestResult(null) }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleTest() }}
+                placeholder="sk-..."
+                autoFocus
+                className="flex-1 bg-bg-app text-tx-main text-sm rounded-md px-3 py-2 border border-border-subtle outline-none focus-visible:ring-1 focus-visible:ring-accent-main/50 focus:border-accent-main/50 placeholder-tx-faint font-mono"
+              />
+              <button onClick={() => setShowKey(!showKey)} className="p-2 text-tx-faint hover:text-tx-muted" title={showKey ? 'Hide' : 'Show'}>
+                {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+            <div className="mt-1.5 text-[10px] text-tx-faint">Key is stored locally in lite-home config. Sent only to <span className="font-mono">action.xapi.to</span>.</div>
+          </div>
+
+          {testResult && (
+            <div className={`text-[11px] flex items-start gap-1.5 ${testResult.ok ? 'text-status-success' : 'text-status-error'}`}>
+              {testResult.ok ? <Check size={11} className="mt-0.5 shrink-0" /> : <AlertCircle size={11} className="mt-0.5 shrink-0" />}
+              <span>{testResult.msg}</span>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleTest}
+              disabled={testing || !formKey.trim()}
+              className="px-3 py-1.5 text-[11px] text-tx-main bg-bg-active hover:bg-bg-hover rounded-md transition-colors disabled:opacity-40 disabled:cursor-default"
+            >
+              {testing ? 'Testing…' : 'Test'}
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || !formKey.trim() || (testResult != null && !testResult.ok)}
+              className="px-3 py-1.5 text-[11px] text-bg-app font-medium bg-accent-main rounded-md hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-default"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={() => { setEditing(false); setFormKey(''); setTestResult(null) }} className="px-3 py-1.5 text-[11px] text-tx-muted hover:text-tx-main">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  )
 }
 
 const MCPServersSection: React.FC = () => {
@@ -2435,6 +2609,7 @@ const SettingsApp: React.FC = () => {
         {activeTab === 'ai' && (<>
           <AISettingsSection />
           <EmbeddingSection />
+          <XapiSection />
           <MCPServersSection />
           <SkillsSection />
           <AIUsageSection />

@@ -325,8 +325,12 @@ export const NotebookOverlay: React.FC = () => {
   return createPortal(
     <Backdrop onClose={() => setSessionId(null)}>
       <div className="flex flex-col h-full bg-bg-app">
-        {/* Title bar */}
-        <div className="flex items-center gap-3 px-5 h-12 border-b border-border-subtle shrink-0">
+        {/* Title bar — left padding clears macOS traffic-light buttons that
+         * sit at the top-left because the BrowserWindow uses `hiddenInset`. */}
+        <div
+          className="flex items-center gap-3 pl-[80px] pr-5 h-12 border-b border-border-subtle shrink-0"
+          style={{ ['WebkitAppRegion' as 'appRegion']: 'drag' }}
+        >
           <BookOpen size={16} className="text-accent-main shrink-0" />
           {renaming ? (
             <input
@@ -335,9 +339,14 @@ export const NotebookOverlay: React.FC = () => {
               onBlur={(e) => updateName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setRenaming(false) }}
               className="flex-1 bg-transparent text-tx-main text-sm font-medium outline-none"
+              style={{ ['WebkitAppRegion' as 'appRegion']: 'no-drag' }}
             />
           ) : (
-            <button onClick={() => setRenaming(true)} className="flex-1 text-left text-tx-main text-sm font-medium hover:text-accent-main transition-colors">
+            <button
+              onClick={() => setRenaming(true)}
+              className="flex-1 text-left text-tx-main text-sm font-medium hover:text-accent-main transition-colors"
+              style={{ ['WebkitAppRegion' as 'appRegion']: 'no-drag' }}
+            >
               {session?.name ?? 'Loading…'}
             </button>
           )}
@@ -345,11 +354,17 @@ export const NotebookOverlay: React.FC = () => {
             onClick={() => setShowGoals(true)}
             className="flex items-center gap-1.5 px-2 h-7 rounded text-tx-muted hover:text-tx-main hover:bg-bg-hover text-[11px] transition-colors"
             title="Custom Goals / Persona"
+            style={{ ['WebkitAppRegion' as 'appRegion']: 'no-drag' }}
           >
             <Settings size={11} /> Goals
           </button>
           <span className="text-[10px] text-tx-faint shrink-0">Agent mode · ⌘⇧N</span>
-          <button onClick={() => setSessionId(null)} className="w-7 h-7 flex items-center justify-center rounded text-tx-muted hover:text-tx-main hover:bg-bg-hover" title="Close (Esc)">
+          <button
+            onClick={() => setSessionId(null)}
+            className="w-7 h-7 flex items-center justify-center rounded text-tx-muted hover:text-tx-main hover:bg-bg-hover"
+            title="Close (Esc)"
+            style={{ ['WebkitAppRegion' as 'appRegion']: 'no-drag' }}
+          >
             <X size={14} />
           </button>
         </div>
@@ -375,7 +390,7 @@ export const NotebookOverlay: React.FC = () => {
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto px-3 mt-3 scroll-thin">
               {sources.length === 0 ? (
-                <div className="text-[11px] text-tx-faint px-1 py-4 leading-relaxed">
+                <div className="text-[11px] text-tx-muted px-1 py-4 leading-relaxed">
                   No sources yet. The agent stays silent until you add and process at least one.
                 </div>
               ) : (
@@ -395,7 +410,7 @@ export const NotebookOverlay: React.FC = () => {
                 </ul>
               )}
             </div>
-            <div className="px-4 py-2 border-t border-border-subtle text-[11px] text-tx-faint">
+            <div className="px-4 py-2 border-t border-border-subtle text-[11px] text-tx-muted">
               {readyCount} ready · {selectedCount} selected · {sources.length} total
             </div>
           </div>
@@ -414,7 +429,7 @@ export const NotebookOverlay: React.FC = () => {
                 </div>
               )}
               {messages.length === 0 && !session?.briefing && (
-                <div className="text-tx-faint text-sm leading-relaxed max-w-2xl mx-auto py-12">
+                <div className="text-tx-muted text-sm leading-relaxed max-w-2xl mx-auto py-12">
                   <Sparkles size={18} className="text-accent-main mb-3" />
                   Ask anything about your selected sources. Responses cite the
                   source they came from — click any <span className="inline-flex items-center justify-center px-1.5 h-4 rounded bg-accent-main/15 text-accent-main text-[10px] font-mono">key#p</span> badge
@@ -431,7 +446,7 @@ export const NotebookOverlay: React.FC = () => {
                 />
               ))}
               {sending && messages[messages.length - 1]?.role !== 'assistant' && (
-                <div className="flex items-center gap-2 text-tx-faint text-xs my-3">
+                <div className="flex items-center gap-2 text-tx-muted text-xs my-3">
                   <Loader2 size={12} className="animate-spin text-accent-main" /> Agent is thinking…
                 </div>
               )}
@@ -453,7 +468,7 @@ export const NotebookOverlay: React.FC = () => {
                   rows={2}
                   className="w-full bg-transparent text-tx-main text-sm outline-none resize-none px-4 py-3 pr-32 placeholder-tx-faint"
                 />
-                <div className="absolute right-3 bottom-2.5 flex items-center gap-2 text-[11px] text-tx-faint">
+                <div className="absolute right-3 bottom-2.5 flex items-center gap-2 text-[11px] text-tx-muted">
                   <span>{readyCount} ready</span>
                   <button
                     onClick={() => void sendPrompt()}
@@ -516,7 +531,7 @@ export const NotebookOverlay: React.FC = () => {
               )}
               <div className="text-[10px] text-tx-faint uppercase tracking-wider px-1 mb-1">Products</div>
               {(session?.products ?? []).length === 0 ? (
-                <div className="text-[11px] text-tx-faint px-1 py-2">No outputs yet.</div>
+                <div className="text-[11px] text-tx-muted px-1 py-2">No outputs yet.</div>
               ) : (
                 <ul className="space-y-1 pb-3">
                   {[...(session?.products ?? [])].reverse().map((p) => (
@@ -557,7 +572,9 @@ const Backdrop: React.FC<{ children: React.ReactNode; onClose: () => void }> = (
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   }, [onClose])
-  return <div className="fixed inset-0 z-[200] bg-bg-app/95 backdrop-blur-sm" role="dialog">{children}</div>
+  // Solid bg-bg-app — 95% opacity bled the underlying app through and made
+  // text look ghosted on top of competing content.
+  return <div className="fixed inset-0 z-[200] bg-bg-app" role="dialog">{children}</div>
 }
 
 const STATUS_LABEL: Record<SourceStatus, string> = {
@@ -618,7 +635,7 @@ const SourceRow: React.FC<{
       {expanded && (
         <div className="mx-2 mb-1.5 mt-0.5 px-3 py-2.5 rounded bg-bg-popover border border-border-subtle text-[11px] leading-relaxed">
           {m.subtitle && (
-            <div className="font-mono text-[10px] text-tx-faint break-all mb-1.5">{m.subtitle}</div>
+            <div className="font-mono text-[10px] text-tx-muted break-all mb-1.5">{m.subtitle}</div>
           )}
           {isError && (
             <div className="text-status-error mb-2">Failed: {m.error || 'unknown'}</div>
@@ -626,9 +643,9 @@ const SourceRow: React.FC<{
           {m.summary ? (
             <div className="text-tx-muted mb-2">{m.summary}</div>
           ) : isReady ? (
-            <div className="text-tx-faint italic mb-2">No summary generated. Reprocess to retry.</div>
+            <div className="text-tx-muted italic mb-2">No summary generated. Reprocess to retry.</div>
           ) : (
-            <div className="text-tx-faint italic mb-2">Summary will appear when processing completes.</div>
+            <div className="text-tx-muted italic mb-2">Summary will appear when processing completes.</div>
           )}
           {m.topics && m.topics.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-2">
